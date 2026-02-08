@@ -1,0 +1,115 @@
+# Website Builder — Agent Instructions
+
+You are a website builder agent operating in a structured multi-pass pipeline.
+This repo contains a skill package for generating high-quality, industry-aware
+websites using decomposed design primitives.
+
+## Repo Structure
+
+```
+skills/                  → Design knowledge (READ ONLY during generation)
+  section-taxonomy.md    → All section archetypes and their structural patterns
+  style-schema.md        → Configurable style dimensions and Tailwind mappings
+  presets/               → Industry-specific default configurations
+templates/               → Prompt templates for each pipeline stage
+  scaffold-prompt.md     → Generates page specification from brief + preset
+  section-prompt.md      → Generates one section component from specification
+  assembly-checklist.md  → Consistency verification across all sections
+briefs/                  → Client briefs (human-written input)
+output/                  → Generated output (one folder per project)
+scripts/                 → Orchestration and utility scripts
+agents/                  → Agent role definitions for multi-agent mode
+```
+
+## Generation Pipeline
+
+When asked to build a site, follow this exact sequence:
+
+### Step 1: Read the Brief
+- Load the brief from `briefs/{project}.md`
+- Identify the industry, business type, and specific requirements
+
+### Step 2: Match Preset
+- Scan `skills/presets/` for the closest industry match
+- If no exact match exists, identify the closest preset and note what to adapt
+- If the user specifies a preset, use that one
+
+### Step 3: Generate Scaffold
+- Read `templates/scaffold-prompt.md` for the template
+- Read `skills/section-taxonomy.md` for available section archetypes
+- Read the matched preset for default section sequence and style config
+- Generate the scaffold: a numbered list of sections with archetype, variant,
+  and content direction
+- Save to `output/{project}/scaffold.md`
+- **CHECKPOINT**: If running interactively, pause for human review before continuing
+
+### Step 4: Generate Sections
+- Read `templates/section-prompt.md` for the template
+- Extract the compact style header from the preset
+- For EACH section in the scaffold:
+  - Build the section prompt using the template + style header + section spec
+  - Generate the section as a complete React + Tailwind component
+  - Save to `output/{project}/sections/{NN}-{section-name}.tsx`
+- Each section must be self-contained but share the style DNA from the header
+
+### Step 5: Assemble Page
+- Combine all section components into `output/{project}/page.tsx`
+- Add proper imports, layout wrapper, and global styles
+- Ensure the page is renderable as a standalone Next.js/React page
+
+### Step 6: Consistency Review
+- Read `templates/assembly-checklist.md`
+- Review all generated sections against the checklist
+- Flag any inconsistencies in: button styles, color tokens, spacing, typography,
+  animation timing, border radius, hover states
+- Save review to `output/{project}/review.md`
+- If issues found, regenerate only the affected sections
+
+## Critical Rules
+
+1. ALWAYS read the skill files before generating. The section taxonomy and style
+   schema contain the design knowledge that prevents generic output.
+
+2. NEVER generate the full page in one pass. The multi-pass approach exists because
+   context degradation ruins consistency in long generations. One section at a time.
+
+3. RESTATE the compact style header at the top of every section generation prompt.
+   This is the consistency mechanism. Don't skip it.
+
+4. USE the preset's section sequence as the default, but adapt it based on the
+   brief's specific needs. The preset is a starting point, not a constraint.
+
+5. EVERY section component must use the same:
+   - Color token naming convention
+   - Tailwind spacing scale
+   - Border radius values
+   - Font family imports
+   - Animation timing/easing
+
+6. When populating empty taxonomy entries (sections you haven't used before),
+   note what you learned in the section-taxonomy.md file after generation.
+
+## Tech Stack
+
+All output uses:
+- React 18+ with TypeScript
+- Tailwind CSS v4
+- Framer Motion for animations
+- Next.js App Router conventions
+- shadcn/ui component primitives where applicable
+
+## Adding New Presets
+
+After completing a project for a new industry:
+1. Create a new preset file in `skills/presets/`
+2. Follow the format of existing presets exactly
+3. Include the section sequence that worked
+4. Include the style configuration that was used
+5. Add notes about what worked well and what needed adjustment
+
+## Adding New Section Archetypes
+
+When you encounter a section pattern not in the taxonomy:
+1. Add it to `skills/section-taxonomy.md`
+2. Include the archetype name, variant names, and structural description
+3. Reference the project where you first used it
