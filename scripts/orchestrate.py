@@ -107,13 +107,14 @@ def list_presets() -> list[str]:
 
 # --- Claude API ---
 
-def call_claude(prompt: str, stage: str) -> str:
+def call_claude(prompt: str, stage: str, max_tokens_override: int | None = None) -> str:
     """Call the Anthropic API and return the response text."""
     client = Anthropic()
 
+    budget = max_tokens_override if max_tokens_override else MAX_TOKENS[stage]
     message = client.messages.create(
         model=MODELS[stage],
-        max_tokens=MAX_TOKENS[stage],
+        max_tokens=budget,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -130,10 +131,10 @@ SITE_DIR_NAME = "site"  # Rendered Next.js project lives at output/{project}/sit
 
 # --- URL Extraction Stage ---
 
-def stage_url_extract(url: str, project_name: str) -> tuple[str, str, dict]:
+def stage_url_extract(url: str, project_name: str) -> tuple[str, str, dict, Path]:
     """
     Stage 0: Extract from URL and generate preset + brief.
-    Returns (preset_name, brief_content, section_contexts).
+    Returns (preset_name, brief_content, section_contexts, extraction_dir).
     """
     print("\n🌐 Stage 0: Extracting from URL...")
     print(f"  URL: {url}")
@@ -227,7 +228,7 @@ console.log(JSON.stringify(contexts));
     else:
         print("  ⚠ Extraction data not found, continuing without section contexts")
 
-    return preset_name, brief_content, section_contexts
+    return preset_name, brief_content, section_contexts, extraction_dir
 
 
 # --- Pipeline Stages ---
@@ -353,13 +354,122 @@ def extract_style_header(preset_content: str) -> str:
     return "[Style header not found in preset — check preset format]"
 
 
+def load_injection_data(extraction_dir: Path | None) -> tuple[dict | None, dict | None]:
+    """Load animation analysis and extraction data from the extraction directory."""
+    if not extraction_dir or not extraction_dir.exists():
+        return None, None
+
+    animation_analysis = None
+    extraction_data = None
+
+    anim_path = extraction_dir / "animation-analysis.json"
+    if anim_path.exists():
+        try:
+            animation_analysis = json.loads(anim_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            print("  ⚠ Could not load animation-analysis.json")
+
+    extract_path = extraction_dir / "extraction-data.json"
+    if extract_path.exists():
+        try:
+            extraction_data = json.loads(extract_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            print("  ⚠ Could not load extraction-data.json")
+
+    return animation_analysis, extraction_data
+
+
+def call_injector(script: str, args_json: str) -> dict | None:
+    """Call a Node.js injection module and return parsed JSON result."""
+    node_script = f"""
+const mod = require('./lib/{script}');
+const args = JSON.parse('{args_json.replace("'", "\\'")}');
+const result = mod.fn(args);
+console.log(JSON.stringify(result));
+"""
+    # We'll call each injector's exported function directly via inline script
+    result = subprocess.run(
+        ["node", "-e", node_script],
+        capture_output=True, text=True,
+        cwd=str(QUALITY_DIR), timeout=30,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        try:
+            return json.loads(result.stdout.strip())
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def get_animation_contexts(
+    animation_analysis: dict | None,
+    preset_content: str,
+    sections: list[dict],
+) -> dict:
+    """Call animation-injector.js to get per-section animation context."""
+    node_script = f"""
+const {{ buildAllAnimationContexts }} = require('./lib/animation-injector');
+const animAnalysis = {json.dumps(animation_analysis) if animation_analysis else 'null'};
+const presetContent = {json.dumps(preset_content)};
+const sections = {json.dumps(sections)};
+const result = buildAllAnimationContexts(animAnalysis, presetContent, sections);
+console.log(JSON.stringify(result));
+"""
+    result = subprocess.run(
+        ["node", "-e", node_script],
+        capture_output=True, text=True,
+        cwd=str(QUALITY_DIR), timeout=30,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        try:
+            return json.loads(result.stdout.strip())
+        except json.JSONDecodeError:
+            print("  ⚠ Could not parse animation injection results")
+    else:
+        if result.stderr:
+            print(f"  ⚠ Animation injector error: {result.stderr[-300:]}")
+    return {}
+
+
+def get_asset_contexts(
+    extraction_data: dict | None,
+    sections: list[dict],
+) -> dict:
+    """Call asset-injector.js to get per-section asset context."""
+    if not extraction_data:
+        return {}
+
+    node_script = f"""
+const {{ buildAllAssetContexts }} = require('./lib/asset-injector');
+const extractionData = {json.dumps(extraction_data)};
+const sections = {json.dumps(sections)};
+const result = buildAllAssetContexts(extractionData, sections);
+console.log(JSON.stringify(result));
+"""
+    result = subprocess.run(
+        ["node", "-e", node_script],
+        capture_output=True, text=True,
+        cwd=str(QUALITY_DIR), timeout=30,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        try:
+            return json.loads(result.stdout.strip())
+        except json.JSONDecodeError:
+            print("  ⚠ Could not parse asset injection results")
+    else:
+        if result.stderr:
+            print(f"  ⚠ Asset injector error: {result.stderr[-300:]}")
+    return {}
+
+
 def stage_sections(
     sections: list[dict],
     preset: str,
     project_name: str,
     section_contexts: dict | None = None,
+    extraction_dir: Path | None = None,
 ) -> list[Path]:
-    """Stage 2: Generate each section component individually."""
+    """Stage 2: Generate each section component individually with engine-aware injection."""
     print(f"\n🔨 Stage 2: Generating {len(sections)} sections...")
     if section_contexts:
         print(f"  (with per-section reference context from URL extraction)")
@@ -367,8 +477,35 @@ def stage_sections(
     preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
     style_header = extract_style_header(preset_content)
     taxonomy = read_file(SKILLS_DIR / "section-taxonomy.md")
+    engine = detect_animation_engine(preset_content)
 
-    section_template = read_file(TEMPLATES_DIR / "section-prompt.md")
+    # Load engine-specific instruction template
+    if engine == "gsap":
+        instructions = read_file(TEMPLATES_DIR / "section-instructions-gsap.md")
+    else:
+        instructions = read_file(TEMPLATES_DIR / "section-instructions-framer.md")
+
+    print(f"  Animation engine: {engine}")
+
+    # Load injection data if available (URL clone mode)
+    animation_analysis, extraction_data = load_injection_data(extraction_dir)
+
+    # Build injection contexts
+    animation_contexts = {}
+    asset_contexts = {}
+    if animation_analysis or extraction_data:
+        print("  Loading injection data...")
+        if animation_analysis:
+            animation_contexts = get_animation_contexts(
+                animation_analysis, preset_content, sections
+            )
+            if animation_contexts:
+                print(f"  ✓ Animation context for {len(animation_contexts)} sections")
+        if extraction_data:
+            asset_contexts = get_asset_contexts(extraction_data, sections)
+            if asset_contexts:
+                print(f"  ✓ Asset context for {len(asset_contexts)} sections")
+
     section_files = []
 
     for i, section in enumerate(sections):
@@ -376,11 +513,19 @@ def stage_sections(
         name = section["archetype"].lower().replace("-", "_")
         filename = f"{num}-{name}.tsx"
 
-        print(f"  [{num}/{len(sections):02d}] {section['archetype']} | {section['variant']}...")
+        # Get per-section injection blocks
+        anim_ctx = animation_contexts.get(str(i), {})
+        animation_block = anim_ctx.get("animationContext", "")
+        token_budget = anim_ctx.get("tokenBudget", MAX_TOKENS["section"])
+
+        asset_ctx = asset_contexts.get(str(i), {})
+        asset_block = asset_ctx.get("assetContext", "")
+
+        budget_label = f" [{token_budget} tokens]" if token_budget != MAX_TOKENS["section"] else ""
+        print(f"  [{num}/{len(sections):02d}] {section['archetype']} | {section['variant']}{budget_label}...")
 
         # Try to find structural reference in taxonomy
         structure_ref = "[No structural reference yet — infer from archetype and variant]"
-        # Look for the archetype's Structure field
         arch_pattern = rf"### {re.escape(section['archetype'])}.*?(?=### |\Z)"
         arch_match = re.search(arch_pattern, taxonomy, re.DOTALL)
         if arch_match:
@@ -397,8 +542,17 @@ def stage_sections(
         if section_contexts and str(i) in section_contexts:
             ref_context_block = f"\n{section_contexts[str(i)]}\n"
 
+        # Build animation and asset context blocks
+        animation_context_block = ""
+        if animation_block:
+            animation_context_block = f"\n{animation_block}\n"
+
+        asset_context_block = ""
+        if asset_block:
+            asset_context_block = f"\n{asset_block}\n"
+
         prompt = f"""You are a senior frontend developer generating a single website section
-as a React + Tailwind CSS + Framer Motion component.
+as a React + Tailwind CSS component.
 
 {style_header}
 
@@ -410,42 +564,22 @@ Content Direction: {section['content']}
 
 ## Structural Reference
 {structure_ref}
-{ref_context_block}
-## Instructions
-
-Generate a complete, self-contained React component for this section.
-
-Requirements:
-1. Use TypeScript with React.FC typing
-2. Use ONLY the colors, fonts, spacing, radius, and animation values from
-   the STYLE CONTEXT header above. Do not introduce any values not specified.
-3. The component must be self-contained — no external dependencies beyond:
-   - React
-   - Framer Motion (import {{ motion }} from "framer-motion")
-   - Tailwind CSS classes
-4. Use semantic HTML elements (section, nav, article, etc.)
-5. Include responsive design: mobile-first, with sm/md/lg breakpoints
-6. Placeholder images should use a neutral gradient div with descriptive aria-label
-7. All text content should be realistic for the client — not lorem ipsum
-8. Animation should match the intensity from the style header:
-   - Use Framer Motion motion components with whileInView for scroll triggers
-   - Apply the entrance, hover, and timing values specified
-
-Output ONLY the component code. No explanation, no markdown code fences.
-Export the component as default.
+{ref_context_block}{animation_context_block}{asset_context_block}
+{instructions}
 Component name: Section{num}{section['archetype'].replace('-', '')}"""
 
-        code = call_claude(prompt, "section")
+        code = call_claude(prompt, "section", max_tokens_override=token_budget)
 
         # Clean up any markdown code fences that might have snuck in
         code = re.sub(r"^```\w*\n?", "", code)
         code = re.sub(r"\n?```$", "", code)
 
         # Post-process: ensure "use client" directive for components using
-        # framer-motion or React hooks (adapted from aurelix-mvp generate.js)
+        # animation libraries or React hooks
         client_markers = [
             "framer-motion", "motion.", "useState", "useEffect",
-            "useRef", "useCallback", "useMemo",
+            "useRef", "useCallback", "useMemo", "gsap", "ScrollTrigger",
+            "DotLottieReact",
         ]
         needs_client = any(marker in code for marker in client_markers)
         has_client = code.startswith('"use client"') or code.startswith("'use client'")
@@ -522,6 +656,7 @@ def stage_deploy(
     section_files: list[Path],
     preset: str,
     project_name: str,
+    extraction_dir: Path | None = None,
 ):
     """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/."""
     print("\n🚀 Stage 5: Deploying to Next.js project...")
@@ -545,11 +680,25 @@ def stage_deploy(
             "next": "16.1.6",
             "react": "19.2.3",
             "react-dom": "19.2.3",
+            "framer-motion": "^12.33.0",  # Always included (hover/tap effects)
         }
         if engine == "gsap":
             deps["gsap"] = "^3.14.2"
-        else:
-            deps["framer-motion"] = "^12.33.0"
+
+        # Detect Lottie assets from extraction data
+        has_lottie = False
+        if extraction_dir:
+            anim_path = extraction_dir / "animation-analysis.json"
+            if anim_path.exists():
+                try:
+                    anim_data = json.loads(anim_path.read_text(encoding="utf-8"))
+                    lottie_files = anim_data.get("lottieFiles", [])
+                    has_lottie = len(lottie_files) > 0
+                except (json.JSONDecodeError, OSError):
+                    pass
+        if has_lottie:
+            deps["@lottiefiles/dotlottie-react"] = "^0.13.0"
+            print(f"  Lottie files detected — adding @lottiefiles/dotlottie-react")
 
         pkg = {
             "name": project_name,
@@ -736,6 +885,60 @@ export default function Page() {{
 """
     write_file(app_dir / "page.tsx", page_code)
 
+    # ── Download assets if extraction data available ──
+    if extraction_dir:
+        extract_path = extraction_dir / "extraction-data.json"
+        if extract_path.exists():
+            print("  Downloading extracted assets...")
+            download_script = f"""
+const {{ categorizeImages, getDownloadManifest }} = require('./lib/asset-injector');
+const {{ verifyAssets, downloadAssets }} = require('./lib/asset-downloader');
+
+(async () => {{
+  try {{
+    const extractionData = require('{extract_path}');
+    const categorized = categorizeImages(extractionData);
+    if (categorized.length === 0) {{
+      console.log(JSON.stringify({{ downloaded: 0, skipped: "no images" }}));
+      return;
+    }}
+    const manifest = getDownloadManifest(categorized);
+    const verified = await verifyAssets(manifest);
+    if (verified.length === 0) {{
+      console.log(JSON.stringify({{ downloaded: 0, skipped: "none accessible" }}));
+      return;
+    }}
+    const assetManifest = await downloadAssets(verified, '{site_dir}');
+    console.log(JSON.stringify({{
+      downloaded: Object.keys(assetManifest).length,
+      manifest: assetManifest
+    }}));
+  }} catch (err) {{
+    console.error(err.message);
+    console.log(JSON.stringify({{ downloaded: 0, error: err.message }}));
+  }}
+}})();
+"""
+            dl_result = subprocess.run(
+                ["node", "-e", download_script],
+                capture_output=True, text=True,
+                cwd=str(QUALITY_DIR), timeout=120,
+            )
+            if dl_result.returncode == 0 and dl_result.stdout.strip():
+                try:
+                    dl_data = json.loads(dl_result.stdout.strip())
+                    count = dl_data.get("downloaded", 0)
+                    if count > 0:
+                        print(f"  ✓ Downloaded {count} assets to public/")
+                    else:
+                        skip = dl_data.get("skipped", dl_data.get("error", "unknown"))
+                        print(f"  ⚠ No assets downloaded ({skip})")
+                except json.JSONDecodeError:
+                    print(f"  ⚠ Asset download output not parseable")
+            else:
+                if dl_result.stderr:
+                    print(f"  ⚠ Asset download error: {dl_result.stderr[-300:]}")
+
     # ── Install dependencies ──
     print("  Installing dependencies (npm install)...")
     result = subprocess.run(
@@ -853,6 +1056,7 @@ def main():
             sys.exit(1)
 
     section_contexts = None  # Only populated in URL clone mode
+    extraction_dir = None    # Only populated in URL clone mode
 
     # ── URL Clone Mode ──────────────────────────────────────────────
     if args.from_url:
@@ -863,7 +1067,7 @@ def main():
         print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M')}")
         print(f"{'═' * 60}")
 
-        preset, brief, section_contexts = stage_url_extract(
+        preset, brief, section_contexts, extraction_dir = stage_url_extract(
             args.from_url, args.project
         )
 
@@ -927,7 +1131,7 @@ def main():
     print(f"\n  Parsed {len(sections)} sections from scaffold")
 
     if args.skip_to in (None, "sections"):
-        section_files = stage_sections(sections, preset, args.project, section_contexts)
+        section_files = stage_sections(sections, preset, args.project, section_contexts, extraction_dir)
     else:
         section_dir = OUTPUT_DIR / args.project / "sections"
         section_files = sorted(section_dir.glob("*.tsx"))
@@ -939,7 +1143,7 @@ def main():
         stage_review(sections, section_files, preset, args.project)
 
     if args.deploy or args.skip_to == "deploy":
-        stage_deploy(sections, section_files, preset, args.project)
+        stage_deploy(sections, section_files, preset, args.project, extraction_dir)
 
     mode_label = "URL Clone" if args.from_url else "Pipeline"
     print(f"\n{'═' * 60}")

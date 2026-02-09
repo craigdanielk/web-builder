@@ -106,6 +106,8 @@ web-builder/
 ├── templates/                      ← Prompt templates for each pipeline stage
 │   ├── scaffold-prompt.md          ← Stage 1: page specification generation
 │   ├── section-prompt.md           ← Stage 2: individual section generation
+│   ├── section-instructions-framer.md ← Framer Motion section instructions
+│   ├── section-instructions-gsap.md   ← GSAP + ScrollTrigger section instructions
 │   └── assembly-checklist.md       ← Stage 4: consistency review checklist
 │
 ├── briefs/                         ← Client briefs (human or auto-generated)
@@ -129,7 +131,7 @@ web-builder/
 │           └── src/components/sections/
 │
 ├── scripts/                        ← Orchestration and utility scripts
-│   ├── orchestrate.py (957 lines)  ← Main pipeline — 6 stages
+│   ├── orchestrate.py (1161 lines) ← Main pipeline — 6 stages + injection wiring
 │   └── quality/                    ← URL extraction + validation tools
 │       ├── url-to-preset.js        ← URL → preset markdown
 │       ├── url-to-brief.js         ← URL → brief markdown
@@ -141,6 +143,9 @@ web-builder/
 │           ├── animation-detector.js  ← Animation library detection
 │           ├── archetype-mapper.js    ← Section → archetype mapping
 │           ├── design-tokens.js       ← CSS → design token collection
+│           ├── animation-injector.js  ← Per-section animation prompt builder
+│           ├── asset-injector.js      ← Per-section asset prompt builder
+│           ├── asset-downloader.js    ← Download + verify extracted assets
 │           ├── section-context.js     ← Per-section prompt context builder
 │           ├── post-process.js        ← Post-generation cleanup
 │           └── visual-validator.js    ← Visual consistency checker
@@ -156,7 +161,9 @@ web-builder/
     ├── 2026-02-08-web-builder-first-build-success.md
     ├── 2026-02-08-turm-kaffee-v2-build-deploy.md
     ├── 2026-02-08-farm-minerals-rebuild.md
-    └── 2026-02-09-nike-golf-light-theme-rebuild.md
+    ├── 2026-02-09-nike-golf-light-theme-rebuild.md
+    ├── 2026-02-09-system-docs-automation-success.md
+    └── 2026-02-09-data-injection-pipeline-success.md
 ```
 
 **Architecture:** Site builds live inside `output/{project}/site/`, never at the repo root.

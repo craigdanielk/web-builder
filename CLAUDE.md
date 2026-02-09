@@ -1,7 +1,7 @@
 # Web Builder — System Context
 
 **Last Updated:** 2026-02-09
-**System Version:** v0.4.1
+**System Version:** v0.5.0
 
 ---
 
@@ -12,7 +12,7 @@
 | Runtime | Python 3 + Node.js (hybrid pipeline) |
 | Generated stack | Next.js 16.1.6 / React 19 / Tailwind CSS 4 / TypeScript 5 |
 | Animation engines | GSAP 3.14 + Framer Motion 12 (both can coexist) |
-| Pipeline entry | `scripts/orchestrate.py` (957 lines) |
+| Pipeline entry | `scripts/orchestrate.py` (1161 lines) |
 | API | Anthropic Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) |
 | Deployment | Vercel CLI (`vercel --yes`) |
 | API key | `ANTHROPIC_API_KEY` in `.env` (gitignored) |
@@ -143,6 +143,8 @@ web-builder/
 ├── templates/                         ← Prompt templates per pipeline stage
 │   ├── scaffold-prompt.md             ← Stage 1 prompt template
 │   ├── section-prompt.md              ← Stage 2 prompt template
+│   ├── section-instructions-framer.md ← Framer Motion section instructions
+│   ├── section-instructions-gsap.md   ← GSAP + ScrollTrigger section instructions
 │   └── assembly-checklist.md          ← Stage 4 review checklist
 │
 ├── briefs/                            ← Client briefs (human or auto-generated)
@@ -150,7 +152,7 @@ web-builder/
 │   └── {project}.md                   ← One per project
 │
 ├── scripts/
-│   ├── orchestrate.py (957 lines)     ← Main pipeline — 6 stages
+│   ├── orchestrate.py (1161 lines)    ← Main pipeline — 6 stages + injection wiring
 │   └── quality/                       ← URL extraction + validation tools
 │       ├── url-to-preset.js (275)     ← URL → preset markdown
 │       ├── url-to-brief.js (201)      ← URL → brief markdown
@@ -162,6 +164,9 @@ web-builder/
 │           ├── animation-detector.js (454)  ← Animation library detection
 │           ├── archetype-mapper.js (269)    ← Section → archetype mapping
 │           ├── design-tokens.js (265)       ← CSS → design token collection
+│           ├── animation-injector.js (403)  ← Per-section animation prompt builder
+│           ├── asset-injector.js (378)     ← Per-section asset prompt builder
+│           ├── asset-downloader.js (257)   ← Download + verify extracted assets
 │           ├── section-context.js (192)     ← Per-section prompt context builder
 │           ├── post-process.js (313)        ← Post-generation cleanup
 │           └── visual-validator.js (401)    ← Visual consistency checker
@@ -196,14 +201,15 @@ web-builder/
     ├── 2026-02-08-turm-kaffee-v2-build-deploy.md
     ├── 2026-02-08-farm-minerals-rebuild.md
     ├── 2026-02-09-nike-golf-light-theme-rebuild.md
-    └── 2026-02-09-system-docs-automation-success.md
+    ├── 2026-02-09-system-docs-automation-success.md
+    └── 2026-02-09-data-injection-pipeline-success.md
 ```
 
 ---
 
 ## Pipeline Stages — Detail
 
-### Stage 0: URL Extraction (`stage_url_extract`, orchestrate.py:133)
+### Stage 0: URL Extraction (`stage_url_extract`, orchestrate.py:134)
 
 **When:** `--from-url` flag is passed
 **Runs:** Node.js scripts via subprocess
@@ -216,37 +222,39 @@ web-builder/
 
 Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries, text content, image URLs, font URLs, animation library globals, Lottie/Rive/3D network assets, CSS keyframes.
 
-### Stage 1: Scaffold (`stage_scaffold`, orchestrate.py:235)
+### Stage 1: Scaffold (`stage_scaffold`, orchestrate.py:236)
 
 **Model:** Claude Sonnet 4.5 | **Max tokens:** 2048
 **Input:** Brief + preset section sequence + taxonomy archetype list
 **Output:** Numbered section list: `N. ARCHETYPE | variant | content direction`
 **Checkpoint:** Interactive review (skipped with `--no-pause`)
 
-### Stage 2: Sections (`stage_sections`, orchestrate.py:356)
+### Stage 2: Sections (`stage_sections`, orchestrate.py:465)
 
-**Model:** Claude Sonnet 4.5 | **Max tokens:** 4096 per section
-**Input per section:** Style header + section spec + structural reference + optional section context
-**Output:** Self-contained React/TypeScript/Tailwind component
+**Model:** Claude Sonnet 4.5 | **Max tokens:** dynamic (4096–8192 per section)
+**Input per section:** Style header + section spec + structural reference + optional section context + animation context block + asset context block + engine-branched instructions
+**Output:** Self-contained React/TypeScript/Tailwind component with correct animation engine
 **Post-processing:** Ensures `"use client"` directive, ensures `export default`
+**Injection helpers:** `load_injection_data()`, `get_animation_contexts()`, `get_asset_contexts()` — load extraction data and call Node.js injector modules via subprocess
 
-### Stage 3: Assembly (`stage_assemble`, orchestrate.py:471)
+### Stage 3: Assembly (`stage_assemble`, orchestrate.py:605)
 
 **No API call.** Pure code generation — creates `page.tsx` importing all sections.
 
-### Stage 4: Review (`stage_review`, orchestrate.py:757)
+### Stage 4: Review (`stage_review`, orchestrate.py:960)
 
 **Model:** Claude Sonnet 4.5 | **Max tokens:** 4096
 **Input:** All section code concatenated + style header
 **Output:** Consistency report (colors, typography, spacing, radius, animation, buttons)
 
-### Stage 5: Deploy (`stage_deploy`, orchestrate.py:520)
+### Stage 5: Deploy (`stage_deploy`, orchestrate.py:654)
 
 **No API call.** Creates Next.js project scaffold:
-- `package.json` with engine-specific deps (GSAP or Framer Motion)
+- `package.json` with engine-specific deps (framer-motion always + GSAP conditional + Lottie conditional)
 - Font imports from preset's Type line
 - `globals.css` with engine-specific styles
 - Copies sections to `src/components/sections/`
+- Downloads verified assets to `public/images/` and `public/lottie/` (via asset-injector + asset-downloader)
 - Runs `npm install`
 
 ---
@@ -262,10 +270,10 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 | nike-golf | nike-golf | gsap | Vercel |
 | farm-minerals-anim | farm-minerals-anim | gsap* | Vercel |
 
-*farm-minerals-anim: Preset says gsap but sections use framer-motion due to Gap 1 (see Known Gaps).
+*farm-minerals-anim: Built before v0.5.0 injection pipeline — preset says gsap but sections use framer-motion. Rebuild with injection pipeline to fix.
 
 ### Active Plans
-- **[Data Injection Pipeline](plans/active/data-injection-pipeline.md)** — Closes the loop between extracted animation/image data and built output. Animation injector + asset injector + engine-branched prompts.
+- **[Data Injection Pipeline](plans/active/data-injection-pipeline.md)** — Implemented v0.5.0. Animation injector + asset injector + engine-branched prompts + dynamic token budgets + dependency fix.
 - **[System Documentation Automation](plans/active/system-documentation-automation.md)** — Implemented v0.4.1. CLAUDE.md created, README/cursorrules refreshed, retro skill doc-sync integrated.
 
 ---
@@ -274,20 +282,19 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 
 ### Active Issues
 
-**Gap 1: Animation data doesn't reach section output**
-- Detection works (GSAP, Lottie, intensity scoring all correct)
-- Preset contains correct `animation_engine` and `section_overrides`
-- BUT `stage_sections` prompt (orchestrate.py:400-436) hardcodes `import { motion } from "framer-motion"` and `Use Framer Motion motion components` regardless of detected engine
-- Additionally, `stage_deploy` (line 549-552) installs GSAP **or** Framer Motion (either/or), causing missing dependency when prompt hardcodes framer-motion but engine is gsap
-- **Status:** Fix planned in data-injection-pipeline.md (Phase 1 + 3)
-
-**Gap 2: No image/media asset pipeline**
-- Extraction captures image URLs, Lottie file URLs, background images
-- But `stage_sections` prompt says "use neutral gradient div" (line 428)
-- No download/proxy mechanism exists for extracted assets
-- **Status:** Fix planned in data-injection-pipeline.md (Phase 2)
+None currently. All known gaps have been resolved in v0.5.0.
 
 ### Resolved Issues (Keep for Reference)
+
+**Gap 1: Animation data doesn't reach section output** (FIXED v0.5.0)
+- Was: hardcoded framer-motion in section prompt, either/or dependency bug
+- Fix: animation-injector.js builds engine-specific prompt blocks, engine-branched instruction templates, framer-motion always included + GSAP when detected
+- Resolved: 2026-02-09
+
+**Gap 2: No image/media asset pipeline** (FIXED v0.5.0)
+- Was: "use neutral gradient div" hardcoded, no asset download mechanism
+- Fix: asset-injector.js categorizes extracted images, asset-downloader.js downloads to public/, per-section asset context injected into prompts
+- Resolved: 2026-02-09
 
 **NODE_ENV conflict with Next.js 16 build**
 - `next build` fails with `useContext null` error when `NODE_ENV=development` is set in shell
@@ -338,8 +345,12 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 | Stage | Budget | Model |
 |-------|--------|-------|
 | Scaffold | 2048 | claude-sonnet-4-5-20250929 |
-| Section | 4096 | claude-sonnet-4-5-20250929 |
+| Section (simple/framer) | 4096 | claude-sonnet-4-5-20250929 |
+| Section (complex GSAP/Lottie) | 6144 | claude-sonnet-4-5-20250929 |
+| Section (multi-pattern) | 8192 | claude-sonnet-4-5-20250929 |
 | Review | 4096 | claude-sonnet-4-5-20250929 |
+
+Section token budgets are dynamic — `animation-injector.js` calculates per-section based on pattern complexity, engine, and Lottie usage.
 
 ### Running the Pipeline
 
@@ -370,25 +381,28 @@ vercel --yes --prod             # Production deployment
 | Task | File(s) to Change |
 |------|-------------------|
 | Add new preset | `skills/presets/{name}.md` (copy from `_template.md`) |
-| Change section prompt | `orchestrate.py:400-436` (stage_sections prompt) |
-| Change scaffold prompt | `orchestrate.py:267-301` (stage_scaffold prompt) |
+| Change section prompt | `orchestrate.py:530-580` (stage_sections prompt) |
+| Change scaffold prompt | `orchestrate.py:268-302` (stage_scaffold prompt) |
 | Add new archetype | `skills/section-taxonomy.md` |
 | Add animation pattern | `skills/animation-patterns.md` |
-| Change token budget | `orchestrate.py:75-79` (MAX_TOKENS dict) |
+| Change token budget | `orchestrate.py:75-79` (MAX_TOKENS dict) + `animation-injector.js:234-252` (dynamic budgets) |
 | Change model | `orchestrate.py:69-73` (MODELS dict) |
-| Change Next.js version | `orchestrate.py:545` (deps dict in stage_deploy) |
-| Fix dependency resolution | `orchestrate.py:549-552` (engine deps in stage_deploy) |
+| Change Next.js version | `orchestrate.py:680` (deps dict in stage_deploy) |
+| Fix dependency resolution | `orchestrate.py:684-700` (engine deps in stage_deploy) |
+| Add animation pattern | `animation-injector.js:16-30` (ARCHETYPE_PATTERN_MAP) + `skills/animation-patterns.md` |
+| Add image category | `asset-injector.js:21-47` (URL/ALT category signals) + `asset-injector.js:53-68` (section map) |
 | Add extraction CSS properties | `scripts/quality/lib/extract-reference.js:73-76` |
 
 ---
 
 ## System Version
 
-**Current:** v0.4.1 (2026-02-09)
+**Current:** v0.5.0 (2026-02-09)
 
 ### Changelog
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.5.0 | 2026-02-09 | Data injection pipeline: animation injector, asset injector/downloader, engine-branched prompts, dynamic token budgets, dependency fix |
 | v0.4.1 | 2026-02-09 | Doc-sync integration into retrospective skill; CLAUDE.md, README.md, .cursorrules refresh |
 | v0.4.0 | 2026-02-09 | Animation extraction integration (detector, analyzer, preset injection) |
 | v0.3.0 | 2026-02-08 | URL clone mode (`--from-url`), auto-generated presets and briefs |

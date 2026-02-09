@@ -18,6 +18,8 @@ skills/                  → Design knowledge (READ ONLY during generation)
 templates/               → Prompt templates for each pipeline stage
   scaffold-prompt.md     → Stage 1: page specification from brief + preset
   section-prompt.md      → Stage 2: individual section component
+  section-instructions-framer.md → Framer Motion section instructions
+  section-instructions-gsap.md   → GSAP + ScrollTrigger section instructions
   assembly-checklist.md  → Stage 4: consistency verification
 briefs/                  → Client briefs (human or auto-generated)
 output/ (gitignored)     → ALL build output
@@ -29,7 +31,7 @@ output/ (gitignored)     → ALL build output
     page.tsx             → Assembled page
     site/                → Rendered Next.js project (--deploy flag)
 scripts/
-  orchestrate.py         → Main pipeline (6 stages, Python + Node.js hybrid)
+  orchestrate.py         → Main pipeline (6 stages + injection wiring, Python + Node.js hybrid)
   quality/               → URL extraction + validation tools
     url-to-preset.js     → URL → preset markdown
     url-to-brief.js      → URL → brief markdown
@@ -38,6 +40,9 @@ scripts/
       animation-detector.js → Animation library detection
       archetype-mapper.js   → Section → archetype mapping
       design-tokens.js      → CSS → design token collection
+      animation-injector.js → Per-section animation prompt builder
+      asset-injector.js     → Per-section asset prompt builder
+      asset-downloader.js   → Download + verify extracted assets
       section-context.js    → Per-section prompt context
 agents/                  → Agent role definitions for multi-agent mode
 plans/                   → Implementation plans (active + completed)
