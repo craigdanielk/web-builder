@@ -50,10 +50,13 @@ buttons:
 cards: 
 inputs: 
 
-animation_intensity: 
-entrance: 
-hover: 
-timing: 
+animation_engine:           # framer-motion or gsap
+animation_intensity:        # none, subtle, moderate, expressive
+entrance:
+hover:
+timing:
+smooth_scroll:              # false (native scroll — Lenis removed)
+section_overrides:          # hero:character-reveal stats:count-up map:marker-pulse
 
 visual_density: 
 image_treatment: 
@@ -69,8 +72,8 @@ Palette:
 Type: 
 Space: 
 Radius: 
-Motion: 
-Density:  | Images: 
+Motion: [intensity]/[engine] — entrance:[preset] hover:[preset] timing:[values] | [section-overrides]
+Density: [option] | Images: [treatment]
 ═══════════════════════
 ```
 

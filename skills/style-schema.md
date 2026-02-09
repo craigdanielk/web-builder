@@ -114,7 +114,18 @@ How much motion the site uses. More is not always better.
 | `moderate` | Staggered reveals, parallax | Scale + shadow + color | Orchestrated entrance | Button feedback, toggles |
 | `expressive` | Complex scroll sequences | Morphing, trails | Full choreography | Particle effects, cursors |
 
-**Framer Motion defaults per intensity:**
+#### Animation Engine
+
+Choose which animation library powers the site. This is a preset-level decision.
+
+| Engine | Dependencies | Best For | Scroll Awareness |
+|--------|-------------|----------|-----------------|
+| `framer-motion` | `framer-motion` | Simple sites, quick builds, subtle/moderate intensity | `whileInView` (basic) |
+| `gsap` | `gsap` | Advanced sites, expressive intensity, scroll-driven choreography | `ScrollTrigger` (full control) |
+
+**Rule of thumb:** Use `framer-motion` for `subtle` intensity. Use `gsap` for `moderate` or `expressive`.
+
+#### Framer Motion Defaults (engine: framer-motion)
 
 ```
 subtle:
@@ -136,6 +147,63 @@ expressive:
   parallax: true
 ```
 
+#### GSAP Defaults (engine: gsap)
+
+Reference `skills/animation-patterns.md` for full code snippets.
+
+```
+subtle:
+  patterns: fade-up-single
+  scroll-trigger: start "top 85%", once: true
+  hover: CSS transitions only
+  extras: none
+
+moderate:
+  patterns: fade-up-stagger, word-reveal, count-up, bounce-loop
+  scroll-trigger: start "top 80%", once: true
+  hover: lift + shadow (CSS) or icon-glow (GSAP)
+  extras: none
+
+expressive:
+  patterns: all of moderate + character-reveal, marker-pulse,
+            staggered-timeline, cursor-trail
+  scroll-trigger: start "top 75%", once: true
+  hover: icon-glow, morphing
+  extras: cursor-trail component
+```
+
+#### Section-Specific Pattern Overrides
+
+When using GSAP, specific section archetypes get specialized patterns
+(instead of the generic fade-up). See `skills/animation-patterns.md` for
+the Pattern-to-Archetype Map. Key overrides:
+
+- **HERO**: `character-reveal` or `word-reveal` + `staggered-timeline`
+- **STATS**: `count-up` per metric
+- **MAP/TRIALS**: `marker-pulse` on SVG points
+- **CTA**: `staggered-timeline` for heading → button sequence
+
+#### GSAP Boilerplate (canonical React pattern)
+
+```tsx
+"use client";
+import { useEffect, useRef } from "react";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+export default function SectionName() {
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger);
+    const ctx = gsap.context(() => {
+      // animations scoped to sectionRef
+    }, sectionRef);
+    return () => ctx.revert();
+  }, []);
+  return <section ref={sectionRef}>...</section>;
+}
+```
+
 ### 6. Visual Density
 
 How much content per viewport height.
@@ -150,14 +218,22 @@ How much content per viewport height.
 
 How imagery is presented across the site.
 
-| Option | Description | CSS/Tailwind |
-|--------|-------------|-------------|
-| `full-bleed` | Edge-to-edge images, no container | w-full, no rounded corners |
-| `contained` | Images within containers with radius | rounded-xl, max-w-*, shadow |
-| `duotone` | Filtered to two-tone color treatment | mix-blend-mode, filters |
-| `illustrated` | Vector illustrations, icons, no photos | SVG-based |
-| `gradient` | Abstract gradient backgrounds, no photos | bg-gradient-to-* |
-| `text-only` | No imagery, typography-driven | — |
+| Option | Description | CSS/Tailwind | When to Use |
+|--------|-------------|-------------|-------------|
+| `reference` | Actual images from source website | backgroundImage with URL | When image manifest exists |
+| `full-bleed` | Edge-to-edge images, no container | w-full, no rounded corners | Hero, CTA backgrounds |
+| `contained` | Images within containers with radius | rounded-xl, max-w-*, shadow | Product cards, about sections |
+| `duotone` | Filtered to two-tone color treatment | mix-blend-mode, filters | Brand-heavy designs |
+| `illustrated` | Vector illustrations, icons, no photos | SVG-based | Tech, SaaS products |
+| `gradient` | Abstract gradient backgrounds, no photos | bg-gradient-to-* | Fallback when no images |
+| `text-only` | No imagery, typography-driven | — | Minimal/editorial sites |
+
+**Image Rendering Standard:**
+- PRIMARY: CSS `backgroundImage` on divs with `role="img"` + `aria-label`
+- SECONDARY: `<img>` tags ONLY for logos, icons, or content images
+- FALLBACK: Gradients when no reference images available
+- NEVER: Generic placeholder services (`/api/placeholder`, `placehold.co`)
+- See `skills/components/image-patterns.md` for standard rendering patterns
 
 ---
 
@@ -173,7 +249,7 @@ Palette: [temperature] — bg:[token] text:[token] accent:[token] border:[token]
 Type: [pairing] — heading:[font,weight] body:[font,weight] scale:[ratio]
 Space: [whitespace] — sections:[padding] internal:[gap]
 Radius: [option] — buttons:[value] cards:[value] inputs:[value]
-Motion: [intensity] — entrance:[preset] hover:[preset] timing:[values]
+Motion: [intensity]/[engine] — entrance:[preset] hover:[preset] timing:[values] | [section-overrides]
 Density: [option] | Images: [treatment]
 ═══════════════════════
 ```
@@ -185,7 +261,7 @@ Palette: warm-earth — bg:stone-50/white text:stone-900 accent:amber-700 border
 Type: serif-sans — heading:DM Serif Display,700 body:DM Sans,400 scale:1.333
 Space: generous — sections:py-24 internal:gap-8
 Radius: medium — buttons:rounded-lg cards:rounded-xl inputs:rounded-lg
-Motion: moderate — entrance:fade-up-stagger hover:lift-shadow timing:0.6s ease-out
+Motion: moderate/gsap — entrance:fade-up-stagger hover:lift-shadow timing:0.6s ease-out | hero:word-reveal stats:count-up
 Density: low | Images: full-bleed
 ═══════════════════════
 ```
@@ -213,3 +289,5 @@ Not all combinations work equally well. These are tested pairings:
 | Date | Change | Source |
 |------|--------|--------|
 | 2026-02-08 | Initial schema created | — |
+| 2026-02-08 | Added GSAP animation engine, section-specific overrides, boilerplate pattern | farm-minerals-promo rebuild |
+| 2026-02-09 | Added `reference` image treatment option, image rendering standard | bluebird-coffee-roastery planning |

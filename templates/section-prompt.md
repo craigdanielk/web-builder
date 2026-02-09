@@ -22,6 +22,12 @@ Content Direction: {CONTENT_DIRECTION}
 ## Structural Reference
 {SECTION_STRUCTURE_FROM_TAXONOMY}
 
+## Reference Section Context (optional — from URL extraction)
+{REFERENCE_SECTION_CONTEXT}
+
+## Reference Images (optional — from image manifest)
+{REFERENCE_IMAGES}
+
 ## Instructions
 
 Generate a complete, self-contained React component for this section.
@@ -31,18 +37,40 @@ Requirements:
 2. Use ONLY the colors, fonts, spacing, radius, and animation values from
    the STYLE CONTEXT header above. Do not introduce any values not specified.
 3. The component must be self-contained — no external dependencies beyond:
-   - React
-   - Framer Motion (import { motion } from "framer-motion")
+   - React (useState, useEffect, useRef)
+   - Animation library (see rule 8 below)
    - Tailwind CSS classes
 4. Use semantic HTML elements (section, nav, article, etc.)
 5. Include responsive design: mobile-first, with sm/md/lg breakpoints
-6. Placeholder images should use descriptive alt text and a neutral
-   placeholder (e.g., /api/placeholder/800/600 or a gradient div)
+6. Images: If Reference Images are provided above, use those actual URLs.
+   Render with CSS `backgroundImage` on divs — NOT `<img>` tags (except logos).
+   Always include `role="img"` and `aria-label` for accessibility.
+   Use `backgroundSize: 'cover'` and `backgroundPosition: 'center'`.
+   If NO Reference Images provided, use gradient placeholders instead.
+   NEVER use placeholder services like /api/placeholder.
 7. All text content should be realistic for the client — not lorem ipsum
-8. Animation should match the intensity specified in the style header:
-   - Use Framer Motion's `motion` components
-   - Implement scroll-triggered animations with `whileInView`
-   - Apply the entrance, hover, and timing values from the header
+8. Animation must match the engine and intensity from the style header.
+   Check the Motion line in the STYLE CONTEXT:
+
+   **If engine is `framer-motion` (e.g., Motion: moderate/framer-motion):**
+   - Import { motion } from "framer-motion"
+   - Use `whileInView` for scroll-triggered animations
+   - Apply entrance, hover, and timing values from the header
+
+   **If engine is `gsap` (e.g., Motion: moderate/gsap):**
+   - Import { gsap } from "gsap" and { ScrollTrigger } from "gsap/ScrollTrigger"
+   - Use useEffect + useRef + gsap.context() for all animations
+   - Register plugin inside useEffect: gsap.registerPlugin(ScrollTrigger)
+   - Use ScrollTrigger with start: "top 80%", once: true
+   - Apply section-specific animation overrides from the header pipe (|)
+   - Reference pattern names from skills/animation-patterns.md:
+     * HERO sections → character-reveal or word-reveal + staggered-timeline
+     * STATS sections → count-up per metric
+     * FEATURES → fade-up-stagger + icon-glow on hover
+     * MAP/TRIALS → marker-pulse on SVG points
+     * CTA → staggered-timeline for heading → button
+     * All other sections → fade-up-stagger (default)
+   - Always return ctx.revert() in useEffect cleanup
 
 Output ONLY the component code. No explanation, no markdown wrapping.
 Export the component as default.
@@ -62,6 +90,8 @@ Example: Section01Hero, Section02About, Section03Features
 - `{VARIANT}` → Selected variant
 - `{CONTENT_DIRECTION}` → The content direction from the scaffold
 - `{SECTION_STRUCTURE_FROM_TAXONOMY}` → The structural description from section-taxonomy.md. If the entry is empty (not yet populated), omit this block — Claude will infer the structure from the archetype name and variant.
+- `{REFERENCE_SECTION_CONTEXT}` → (Optional) Per-section context from URL extraction. Only present when using `--from-url` mode. Contains layout details, element structure, text content, and visual characteristics from the reference site. When absent, omit the entire Reference Section Context block.
+- `{REFERENCE_IMAGES}` → (Optional) Image URLs from the image manifest relevant to this section's archetype. Formatted as a numbered list with URL, alt text, and size. When absent or empty, omit the entire Reference Images block — the section will use gradient fallbacks. See `skills/image-extraction.md` for the section-to-category mapping that determines which images are assigned to which sections.
 
 ---
 
@@ -75,6 +105,8 @@ Every generated section must:
 - [ ] Include the specified animation behavior
 - [ ] Be responsive across mobile/tablet/desktop
 - [ ] Use realistic content appropriate to the client
+- [ ] Use reference image URLs if provided, gradient fallbacks if not
+- [ ] Include `role="img"` and `aria-label` on all image divs
 - [ ] Export as a default React component
 - [ ] Be renderable independently (no missing imports or dependencies)
 

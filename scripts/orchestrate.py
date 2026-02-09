@@ -9,11 +9,17 @@ Automates the multi-pass generation workflow:
   4. Assemble into complete page
   5. Run consistency review
 
+URL Clone Mode (--from-url):
+  0. Extract visual data from URL → auto-generate preset + brief
+  1-5. Normal pipeline with per-section reference context
+
 Usage:
   python scripts/orchestrate.py <project-name> [--preset <preset-name>] [--no-pause]
+  python scripts/orchestrate.py <project-name> --from-url <url> [--no-pause]
 
 Requirements:
   pip install anthropic --break-system-packages
+  (URL mode also requires: cd scripts/quality && npm install && npx playwright install chromium)
 """
 
 import os
@@ -21,6 +27,7 @@ import sys
 import json
 import argparse
 import re
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
@@ -39,6 +46,23 @@ SKILLS_DIR = ROOT / "skills"
 TEMPLATES_DIR = ROOT / "templates"
 BRIEFS_DIR = ROOT / "briefs"
 OUTPUT_DIR = ROOT / "output"
+
+def load_env_file():
+    """Load simple KEY=VALUE pairs from .env into os.environ if not already set."""
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+load_env_file()
 
 # Model selection per pipeline stage
 MODELS = {
@@ -97,6 +121,108 @@ def call_claude(prompt: str, stage: str) -> str:
         block.text for block in message.content if block.type == "text"
     ]
     return "\n".join(text_parts)
+
+
+QUALITY_DIR = ROOT / "scripts" / "quality"
+SITE_DIR_NAME = "site"  # Rendered Next.js project lives at output/{project}/site/
+
+
+# --- URL Extraction Stage ---
+
+def stage_url_extract(url: str, project_name: str) -> tuple[str, str, dict]:
+    """
+    Stage 0: Extract from URL and generate preset + brief.
+    Returns (preset_name, brief_content, section_contexts).
+    """
+    print("\n🌐 Stage 0: Extracting from URL...")
+    print(f"  URL: {url}")
+
+    node = "node"  # Assumes node is on PATH
+
+    # Step 0a: Run url-to-preset.js → generates preset and extraction data
+    print("\n  [0a] Generating preset from URL...")
+    preset_name = project_name
+    preset_script = QUALITY_DIR / "url-to-preset.js"
+    result = subprocess.run(
+        [node, str(preset_script), url, preset_name],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+        timeout=300,
+    )
+    if result.returncode != 0:
+        print(f"  Error in url-to-preset.js:")
+        print(result.stderr[-1000:] if result.stderr else "(no stderr)")
+        sys.exit(1)
+    print(result.stdout)
+
+    # Verify preset was created
+    preset_path = SKILLS_DIR / "presets" / f"{preset_name}.md"
+    if not preset_path.exists():
+        print(f"  Error: Preset not generated at {preset_path}")
+        sys.exit(1)
+    print(f"  ✓ Preset saved: {preset_path.relative_to(ROOT)}")
+
+    # Step 0b: Run url-to-brief.js → generates brief (reuses extraction data)
+    print("\n  [0b] Generating brief from URL...")
+    extraction_dir = OUTPUT_DIR / "extractions" / project_name
+    brief_script = QUALITY_DIR / "url-to-brief.js"
+    result = subprocess.run(
+        [node, str(brief_script), url, project_name,
+         "--extraction-dir", str(extraction_dir)],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+        timeout=120,
+    )
+    if result.returncode != 0:
+        print(f"  Error in url-to-brief.js:")
+        print(result.stderr[-1000:] if result.stderr else "(no stderr)")
+        sys.exit(1)
+    print(result.stdout)
+
+    # Load the generated brief
+    brief_path = BRIEFS_DIR / f"{project_name}.md"
+    if not brief_path.exists():
+        print(f"  Error: Brief not generated at {brief_path}")
+        sys.exit(1)
+    brief_content = read_file(brief_path)
+    print(f"  ✓ Brief saved: {brief_path.relative_to(ROOT)}")
+
+    # Step 0c: Load section contexts for per-section injection
+    print("\n  [0c] Loading section context data...")
+    section_contexts = {}
+    extraction_data_path = extraction_dir / "extraction-data.json"
+    mapped_sections_path = extraction_dir / "mapped-sections.json"
+
+    if extraction_data_path.exists() and mapped_sections_path.exists():
+        # Generate section contexts using the Node.js module
+        context_script = f"""
+const {{ buildAllSectionContexts }} = require('./lib/section-context');
+const extractionData = require('{extraction_data_path}');
+const mappedSections = require('{mapped_sections_path}');
+const contexts = buildAllSectionContexts(extractionData, mappedSections);
+console.log(JSON.stringify(contexts));
+"""
+        result = subprocess.run(
+            [node, "-e", context_script],
+            capture_output=True,
+            text=True,
+            cwd=str(QUALITY_DIR),
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            try:
+                section_contexts = json.loads(result.stdout.strip())
+                print(f"  ✓ Loaded context for {len(section_contexts)} sections")
+            except json.JSONDecodeError:
+                print("  ⚠ Could not parse section contexts, continuing without them")
+        else:
+            print("  ⚠ Could not generate section contexts, continuing without them")
+    else:
+        print("  ⚠ Extraction data not found, continuing without section contexts")
+
+    return preset_name, brief_content, section_contexts
 
 
 # --- Pipeline Stages ---
@@ -226,9 +352,12 @@ def stage_sections(
     sections: list[dict],
     preset: str,
     project_name: str,
+    section_contexts: dict | None = None,
 ) -> list[Path]:
     """Stage 2: Generate each section component individually."""
     print(f"\n🔨 Stage 2: Generating {len(sections)} sections...")
+    if section_contexts:
+        print(f"  (with per-section reference context from URL extraction)")
 
     preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
     style_header = extract_style_header(preset_content)
@@ -258,6 +387,11 @@ def stage_sections(
             if struct_match and "populate on first use" not in struct_match.group(1).lower():
                 structure_ref = struct_match.group(1).strip()
 
+        # Build optional reference context block
+        ref_context_block = ""
+        if section_contexts and str(i) in section_contexts:
+            ref_context_block = f"\n{section_contexts[str(i)]}\n"
+
         prompt = f"""You are a senior frontend developer generating a single website section
 as a React + Tailwind CSS + Framer Motion component.
 
@@ -271,7 +405,7 @@ Content Direction: {section['content']}
 
 ## Structural Reference
 {structure_ref}
-
+{ref_context_block}
 ## Instructions
 
 Generate a complete, self-contained React component for this section.
@@ -301,6 +435,26 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
         # Clean up any markdown code fences that might have snuck in
         code = re.sub(r"^```\w*\n?", "", code)
         code = re.sub(r"\n?```$", "", code)
+
+        # Post-process: ensure "use client" directive for components using
+        # framer-motion or React hooks (adapted from aurelix-mvp generate.js)
+        client_markers = [
+            "framer-motion", "motion.", "useState", "useEffect",
+            "useRef", "useCallback", "useMemo",
+        ]
+        needs_client = any(marker in code for marker in client_markers)
+        has_client = code.startswith('"use client"') or code.startswith("'use client'")
+        if needs_client and not has_client:
+            code = '"use client";\n\n' + code
+
+        # Ensure default export exists
+        if "export default" not in code:
+            component_name = f"Section{num}{section['archetype'].replace('-', '')}"
+            named_fn_pat = rf"export\s+function\s+{re.escape(component_name)}\b"
+            if re.search(named_fn_pat, code):
+                code = re.sub(named_fn_pat, f"export default function {component_name}", code)
+            else:
+                code += f"\n\nexport default {component_name};\n"
 
         filepath = OUTPUT_DIR / project_name / "sections" / filename
         write_file(filepath, code)
@@ -336,6 +490,263 @@ export default function Page() {{
 '''
 
     write_file(OUTPUT_DIR / project_name / "page.tsx", page_code)
+
+
+def detect_animation_engine(preset_content: str) -> str:
+    """Detect animation engine from preset's Motion line. Returns 'gsap' or 'framer-motion'."""
+    match = re.search(r"Motion:.*?/(gsap|framer-motion)", preset_content)
+    return match.group(1) if match else "framer-motion"
+
+
+def parse_fonts(preset_content: str) -> dict:
+    """Extract heading and body font names from preset's Type line."""
+    match = re.search(r"heading:([^,]+),", preset_content)
+    heading = match.group(1).strip() if match else "Inter"
+    match = re.search(r"body:([^,]+),", preset_content)
+    body = match.group(1).strip() if match else "Inter"
+    return {"heading": heading, "body": body}
+
+
+def font_import_name(font_name: str) -> str:
+    """Convert a font display name to its next/font/google import name."""
+    return font_name.replace(" ", "_")
+
+
+def stage_deploy(
+    sections: list[dict],
+    section_files: list[Path],
+    preset: str,
+    project_name: str,
+):
+    """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/."""
+    print("\n🚀 Stage 5: Deploying to Next.js project...")
+
+    preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
+    engine = detect_animation_engine(preset_content)
+    fonts = parse_fonts(preset_content)
+    style_header = extract_style_header(preset_content)
+
+    site_dir = OUTPUT_DIR / project_name / SITE_DIR_NAME
+    src_dir = site_dir / "src"
+    app_dir = src_dir / "app"
+    comp_dir = src_dir / "components" / "sections"
+
+    # ── Scaffold Next.js project if it doesn't exist ──
+    if not (site_dir / "package.json").exists():
+        print("  Creating Next.js project structure...")
+
+        # package.json
+        deps = {
+            "next": "16.1.6",
+            "react": "19.2.3",
+            "react-dom": "19.2.3",
+        }
+        if engine == "gsap":
+            deps["gsap"] = "^3.14.2"
+        else:
+            deps["framer-motion"] = "^12.33.0"
+
+        pkg = {
+            "name": project_name,
+            "version": "0.1.0",
+            "private": True,
+            "scripts": {
+                "dev": "next dev --webpack",
+                "build": "next build",
+                "start": "next start",
+                "lint": "eslint",
+            },
+            "dependencies": deps,
+            "devDependencies": {
+                "@tailwindcss/postcss": "^4",
+                "@types/node": "^20",
+                "@types/react": "^19",
+                "@types/react-dom": "^19",
+                "eslint": "^9",
+                "eslint-config-next": "16.1.6",
+                "tailwindcss": "^4",
+                "typescript": "^5",
+            },
+        }
+        write_file(site_dir / "package.json", json.dumps(pkg, indent=2) + "\n")
+
+        # tsconfig.json
+        tsconfig = {
+            "compilerOptions": {
+                "target": "ES2017",
+                "lib": ["dom", "dom.iterable", "esnext"],
+                "allowJs": True,
+                "skipLibCheck": True,
+                "strict": True,
+                "noEmit": True,
+                "esModuleInterop": True,
+                "module": "esnext",
+                "moduleResolution": "bundler",
+                "resolveJsonModule": True,
+                "isolatedModules": True,
+                "jsx": "preserve",
+                "incremental": True,
+                "plugins": [{"name": "next"}],
+                "paths": {"@/*": ["./src/*"]},
+            },
+            "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+            "exclude": ["node_modules"],
+        }
+        write_file(site_dir / "tsconfig.json", json.dumps(tsconfig, indent=2) + "\n")
+
+        # next.config.ts
+        write_file(
+            site_dir / "next.config.ts",
+            'import type { NextConfig } from "next";\n\n'
+            "const nextConfig: NextConfig = {};\n\n"
+            "export default nextConfig;\n",
+        )
+
+        # postcss.config.mjs
+        write_file(
+            site_dir / "postcss.config.mjs",
+            "const config = {\n"
+            '  plugins: {\n    "@tailwindcss/postcss": {},\n  },\n'
+            "};\n\nexport default config;\n",
+        )
+
+        # eslint.config.mjs
+        write_file(
+            site_dir / "eslint.config.mjs",
+            'import { dirname } from "path";\n'
+            'import { fileURLToPath } from "url";\n'
+            'import { FlatCompat } from "@eslint/eslintrc";\n\n'
+            "const __filename = fileURLToPath(import.meta.url);\n"
+            "const __dirname = dirname(__filename);\n\n"
+            "const compat = new FlatCompat({ baseDirectory: __dirname });\n\n"
+            'const eslintConfig = [...compat.extends("next/core-web-vitals")];\n\n'
+            "export default eslintConfig;\n",
+        )
+
+        # .gitignore for the site
+        write_file(
+            site_dir / ".gitignore",
+            "node_modules/\n.next/\n*.tsbuildinfo\nnext-env.d.ts\n",
+        )
+
+    # ── Generate globals.css ──
+    print("  Generating globals.css...")
+    css_lines = [
+        '@import "tailwindcss";',
+        "",
+        ":root { --background: #fafaf9; --foreground: #1c1917; }",
+        "body {",
+        "  background: var(--background);",
+        "  color: var(--foreground);",
+        f'  font-family: "{fonts["body"]}", sans-serif;',
+        "  -webkit-font-smoothing: antialiased;",
+        "  -moz-osx-font-smoothing: grayscale;",
+        "}",
+    ]
+    if engine == "gsap":
+        css_lines += [
+            "",
+            "html { scroll-behavior: smooth; }",
+            "",
+            "::-webkit-scrollbar { width: 4px; }",
+            "::-webkit-scrollbar-track { background: transparent; }",
+            "::-webkit-scrollbar-thumb { background: #78716c; border-radius: 2px; }",
+            "",
+            "::selection { background: #78716c; color: #ffffff; }",
+            "",
+            "@keyframes marquee {",
+            "  0% { transform: translateX(0); }",
+            "  100% { transform: translateX(-50%); }",
+            "}",
+        ]
+    write_file(app_dir / "globals.css", "\n".join(css_lines) + "\n")
+
+    # ── Generate layout.tsx ──
+    print("  Generating layout.tsx...")
+    heading_import = font_import_name(fonts["heading"])
+    body_import = font_import_name(fonts["body"])
+
+    layout_imports = [
+        'import type { Metadata } from "next";',
+        f'import {{ {heading_import}, {body_import} }} from "next/font/google";',
+        'import "./globals.css";',
+    ]
+    # Build font config lines
+    heading_weights = '"400"'
+    body_weights = '["400", "500", "700"]'
+    # Try to extract weight from preset
+    h_weight_match = re.search(r"heading:[^,]+,(\d+)", preset_content)
+    if h_weight_match:
+        heading_weights = f'"{h_weight_match.group(1)}"'
+
+    layout_code = f"""{chr(10).join(layout_imports)}
+
+const {heading_import.lower()} = {heading_import}({{ subsets: ["latin"], weight: {heading_weights} }});
+const {body_import.lower()} = {body_import}({{ subsets: ["latin"], weight: {body_weights} }});
+
+export const metadata: Metadata = {{
+  title: "{project_name.replace('-', ' ').title()}",
+  description: "Built with web-builder pipeline",
+}};
+
+export default function RootLayout({{ children }}: {{ children: React.ReactNode }}) {{
+  return (
+    <html lang="en">
+      <body className="antialiased">
+        {{children}}
+      </body>
+    </html>
+  );
+}}
+"""
+    write_file(app_dir / "layout.tsx", layout_code)
+
+    # ── Copy sections ──
+    print("  Copying sections...")
+    comp_dir.mkdir(parents=True, exist_ok=True)
+    for filepath in section_files:
+        code = read_file(filepath)
+        write_file(comp_dir / filepath.name, code)
+
+    # ── Generate page.tsx ──
+    print("  Generating page.tsx...")
+    imports = []
+    components = []
+    for i, (section, filepath) in enumerate(zip(sections, section_files)):
+        num = f"{i + 1:02d}"
+        component_name = f"Section{num}{section['archetype'].replace('-', '')}"
+        rel = f"@/components/sections/{filepath.name.replace('.tsx', '')}"
+        imports.append(f'import {component_name} from "{rel}";')
+        components.append(f"      <{component_name} />")
+
+    page_code = f"""{chr(10).join(imports)}
+
+export default function Page() {{
+  return (
+    <main className="min-h-screen">
+{chr(10).join(components)}
+    </main>
+  );
+}}
+"""
+    write_file(app_dir / "page.tsx", page_code)
+
+    # ── Install dependencies ──
+    print("  Installing dependencies (npm install)...")
+    result = subprocess.run(
+        ["npm", "install"],
+        capture_output=True,
+        text=True,
+        cwd=str(site_dir),
+        timeout=120,
+    )
+    if result.returncode != 0:
+        print(f"  ⚠ npm install had issues:\n{result.stderr[-500:]}")
+    else:
+        print("  ✓ Dependencies installed")
+
+    print(f"  ✓ Site deployed to output/{project_name}/site/")
+    print(f"  Run: cd output/{project_name}/site && npm run dev")
 
 
 def stage_review(sections: list[dict], section_files: list[Path], preset: str, project_name: str):
@@ -417,44 +828,72 @@ def main():
     parser.add_argument("project", help="Project name (must match a brief in briefs/)")
     parser.add_argument("--preset", help="Override preset selection", default=None)
     parser.add_argument("--no-pause", action="store_true", help="Skip scaffold review checkpoint")
-    parser.add_argument("--skip-to", choices=["sections", "assemble", "review"],
+    parser.add_argument("--skip-to", choices=["sections", "assemble", "review", "deploy"],
                         help="Skip to a specific stage (uses existing scaffold)")
+    parser.add_argument("--deploy", action="store_true",
+                        help="Also deploy to a runnable Next.js project at output/{project}/site/")
+    parser.add_argument("--from-url", help="Clone mode: extract from URL, auto-generate preset + brief",
+                        default=None, metavar="URL")
 
     args = parser.parse_args()
 
-    # Validate
-    brief_path = BRIEFS_DIR / f"{args.project}.md"
-    if not brief_path.exists():
-        print(f"Error: No brief found at {brief_path}")
-        print(f"Available briefs: {[f.stem for f in BRIEFS_DIR.glob('*.md') if f.stem != '_template']}")
-        sys.exit(1)
+    section_contexts = None  # Only populated in URL clone mode
 
-    brief = read_file(brief_path)
+    # ── URL Clone Mode ──────────────────────────────────────────────
+    if args.from_url:
+        print(f"\n{'═' * 60}")
+        print(f"  Website Builder — URL Clone Mode")
+        print(f"  Project: {args.project}")
+        print(f"  Source:  {args.from_url}")
+        print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        print(f"{'═' * 60}")
 
-    # Determine preset
-    preset = args.preset
-    if not preset:
-        available = list_presets()
-        if len(available) == 1:
-            preset = available[0]
-            print(f"Using only available preset: {preset}")
-        else:
-            print(f"Available presets: {', '.join(available)}")
-            preset = input("Select preset: ").strip()
+        preset, brief, section_contexts = stage_url_extract(
+            args.from_url, args.project
+        )
 
-    preset_path = SKILLS_DIR / "presets" / f"{preset}.md"
-    if not preset_path.exists():
-        print(f"Error: Preset not found: {preset_path}")
-        sys.exit(1)
+        print(f"\n{'═' * 60}")
+        print(f"  Stage 0 complete — switching to standard pipeline")
+        print(f"  Preset:  {preset}")
+        print(f"  Brief:   briefs/{args.project}.md")
+        print(f"  Context: {len(section_contexts)} section(s)")
+        print(f"{'═' * 60}")
 
-    print(f"\n{'═' * 60}")
-    print(f"  Website Builder Pipeline")
-    print(f"  Project: {args.project}")
-    print(f"  Preset:  {preset}")
-    print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print(f"{'═' * 60}")
+    # ── Standard Mode ───────────────────────────────────────────────
+    else:
+        # Validate brief exists
+        brief_path = BRIEFS_DIR / f"{args.project}.md"
+        if not brief_path.exists():
+            print(f"Error: No brief found at {brief_path}")
+            print(f"Available briefs: {[f.stem for f in BRIEFS_DIR.glob('*.md') if f.stem != '_template']}")
+            sys.exit(1)
 
-    # Run pipeline
+        brief = read_file(brief_path)
+
+        # Determine preset
+        preset = args.preset
+        if not preset:
+            available = list_presets()
+            if len(available) == 1:
+                preset = available[0]
+                print(f"Using only available preset: {preset}")
+            else:
+                print(f"Available presets: {', '.join(available)}")
+                preset = input("Select preset: ").strip()
+
+        preset_path = SKILLS_DIR / "presets" / f"{preset}.md"
+        if not preset_path.exists():
+            print(f"Error: Preset not found: {preset_path}")
+            sys.exit(1)
+
+        print(f"\n{'═' * 60}")
+        print(f"  Website Builder Pipeline")
+        print(f"  Project: {args.project}")
+        print(f"  Preset:  {preset}")
+        print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        print(f"{'═' * 60}")
+
+    # ── Common Pipeline ─────────────────────────────────────────────
     if args.skip_to:
         scaffold_path = OUTPUT_DIR / args.project / "scaffold.md"
         if not scaffold_path.exists():
@@ -473,7 +912,7 @@ def main():
     print(f"\n  Parsed {len(sections)} sections from scaffold")
 
     if args.skip_to in (None, "sections"):
-        section_files = stage_sections(sections, preset, args.project)
+        section_files = stage_sections(sections, preset, args.project, section_contexts)
     else:
         section_dir = OUTPUT_DIR / args.project / "sections"
         section_files = sorted(section_dir.glob("*.tsx"))
@@ -484,9 +923,18 @@ def main():
     if args.skip_to in (None, "sections", "assemble", "review"):
         stage_review(sections, section_files, preset, args.project)
 
+    if args.deploy or args.skip_to == "deploy":
+        stage_deploy(sections, section_files, preset, args.project)
+
+    mode_label = "URL Clone" if args.from_url else "Pipeline"
     print(f"\n{'═' * 60}")
-    print(f"  ✅ Pipeline complete")
+    print(f"  ✅ {mode_label} complete")
     print(f"  Output: output/{args.project}/")
+    if args.deploy or args.skip_to == "deploy":
+        print(f"  Site:   output/{args.project}/site/")
+    if args.from_url:
+        print(f"  Preset: skills/presets/{preset}.md")
+        print(f"  Brief:  briefs/{args.project}.md")
     print(f"{'═' * 60}\n")
 
 

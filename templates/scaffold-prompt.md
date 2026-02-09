@@ -35,15 +35,25 @@ Output format — a numbered section list:
 Page: {project name}
 Preset: {preset used}
 Style: {key style descriptors from preset}
+Animation Engine: {framer-motion or gsap}
 
-1. {ARCHETYPE} | {variant} | {content direction for this section}
-2. {ARCHETYPE} | {variant} | {content direction for this section}
+1. {ARCHETYPE} | {variant} | {animation pattern} | {content direction for this section}
+2. {ARCHETYPE} | {variant} | {animation pattern} | {content direction for this section}
 ...
 ```
 
-For each section's content direction, write 1-2 sentences describing:
-- What specific content goes here (not generic, specific to THIS client)
-- Any notable layout considerations
+For each section:
+- **Animation pattern**: Reference a named pattern from skills/animation-patterns.md.
+  Use the Pattern-to-Archetype Map as the default, then override if the brief
+  or section content suggests something different. Examples:
+  * HERO → character-reveal, word-reveal, or staggered-timeline
+  * STATS → count-up
+  * FEATURES → fade-up-stagger
+  * MAP → marker-pulse
+  * Most sections → fade-up-stagger (safe default)
+- **Content direction**: Write 1-2 sentences describing:
+  * What specific content goes here (not generic, specific to THIS client)
+  * Any notable layout considerations
 
 Do NOT generate any code. This is a specification only.
 ```
@@ -64,7 +74,7 @@ A clean numbered list that can be parsed by the section generation step.
 Each line must follow the format:
 
 ```
-N. ARCHETYPE | variant | content direction
+N. ARCHETYPE | variant | animation pattern | content direction
 ```
 
 This output gets saved to `output/{project}/scaffold.md` and becomes the

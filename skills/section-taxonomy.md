@@ -20,6 +20,7 @@ are intentional — they get filled the first time you generate that section typ
 - `hamburger-only` — Mobile-first, icon toggle on all screens
 - `centered-logo` — Logo centered, links split left/right
 
+**Animation:** CSS transitions only (bg opacity, text color on scroll). No GSAP needed.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -31,6 +32,7 @@ are intentional — they get filled the first time you generate that section typ
 - `countdown` — With timer element
 - `scrolling` — Marquee-style rotating messages
 
+**Animation:** CSS only. Slide-down entrance on page load, marquee via CSS `@keyframes` for `scrolling` variant. No GSAP needed.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -42,6 +44,7 @@ are intentional — they get filled the first time you generate that section typ
 - `newsletter-focused` — Newsletter CTA as primary element
 - `split` — Two-column with CTA on one side
 
+**Animation:** `fade-up-single` — lightweight, single entrance on scroll.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -61,6 +64,7 @@ are intentional — they get filled the first time you generate that section typ
 - `editorial` — Magazine-style with asymmetric layout, mixed media
 - `product-hero` — Product image dominant with supporting text
 
+**Animation:** `character-reveal` or `word-reveal` on headline + `staggered-timeline` for subtitle → body → CTA. Add `bounce-loop` on scroll indicator chevron.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -75,6 +79,7 @@ are intentional — they get filled the first time you generate that section typ
 - `scrolling-marquee` — Infinite horizontal scroll
 - `with-stats` — Logos plus key metrics (users, revenue, etc.)
 
+**Animation:** `fade-up-stagger` on logo grid. CSS `@keyframes` for `scrolling-marquee` variant. Add `count-up` if `with-stats` variant.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -87,6 +92,7 @@ are intentional — they get filled the first time you generate that section typ
 - `video` — Video testimonials with play buttons
 - `wall` — Many short quotes in masonry layout
 
+**Animation:** `fade-up-stagger` on cards/quotes. `word-reveal` on featured quote text for `single-featured` variant.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -98,6 +104,7 @@ are intentional — they get filled the first time you generate that section typ
 - `inline-bar` — Horizontal strip of stats
 - `infographic` — Visual/illustrated data presentation
 
+**Animation:** `count-up` per metric (proxy object + onUpdate). `fade-up-stagger` on container elements. Supports prefix/suffix/decimals.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -108,6 +115,7 @@ are intentional — they get filled the first time you generate that section typ
 - `certification-logos` — Formal cert logos with labels
 - `guarantee-block` — Money-back or satisfaction guarantee
 
+**Animation:** `fade-up-stagger` on badges. Optional `icon-glow` on hover for interactive variants.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -125,6 +133,7 @@ are intentional — they get filled the first time you generate that section typ
 - `accordion` — Expandable feature descriptions
 - `cards-with-hover` — Cards that reveal detail on hover
 
+**Animation:** `fade-up-stagger` on cards/rows. Add `icon-glow` on hover for icon-based variants. CSS `hover:scale-105 hover:shadow` for cards.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -136,6 +145,7 @@ are intentional — they get filled the first time you generate that section typ
 - `animated-sequence` — Steps reveal sequentially on scroll
 - `icon-steps` — Icon + title + description per step
 
+**Animation:** `staggered-timeline` for sequential step reveals. `path-draw` on connecting lines between steps for `horizontal-timeline` variant.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -146,6 +156,7 @@ are intentional — they get filled the first time you generate that section typ
 - `before-after-slider` — Draggable slider between two images
 - `checkmark-grid` — Feature list with check/cross per competitor
 
+**Animation:** `fade-up-stagger` on table rows or grid items. `line-reveal` on comparison headings.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -162,6 +173,7 @@ are intentional — they get filled the first time you generate that section typ
 - `comparison-table` — Feature comparison across all tiers
 - `single-product` — One product with quantity/options
 
+**Animation:** `fade-up-stagger` on pricing cards. CSS `hover:scale-105 hover:shadow-xl` on cards. `count-up` on price values for toggle transitions.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -173,6 +185,7 @@ are intentional — they get filled the first time you generate that section typ
 - `floating-bar` — Sticky bottom bar with CTA
 - `gradient-block` — Full-width gradient background with CTA
 
+**Animation:** `staggered-timeline` for heading → subtitle → button sequence. `bounce-loop` on scroll indicator if present.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -183,6 +196,7 @@ are intentional — they get filled the first time you generate that section typ
 - `split` — Two-column with value prop + form
 - `minimal` — Just an input field and submit
 
+**Animation:** `fade-up-single` on the form block. CSS transitions on input focus states.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -198,6 +212,7 @@ are intentional — they get filled the first time you generate that section typ
 - `team-story` — Narrative with team photos woven in
 - `values-grid` — Mission/vision/values in card layout
 
+**Animation:** `word-reveal` on heading. `fade-up-single` on body text. `fade-up-stagger` on `values-grid` cards. `path-draw` on `timeline` connecting lines.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -209,6 +224,7 @@ are intentional — they get filled the first time you generate that section typ
 - `minimal-list` — Name + role + photo, compact
 - `featured-leadership` — Large cards for leads, small for team
 
+**Animation:** `fade-up-stagger` on team cards. CSS `hover:scale-105` + overlay reveal for `grid-with-hover` variant.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -220,6 +236,7 @@ are intentional — they get filled the first time you generate that section typ
 - `categorized` — Grouped by topic with tabs or headers
 - `searchable` — With search/filter input
 
+**Animation:** `fade-up-stagger` on question items. CSS transitions on accordion expand/collapse (height + opacity). No GSAP needed for accordion motion.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -235,6 +252,7 @@ are intentional — they get filled the first time you generate that section typ
 - `hover-cards` — Cards with hover-reveal additional info
 - `category-grid` — Grouped by category with headers
 
+**Animation:** `fade-up-stagger` on product cards. CSS `hover:scale-105 hover:shadow-lg` on cards. `staggered-timeline` for `single-hero` variant (image → title → description → CTA).
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -246,6 +264,7 @@ are intentional — they get filled the first time you generate that section typ
 - `full-width-showcase` — Full-bleed images with overlay text
 - `case-study-cards` — Cards linking to detailed case studies
 
+**Animation:** `fade-up-stagger` on portfolio items. CSS `hover:scale-102` with overlay text reveal on hover. Filter transitions via CSS for `filtered-grid`.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -256,6 +275,7 @@ are intentional — they get filled the first time you generate that section typ
 - `featured-plus-list` — One large featured + list of recent
 - `magazine` — Mixed layout with varied card sizes
 
+**Animation:** `fade-up-stagger` on cards. CSS `hover:shadow-lg hover:-translate-y-1` on cards.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -270,6 +290,7 @@ are intentional — they get filled the first time you generate that section typ
 - `lightbox-trigger` — Thumbnail that opens video modal
 - `background-loop` — Muted looping video as section background
 
+**Animation:** `fade-up-single` on video container. CSS `hover:scale-105` on `lightbox-trigger` play button. No scroll animations on `background-loop` (autoplay on mount).
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -281,6 +302,7 @@ are intentional — they get filled the first time you generate that section typ
 - `lightbox-grid` — Grid thumbnails opening full-size modal
 - `before-after` — Comparison slider
 
+**Animation:** `fade-up-stagger` on gallery items. CSS `hover:scale-102` with overlay on images. Lightbox open/close via CSS transitions.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -296,6 +318,7 @@ are intentional — they get filled the first time you generate that section typ
 - `multi-step` — Multi-page form wizard
 - `info-plus-form` — Contact details + form side by side
 
+**Animation:** `fade-up-stagger` on form fields. `marker-pulse` on map pins for `split-with-map` variant. CSS transitions on input focus states.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -306,6 +329,7 @@ are intentional — they get filled the first time you generate that section typ
 - `split-features` — App features on one side, mockup on other
 - `screenshot-carousel` — App screenshots in device frames
 
+**Animation:** `staggered-timeline` for mockup → heading → buttons sequence. `float-loop` on device mockup for subtle motion. `fade-up-stagger` on feature list.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -316,6 +340,7 @@ are intentional — they get filled the first time you generate that section typ
 - `scrolling-marquee` — Infinite scroll of logos
 - `categorized` — Grouped by integration type
 
+**Animation:** `fade-up-stagger` on logo grid. CSS `@keyframes` for `scrolling-marquee` variant. CSS `hover:grayscale-0` for grayscale-to-color logo reveal.
 **Structure:** [populate on first use]
 **Notes:** []
 
@@ -328,3 +353,4 @@ are intentional — they get filled the first time you generate that section typ
 | Date | Change | Project Source |
 |------|--------|---------------|
 | 2026-02-08 | Initial skeleton created | — |
+| 2026-02-08 | Added Animation field to all 25 archetypes with pattern recommendations | farm-minerals-promo rebuild |

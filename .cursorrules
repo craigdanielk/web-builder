@@ -10,16 +10,29 @@ websites using decomposed design primitives.
 skills/                  → Design knowledge (READ ONLY during generation)
   section-taxonomy.md    → All section archetypes and their structural patterns
   style-schema.md        → Configurable style dimensions and Tailwind mappings
+  animation-patterns.md  → GSAP animation library (named patterns)
   presets/               → Industry-specific default configurations
+  components/            → Reusable component docs (cursor-trail, etc.)
 templates/               → Prompt templates for each pipeline stage
   scaffold-prompt.md     → Generates page specification from brief + preset
   section-prompt.md      → Generates one section component from specification
   assembly-checklist.md  → Consistency verification across all sections
 briefs/                  → Client briefs (human-written input)
-output/                  → Generated output (one folder per project)
+output/                  → ALL build output (one folder per project, gitignored)
+  {project}/
+    image-manifest.json  → Extracted images from reference URL (optional)
+    scaffold.md          → Page specification
+    sections/            → Raw generated section components
+    review.md            → Consistency review
+    page.tsx             → Assembled page
+    site/                → Rendered Next.js project (--deploy flag)
 scripts/                 → Orchestration and utility scripts
 agents/                  → Agent role definitions for multi-agent mode
+retrospectives/          → Session documentation and learnings
 ```
+
+**Important:** Site builds live INSIDE `output/{project}/site/`, never at the repo root.
+Each build is fully isolated — independent deps, independent dev server, zero coupling.
 
 ## Generation Pipeline
 
@@ -28,6 +41,14 @@ When asked to build a site, follow this exact sequence:
 ### Step 1: Read the Brief
 - Load the brief from `briefs/{project}.md`
 - Identify the industry, business type, and specific requirements
+
+### Step 1.5: Extract Images from Reference URL (optional)
+- If the brief contains a **Reference URL:** field, extract images from it
+- Read `skills/image-extraction.md` for the full extraction process
+- Use WebFetch to retrieve image URLs with context (alt text, page position)
+- Categorize images into: hero, product, about, team, location, etc.
+- Save manifest to `output/{project}/image-manifest.json`
+- If no Reference URL or extraction fails, skip — sections use gradient fallbacks
 
 ### Step 2: Match Preset
 - Scan `skills/presets/` for the closest industry match
@@ -46,11 +67,16 @@ When asked to build a site, follow this exact sequence:
 ### Step 4: Generate Sections
 - Read `templates/section-prompt.md` for the template
 - Extract the compact style header from the preset
+- If `output/{project}/image-manifest.json` exists, load it for image assignment
 - For EACH section in the scaffold:
   - Build the section prompt using the template + style header + section spec
+  - Look up relevant images from the manifest using the section-to-category
+    mapping in `skills/image-extraction.md`
+  - Include matched image URLs in the section prompt
   - Generate the section as a complete React + Tailwind component
   - Save to `output/{project}/sections/{NN}-{section-name}.tsx`
 - Each section must be self-contained but share the style DNA from the header
+- See `skills/components/image-patterns.md` for standard rendering patterns
 
 ### Step 5: Assemble Page
 - Combine all section components into `output/{project}/page.tsx`
@@ -64,6 +90,14 @@ When asked to build a site, follow this exact sequence:
   animation timing, border radius, hover states
 - Save review to `output/{project}/review.md`
 - If issues found, regenerate only the affected sections
+
+### Step 7: Deploy to Site (optional, --deploy flag)
+- Create a runnable Next.js project at `output/{project}/site/`
+- Auto-detect animation engine from preset (gsap or framer-motion)
+- Generate layout.tsx, globals.css, page.tsx
+- Copy sections into `src/components/sections/`
+- Install dependencies
+- Run with: `cd output/{project}/site && npm run dev`
 
 ## Critical Rules
 
@@ -89,14 +123,28 @@ When asked to build a site, follow this exact sequence:
 6. When populating empty taxonomy entries (sections you haven't used before),
    note what you learned in the section-taxonomy.md file after generation.
 
+7. WHEN a Reference URL is present in the brief: extract images before
+   generating the scaffold, provide relevant images to each section agent
+   during generation. Sections MUST use actual image URLs from the manifest,
+   NOT gradient placeholders. Fallback to gradients only when extraction fails
+   or no images match a section's category.
+
+8. IMAGE RENDERING STANDARD: Use CSS backgroundImage on divs (NOT `<img>`
+   tags, except for logos). Always include `role="img"` and `aria-label` for
+   accessibility. See `skills/components/image-patterns.md` for the standard
+   patterns. NEVER use placeholder services like `/api/placeholder`.
+
 ## Tech Stack
 
 All output uses:
 - React 18+ with TypeScript
 - Tailwind CSS v4
-- Framer Motion for animations
 - Next.js App Router conventions
-- shadcn/ui component primitives where applicable
+- Animation engine (determined by preset):
+  - **Framer Motion** — lightweight, whileInView scroll triggers
+  - **GSAP + ScrollTrigger** — advanced scroll-aware animations, character reveals, count-ups
+  - Native scroll (GSAP ScrollTrigger works directly with browser scroll)
+- See `skills/animation-patterns.md` for named GSAP patterns
 
 ## Adding New Presets
 

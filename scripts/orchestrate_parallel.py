@@ -19,7 +19,9 @@ Requirements:
 """
 
 import asyncio
+import json
 import os
+import subprocess
 import sys
 import re
 import argparse
@@ -38,6 +40,7 @@ ROOT = Path(__file__).parent.parent
 SKILLS_DIR = ROOT / "skills"
 TEMPLATES_DIR = ROOT / "templates"
 OUTPUT_DIR = ROOT / "output"
+SITE_DIR_NAME = "site"
 
 SECTION_MODEL = "claude-sonnet-4-5-20250514"
 REVIEW_MODEL = "claude-sonnet-4-5-20250514"
@@ -133,7 +136,152 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
     return index, code
 
 
-async def main_async(project_name: str, preset: str):
+def detect_animation_engine(preset_content: str) -> str:
+    """Detect animation engine from preset's Motion line."""
+    match = re.search(r"Motion:.*?/(gsap|framer-motion)", preset_content)
+    return match.group(1) if match else "framer-motion"
+
+
+def parse_fonts(preset_content: str) -> dict:
+    """Extract heading and body font names from preset's Type line."""
+    match = re.search(r"heading:([^,]+),", preset_content)
+    heading = match.group(1).strip() if match else "Inter"
+    match = re.search(r"body:([^,]+),", preset_content)
+    body = match.group(1).strip() if match else "Inter"
+    return {"heading": heading, "body": body}
+
+
+def font_import_name(font_name: str) -> str:
+    return font_name.replace(" ", "_")
+
+
+def stage_deploy(sections, section_files, preset, project_name):
+    """Deploy sections into a runnable Next.js project at output/{project}/site/."""
+    print("\n🚀 Deploying to Next.js project...")
+
+    preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
+    engine = detect_animation_engine(preset_content)
+    fonts = parse_fonts(preset_content)
+    style_header = extract_style_header(preset_content)
+
+    site_dir = OUTPUT_DIR / project_name / SITE_DIR_NAME
+    src_dir = site_dir / "src"
+    app_dir = src_dir / "app"
+    comp_dir = src_dir / "components" / "sections"
+
+    if not (site_dir / "package.json").exists():
+        print("  Creating project structure...")
+        deps = {"next": "16.1.6", "react": "19.2.3", "react-dom": "19.2.3"}
+        if engine == "gsap":
+            deps["gsap"] = "^3.14.2"
+        else:
+            deps["framer-motion"] = "^12.33.0"
+
+        pkg = {
+            "name": project_name, "version": "0.1.0", "private": True,
+            "scripts": {"dev": "next dev --webpack", "build": "next build", "start": "next start", "lint": "eslint"},
+            "dependencies": deps,
+            "devDependencies": {
+                "@tailwindcss/postcss": "^4", "@types/node": "^20",
+                "@types/react": "^19", "@types/react-dom": "^19",
+                "eslint": "^9", "eslint-config-next": "16.1.6",
+                "tailwindcss": "^4", "typescript": "^5",
+            },
+        }
+        write_file(site_dir / "package.json", json.dumps(pkg, indent=2) + "\n")
+        write_file(site_dir / "tsconfig.json", json.dumps({
+            "compilerOptions": {
+                "target": "ES2017", "lib": ["dom", "dom.iterable", "esnext"],
+                "allowJs": True, "skipLibCheck": True, "strict": True, "noEmit": True,
+                "esModuleInterop": True, "module": "esnext", "moduleResolution": "bundler",
+                "resolveJsonModule": True, "isolatedModules": True, "jsx": "preserve",
+                "incremental": True, "plugins": [{"name": "next"}],
+                "paths": {"@/*": ["./src/*"]},
+            },
+            "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+            "exclude": ["node_modules"],
+        }, indent=2) + "\n")
+        write_file(site_dir / "next.config.ts",
+                    'import type { NextConfig } from "next";\n\nconst nextConfig: NextConfig = {};\n\nexport default nextConfig;\n')
+        write_file(site_dir / "postcss.config.mjs",
+                    'const config = {\n  plugins: {\n    "@tailwindcss/postcss": {},\n  },\n};\n\nexport default config;\n')
+        write_file(site_dir / ".gitignore", "node_modules/\n.next/\n*.tsbuildinfo\nnext-env.d.ts\n")
+
+    # globals.css
+    css = ['@import "tailwindcss";', "", ":root { --background: #fafaf9; --foreground: #1c1917; }",
+           "body {", "  background: var(--background);", "  color: var(--foreground);",
+           f'  font-family: "{fonts["body"]}", sans-serif;',
+           "  -webkit-font-smoothing: antialiased;", "  -moz-osx-font-smoothing: grayscale;", "}"]
+    if engine == "gsap":
+        css += ["", "html { scroll-behavior: smooth; }", "",
+                "::-webkit-scrollbar { width: 4px; }", "::-webkit-scrollbar-track { background: transparent; }",
+                "::-webkit-scrollbar-thumb { background: #78716c; border-radius: 2px; }", "",
+                "::selection { background: #78716c; color: #ffffff; }", "",
+                "@keyframes marquee {", "  0% { transform: translateX(0); }",
+                "  100% { transform: translateX(-50%); }", "}"]
+    write_file(app_dir / "globals.css", "\n".join(css) + "\n")
+
+    # layout.tsx
+    hi = font_import_name(fonts["heading"])
+    bi = font_import_name(fonts["body"])
+    h_weight = '"400"'
+    m = re.search(r"heading:[^,]+,(\d+)", preset_content)
+    if m:
+        h_weight = f'"{m.group(1)}"'
+    layout_lines = [
+        'import type { Metadata } from "next";',
+        f'import {{ {hi}, {bi} }} from "next/font/google";',
+        'import "./globals.css";',
+    ]
+    layout_code = "\n".join(layout_lines) + f"""
+
+const {hi.lower()} = {hi}({{ subsets: ["latin"], weight: {h_weight} }});
+const {bi.lower()} = {bi}({{ subsets: ["latin"], weight: ["400", "500", "700"] }});
+
+export const metadata: Metadata = {{
+  title: "{project_name.replace('-', ' ').title()}",
+  description: "Built with web-builder pipeline",
+}};
+
+export default function RootLayout({{ children }}: {{ children: React.ReactNode }}) {{
+  return (
+    <html lang="en">
+      <body className="antialiased">
+        {{children}}
+      </body>
+    </html>
+  );
+}}
+"""
+    write_file(app_dir / "layout.tsx", layout_code)
+
+    # Copy sections
+    comp_dir.mkdir(parents=True, exist_ok=True)
+    for fp in section_files:
+        write_file(comp_dir / fp.name, read_file(fp))
+
+    # page.tsx
+    imports, comps = [], []
+    for i, (section, fp) in enumerate(zip(sections, section_files)):
+        num = f"{i + 1:02d}"
+        cn = f"Section{num}{section['archetype'].replace('-', '')}"
+        imports.append(f'import {cn} from "@/components/sections/{fp.name.replace(".tsx", "")}";')
+        comps.append(f"      <{cn} />")
+    write_file(app_dir / "page.tsx",
+               "\n".join(imports) + "\n\nexport default function Page() {\n  return (\n    <main className=\"min-h-screen\">\n"
+               + "\n".join(comps) + "\n    </main>\n  );\n}\n")
+
+    # npm install
+    print("  Installing dependencies...")
+    result = subprocess.run(["npm", "install"], capture_output=True, text=True, cwd=str(site_dir), timeout=120)
+    if result.returncode != 0:
+        print(f"  ⚠ npm install issues:\n{result.stderr[-500:]}")
+    else:
+        print("  ✓ Dependencies installed")
+    print(f"  ✓ Site: output/{project_name}/site/")
+
+
+async def main_async(project_name: str, preset: str, deploy: bool = False):
     """Run the parallel pipeline."""
     client = AsyncAnthropic()
 
@@ -228,9 +376,14 @@ End with a priority fix list.""",
     )
     write_file(OUTPUT_DIR / project_name / "review.md", review)
 
+    if deploy:
+        stage_deploy(sections, section_files, preset, project_name)
+
     print(f"\n{'═' * 60}")
     print(f"  ✅ Parallel pipeline complete")
     print(f"  Output: output/{project_name}/")
+    if deploy:
+        print(f"  Site:   output/{project_name}/site/")
     print(f"  Total time: {elapsed:.1f}s for section generation")
     print(f"{'═' * 60}\n")
 
@@ -239,9 +392,11 @@ def main():
     parser = argparse.ArgumentParser(description="Parallel Website Builder")
     parser.add_argument("project", help="Project name")
     parser.add_argument("--preset", required=True, help="Preset name")
+    parser.add_argument("--deploy", action="store_true",
+                        help="Deploy to a runnable Next.js project at output/{project}/site/")
     args = parser.parse_args()
 
-    asyncio.run(main_async(args.project, args.preset))
+    asyncio.run(main_async(args.project, args.preset, args.deploy))
 
 
 if __name__ == "__main__":
