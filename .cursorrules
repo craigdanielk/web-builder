@@ -93,11 +93,20 @@ When asked to build a site, follow this exact sequence:
 
 ### Step 7: Deploy to Site (optional, --deploy flag)
 - Create a runnable Next.js project at `output/{project}/site/`
+- **ISOLATION RULE:** Generate ALL site files from the current project's scaffold
+  and preset data ONLY. NEVER read or copy files from other projects' `output/`
+  directories. Each build is fully independent — zero coupling between builds.
 - Auto-detect animation engine from preset (gsap or framer-motion)
-- Generate layout.tsx, globals.css, page.tsx
+- Generate these files from scratch using the scaffold's style header:
+  - `package.json` — name from project, deps based on animation engine
+  - `tsconfig.json`, `eslint.config.mjs`, `postcss.config.mjs`, `next.config.ts`
+  - `src/app/layout.tsx` — fonts from the scaffold's Type line
+  - `src/app/globals.css` — CSS variables from the scaffold's Palette line
+  - `src/app/page.tsx` — imports from section file names
 - Copy sections into `src/components/sections/`
-- Install dependencies
-- Run with: `cd output/{project}/site && npm run dev`
+- Install dependencies with `npm install`
+- Deploy with Vercel: `cd output/{project}/site && vercel --yes`
+- The Vercel CLI must be installed and authenticated (`vercel whoami` to check)
 
 ## Critical Rules
 
@@ -134,6 +143,17 @@ When asked to build a site, follow this exact sequence:
    accessibility. See `skills/components/image-patterns.md` for the standard
    patterns. NEVER use placeholder services like `/api/placeholder`.
 
+9. BUILD ISOLATION: Each project build in `output/{project}/` is a sealed unit.
+   NEVER read files from another project's output directory to inform a build.
+   All site scaffold files (package.json, layout.tsx, globals.css, etc.) must be
+   generated from the current project's scaffold.md and matched preset — not
+   copied from a previous build. This prevents cross-contamination of themes,
+   fonts, colors, and structural patterns between projects.
+
+10. DEPLOYMENT: Use `vercel --yes` for deployment instead of `npm run dev`.
+    The Vercel CLI handles build, preview, and production deployment. Each
+    project gets its own Vercel deployment — fully isolated.
+
 ## Tech Stack
 
 All output uses:
@@ -154,6 +174,36 @@ After completing a project for a new industry:
 3. Include the section sequence that worked
 4. Include the style configuration that was used
 5. Add notes about what worked well and what needed adjustment
+
+## URL Extraction Mandate
+
+When a **Reference URL** is provided (either in the brief or by the user), you MUST
+use the extraction tools before generating the scaffold. Do not manually guess
+colors, typography, spacing, or section structure from memory or screenshots.
+
+### Required extraction flow:
+```bash
+# Step 1: Extract visual DNA → generates preset from actual site
+node scripts/quality/url-to-preset.js <url> <preset-name>
+
+# Step 2: Extract content/business context → generates brief from actual site
+node scripts/quality/url-to-brief.js <url> <project-name>
+```
+
+### Why this is mandatory:
+- AI-guessed colors are wrong ~60% of the time (e.g., black bg when actual site is white)
+- Proprietary fonts get hallucinated; extraction maps to Google Fonts equivalents
+- Section sequences are too sparse without extraction (3 sections vs 8-10 actual)
+- Extraction provides real content, product names, and brand tone
+
+### Post-extraction review:
+After running the extraction tools, ALWAYS review the generated files and correct:
+1. Background color (extraction often captures nav/overlay instead of page bg)
+2. Font mapping (verify the Google Fonts equivalent is visually close)
+3. Section count (ensure at least 8 sections for marketing pages)
+4. Content relevance (strip e-commerce mechanics like filters, cookie consent)
+
+Only proceed to scaffold generation AFTER the extracted preset and brief pass review.
 
 ## Adding New Section Archetypes
 

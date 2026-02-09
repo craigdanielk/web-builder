@@ -281,43 +281,37 @@ See `skills/presets/artisan-food.md` for a fully populated example.
 
 ## Deploying Generated Output
 
-### Automated (Recommended)
+### Vercel (Recommended)
 
-Use the `--deploy` flag to automatically create a runnable Next.js project:
+Each build deploys to its own Vercel project via the Vercel CLI:
 
 ```bash
-# Full pipeline + deploy
-python scripts/orchestrate.py my-project --preset artisan-food --deploy
-
-# Or deploy from existing output
-python scripts/orchestrate.py my-project --preset artisan-food --skip-to deploy
+cd output/{project}/site
+vercel --yes
 ```
 
-This creates `output/my-project/site/` with everything wired up:
+This handles build, preview URL generation, and production deployment in one step.
+Requires one-time setup: `npm install -g vercel` and `vercel login`.
+
+### SDK Scripts (Automated)
+
+Use the `--deploy` flag to create a runnable Next.js project, then deploy:
 
 ```bash
-cd output/my-project/site
-npm run dev
+python scripts/orchestrate.py {project} --preset {preset} --deploy
+cd output/{project}/site
+vercel --yes
 ```
 
 ### Manual
 
 ```bash
-# Create new Next.js project
 npx create-next-app@latest my-site --typescript --tailwind --eslint --app --src-dir --use-npm
-
-# Install animation dependencies (pick one)
 cd my-site
-npm install gsap lenis          # For GSAP engine
-# OR
-npm install framer-motion       # For Framer Motion engine
-
-# Copy generated sections
+npm install gsap          # For GSAP engine (or framer-motion)
 cp ../output/{project}/sections/*.tsx src/components/sections/
-
-# Update src/app/page.tsx, layout.tsx, globals.css manually
-
-npm run dev
+# Update src/app/page.tsx, layout.tsx, globals.css from scaffold data
+vercel --yes
 ```
 
 ### Font Setup
@@ -438,23 +432,18 @@ The Architect runs first. Then multiple Builder agents can run in parallel (one 
 
 ## Completed Builds
 
-| # | Project | Preset | Sections | Engine | Notes |
-|---|---------|--------|----------|--------|-------|
-| 1 | turm-kaffee v1 | artisan-food | 9 | framer-motion | First-ever build |
-| 2 | farm-minerals-promo | — | 11 | gsap | Full GSAP rebuild with Lenis |
-| 3 | turm-kaffee v2 | artisan-food | 11 | gsap | Full e-commerce, GSAP + Lenis |
-
-All builds now live at `output/{project}/site/`.
+All builds live at `output/{project}/site/` and deploy independently to Vercel.
+See `retrospectives/` for build-specific documentation and learnings.
 
 ---
 
 ## Known Issues & Troubleshooting
 
 ### Image URLs returning 404
-Unsplash CDN URLs use the format `photo-{TIMESTAMP}-{HASH}`. You CANNOT fabricate these values — they must be discovered from actual Unsplash photo pages. See the retrospective at `retrospectives/2026-02-08-turm-kaffee-v2-build-deploy.md` for the verified URL discovery process.
+Unsplash CDN URLs use the format `photo-{TIMESTAMP}-{HASH}`. You CANNOT fabricate these values — they must be discovered from actual Unsplash photo pages. See retrospectives for the verified URL discovery process.
 
 ### React infinite re-render loop
-If a section uses a countdown timer or any `useEffect` with a `Date` object dependency, the Date must be wrapped in `useMemo`. See the `05-product-showcase-offers.tsx` fix in the v2 build.
+If a section uses a countdown timer or any `useEffect` with a `Date` object dependency, the Date must be wrapped in `useMemo`.
 
 ### Dev server port locked
 If `npm run dev` fails with "port in use" or lock file errors:
@@ -489,10 +478,7 @@ Agent mode (Cursor/Claude Code) costs depend on your subscription.
 
 ## Retrospectives
 
-Session documentation lives in `retrospectives/`. Read the most recent one for current system state, learnings, and known issues:
-
-- `2026-02-08-web-builder-first-build-success.md` — First build, pipeline validation, GitHub push
-- `2026-02-08-turm-kaffee-v2-build-deploy.md` — V2 build, deployment, image integration
+Session documentation lives in `retrospectives/`. Read the most recent one for current system state, learnings, and known issues.
 
 ---
 
@@ -508,5 +494,5 @@ Session documentation lives in `retrospectives/`. Read the most recent one for c
 - Populate section taxonomy structural descriptions (currently mostly empty)
 - Build a pre-verified image library by category
 - Test and validate the SDK scripts (`orchestrate.py`)
-- Add Vercel deployment pipeline
 - Build guided walkthrough UI for non-technical users
+- Improve URL visual extraction for JS-rendered sites (Puppeteer/Playwright)

@@ -140,7 +140,7 @@ Be specific and concrete — no generic filler.
 Output ONLY the brief markdown. No explanation, no code fences around the entire output.`;
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-5-20250929',
     max_tokens: 2048,
     messages: [{ role: 'user', content: prompt }],
   });

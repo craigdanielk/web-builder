@@ -157,7 +157,7 @@ Rules:
 Output ONLY the complete preset markdown. No explanation, no code fences around the entire output.`;
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-5-20250929',
     max_tokens: 4096,
     messages: [{ role: 'user', content: prompt }],
   });
