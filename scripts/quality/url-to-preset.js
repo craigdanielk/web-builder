@@ -32,13 +32,15 @@ const TEMPLATE_PATH = path.join(PRESETS_DIR, '_template.md');
 
 function parseArgs() {
   const args = process.argv.slice(2);
-  const config = { url: null, presetName: null, outputDir: PRESETS_DIR };
+  const config = { url: null, presetName: null, outputDir: PRESETS_DIR, extractionDir: null };
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--output-dir' || args[i] === '-o') {
       config.outputDir = path.resolve(args[++i]);
+    } else if (args[i] === '--extraction-dir') {
+      config.extractionDir = path.resolve(args[++i]);
     } else if (args[i] === '--help' || args[i] === '-h') {
-      console.log('\nUsage: node url-to-preset.js <url> <preset-name> [--output-dir <dir>]\n');
+      console.log('\nUsage: node url-to-preset.js <url> <preset-name> [--output-dir <dir>] [--extraction-dir <dir>]\n');
       process.exit(0);
     } else if (!args[i].startsWith('-')) {
       if (!config.url) config.url = args[i];
@@ -48,7 +50,7 @@ function parseArgs() {
 
   if (!config.url || !config.presetName) {
     console.error('Error: Both <url> and <preset-name> are required.');
-    console.log('Usage: node url-to-preset.js <url> <preset-name> [--output-dir <dir>]');
+    console.log('Usage: node url-to-preset.js <url> <preset-name> [--output-dir <dir>] [--extraction-dir <dir>]');
     process.exit(1);
   }
 
@@ -184,7 +186,8 @@ async function main() {
 
   // Step 1: Extract
   console.log('  [1/4] Extracting visual data from URL...');
-  const extractionDir = path.resolve(__dirname, '../../output/extractions', config.presetName);
+  // Use provided extraction dir or default (with preset name for backwards compatibility)
+  const extractionDir = config.extractionDir || path.resolve(__dirname, '../../output/extractions', config.presetName);
   const extractionData = await extractReference(config.url, extractionDir);
 
   // Step 2: Collect tokens
@@ -205,22 +208,28 @@ async function main() {
   console.log('  [4/4] Generating preset via Claude...');
   const presetContent = await generatePreset(config.url, tokens, mapped, extractionData);
 
-  // Save
+  // Save preset with atomic write (temp file + rename to prevent race conditions)
   const outputPath = path.join(config.outputDir, config.presetName + '.md');
+  const tmpPresetPath = outputPath + '.tmp-' + Date.now();
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  fs.writeFileSync(outputPath, presetContent, 'utf-8');
+  fs.writeFileSync(tmpPresetPath, presetContent, 'utf-8');
+  fs.renameSync(tmpPresetPath, outputPath);
 
-  // Also save extraction data as JSON for the orchestrator
+  // Also save extraction data as JSON for the orchestrator (atomic write)
   const dataPath = path.join(extractionDir, 'extraction-data.json');
+  const tmpDataPath = dataPath + '.tmp-' + Date.now();
   const serializableData = {
     ...extractionData,
     screenshots: { scrollCaptures: extractionData.screenshots?.scrollCaptures || 0 },
   };
-  fs.writeFileSync(dataPath, JSON.stringify(serializableData, null, 2), 'utf-8');
+  fs.writeFileSync(tmpDataPath, JSON.stringify(serializableData, null, 2), 'utf-8');
+  fs.renameSync(tmpDataPath, dataPath);
 
-  // Save mapped sections
+  // Save mapped sections (atomic write)
   const mappedPath = path.join(extractionDir, 'mapped-sections.json');
-  fs.writeFileSync(mappedPath, JSON.stringify(mapped, null, 2), 'utf-8');
+  const tmpMappedPath = mappedPath + '.tmp-' + Date.now();
+  fs.writeFileSync(tmpMappedPath, JSON.stringify(mapped, null, 2), 'utf-8');
+  fs.renameSync(tmpMappedPath, mappedPath);
 
   console.log('\n  PRESET GENERATED');
   console.log('  Saved to: ' + outputPath);

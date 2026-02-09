@@ -28,6 +28,7 @@ import json
 import argparse
 import re
 import subprocess
+import uuid
 from pathlib import Path
 from datetime import datetime
 
@@ -139,12 +140,17 @@ def stage_url_extract(url: str, project_name: str) -> tuple[str, str, dict]:
 
     node = "node"  # Assumes node is on PATH
 
+    # Generate unique extraction ID to prevent race conditions in parallel builds
+    extraction_id = f"{project_name}-{uuid.uuid4().hex[:8]}"
+    extraction_dir = OUTPUT_DIR / "extractions" / extraction_id
+
     # Step 0a: Run url-to-preset.js → generates preset and extraction data
     print("\n  [0a] Generating preset from URL...")
     preset_name = project_name
     preset_script = QUALITY_DIR / "url-to-preset.js"
     result = subprocess.run(
-        [node, str(preset_script), url, preset_name],
+        [node, str(preset_script), url, preset_name,
+         "--extraction-dir", str(extraction_dir)],
         capture_output=True,
         text=True,
         cwd=str(ROOT),
@@ -165,7 +171,6 @@ def stage_url_extract(url: str, project_name: str) -> tuple[str, str, dict]:
 
     # Step 0b: Run url-to-brief.js → generates brief (reuses extraction data)
     print("\n  [0b] Generating brief from URL...")
-    extraction_dir = OUTPUT_DIR / "extractions" / project_name
     brief_script = QUALITY_DIR / "url-to-brief.js"
     result = subprocess.run(
         [node, str(brief_script), url, project_name,
@@ -836,6 +841,16 @@ def main():
                         default=None, metavar="URL")
 
     args = parser.parse_args()
+
+    # ── Project Collision Detection ────────────────────────────────
+    # Prevent accidental overwrites when not using --skip-to (which expects existing project)
+    if not args.skip_to:
+        existing_scaffold = OUTPUT_DIR / args.project / "scaffold.md"
+        if existing_scaffold.exists():
+            print(f"\n⚠️  Project '{args.project}' already exists at: output/{args.project}/")
+            print(f"    To continue an existing project, use: --skip-to <stage>")
+            print(f"    To start fresh, delete the directory or use a different project name.")
+            sys.exit(1)
 
     section_contexts = None  # Only populated in URL clone mode
 
