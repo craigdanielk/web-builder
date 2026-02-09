@@ -67,9 +67,9 @@ load_env_file()
 
 # Model selection per pipeline stage
 MODELS = {
-    "scaffold": "claude-sonnet-4-5-20250514",    # Good judgment for structure
-    "section": "claude-sonnet-4-5-20250514",      # Fast, good for individual components
-    "review": "claude-sonnet-4-5-20250514",       # Good judgment for quality eval
+    "scaffold": "claude-sonnet-4-5-20250929",    # Good judgment for structure
+    "section": "claude-sonnet-4-5-20250929",      # Fast, good for individual components
+    "review": "claude-sonnet-4-5-20250929",       # Good judgment for quality eval
 }
 
 MAX_TOKENS = {

@@ -7,27 +7,40 @@ websites using decomposed design primitives.
 ## Repo Structure
 
 ```
+CLAUDE.md                → System context for Claude Code (read first)
 skills/                  → Design knowledge (READ ONLY during generation)
   section-taxonomy.md    → All section archetypes and their structural patterns
   style-schema.md        → Configurable style dimensions and Tailwind mappings
-  animation-patterns.md  → GSAP animation library (named patterns)
-  presets/               → Industry-specific default configurations
-  components/            → Reusable component docs (cursor-trail, etc.)
+  animation-patterns.md  → 20+ named GSAP/Framer Motion patterns
+  image-extraction.md   → Image categorization spec (10 categories)
+  presets/               → Industry-specific default configurations (23 presets)
+  components/            → Reusable component docs (cursor-trail, image-patterns)
 templates/               → Prompt templates for each pipeline stage
-  scaffold-prompt.md     → Generates page specification from brief + preset
-  section-prompt.md      → Generates one section component from specification
-  assembly-checklist.md  → Consistency verification across all sections
-briefs/                  → Client briefs (human-written input)
-output/                  → ALL build output (one folder per project, gitignored)
+  scaffold-prompt.md     → Stage 1: page specification from brief + preset
+  section-prompt.md      → Stage 2: individual section component
+  assembly-checklist.md  → Stage 4: consistency verification
+briefs/                  → Client briefs (human or auto-generated)
+output/ (gitignored)     → ALL build output
+  extractions/{project}-{uuid}/  → Raw extraction data (URL clone mode)
   {project}/
-    image-manifest.json  → Extracted images from reference URL (optional)
     scaffold.md          → Page specification
     sections/            → Raw generated section components
     review.md            → Consistency review
     page.tsx             → Assembled page
     site/                → Rendered Next.js project (--deploy flag)
-scripts/                 → Orchestration and utility scripts
+scripts/
+  orchestrate.py         → Main pipeline (6 stages, Python + Node.js hybrid)
+  quality/               → URL extraction + validation tools
+    url-to-preset.js     → URL → preset markdown
+    url-to-brief.js      → URL → brief markdown
+    lib/
+      extract-reference.js  → Playwright extraction engine
+      animation-detector.js → Animation library detection
+      archetype-mapper.js   → Section → archetype mapping
+      design-tokens.js      → CSS → design token collection
+      section-context.js    → Per-section prompt context
 agents/                  → Agent role definitions for multi-agent mode
+plans/                   → Implementation plans (active + completed)
 retrospectives/          → Session documentation and learnings
 ```
 
@@ -157,14 +170,14 @@ When asked to build a site, follow this exact sequence:
 ## Tech Stack
 
 All output uses:
-- React 18+ with TypeScript
+- React 19 with TypeScript
 - Tailwind CSS v4
-- Next.js App Router conventions
+- Next.js 16 App Router conventions
 - Animation engine (determined by preset):
-  - **Framer Motion** — lightweight, whileInView scroll triggers
-  - **GSAP + ScrollTrigger** — advanced scroll-aware animations, character reveals, count-ups
-  - Native scroll (GSAP ScrollTrigger works directly with browser scroll)
-- See `skills/animation-patterns.md` for named GSAP patterns
+  - **Framer Motion 12** — lightweight, whileInView scroll triggers
+  - **GSAP 3.14 + ScrollTrigger** — advanced scroll-aware animations, character reveals, count-ups
+  - Native browser scroll (Lenis removed — conflicts with ScrollTrigger)
+- See `skills/animation-patterns.md` for named animation patterns
 
 ## Adding New Presets
 

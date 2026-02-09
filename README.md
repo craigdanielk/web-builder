@@ -76,7 +76,7 @@ Read these files **in this exact order** before running any build:
 - Use the `--deploy` flag or run manually
 - Creates a runnable Next.js project at `output/{project}/site/`
 - Auto-detects animation engine from preset, installs correct deps
-- Generates layout.tsx, globals.css, page.tsx, smooth-scroll.tsx
+- Generates layout.tsx, globals.css, page.tsx
 - Run with: `cd output/{project}/site && npm run dev`
 
 ---
@@ -85,32 +85,39 @@ Read these files **in this exact order** before running any build:
 
 ```
 web-builder/
-├── .cursorrules                    ← Agent pipeline instructions (READ FIRST)
-├── .env                            ← API keys (Anthropic, Cloudinary, etc.)
+├── CLAUDE.md                       ← System context for Claude Code sessions (read first)
+├── .cursorrules                    ← Agent pipeline instructions (for Cursor/Windsurf)
+├── .env                            ← API keys (gitignored)
 ├── .gitignore
 ├── README.md                       ← This file — universal agent onboarding
 │
 ├── skills/                         ← Design knowledge (READ ONLY during generation)
 │   ├── section-taxonomy.md         ← 25 section archetypes, 95+ variants
 │   ├── style-schema.md             ← 7 style dimensions with Tailwind mappings
-│   ├── animation-patterns.md       ← Named GSAP animation patterns
+│   ├── animation-patterns.md       ← 20+ named GSAP/Framer Motion patterns
+│   ├── image-extraction.md         ← Image categorization spec (10 categories)
 │   ├── presets/                    ← Industry-specific configurations
 │   │   ├── _template.md            ← Empty preset template
-│   │   ├── artisan-food.md         ← Coffee, bakery, artisan food & beverage
-│   │   └── ... (20 presets)        ← See skills/presets/ for full list
+│   │   └── ... (23 presets)        ← See skills/presets/ for full list
 │   └── components/                 ← Reusable component documentation
-│       └── cursor-trail.md         ← Mouse-following trail effect
+│       ├── cursor-trail.md         ← Mouse-following trail effect
+│       └── image-patterns.md       ← CSS backgroundImage rendering patterns
 │
 ├── templates/                      ← Prompt templates for each pipeline stage
-│   ├── scaffold-prompt.md          ← Stage 3: page specification generation
-│   ├── section-prompt.md           ← Stage 4: individual section generation
-│   └── assembly-checklist.md       ← Stage 6: consistency review checklist
+│   ├── scaffold-prompt.md          ← Stage 1: page specification generation
+│   ├── section-prompt.md           ← Stage 2: individual section generation
+│   └── assembly-checklist.md       ← Stage 4: consistency review checklist
 │
-├── briefs/                         ← Client briefs (human-written input)
+├── briefs/                         ← Client briefs (human or auto-generated)
 │   ├── _template.md                ← Empty brief template
 │   └── {project}.md                ← One brief per project
 │
-├── output/                         ← ALL build output (gitignored)
+├── output/ (gitignored)            ← ALL build output
+│   ├── extractions/{project}-{uuid}/ ← Raw extraction data (URL clone mode)
+│   │   ├── extraction-data.json
+│   │   ├── mapped-sections.json
+│   │   ├── animation-analysis.json
+│   │   └── screenshots/
 │   └── {project}/                  ← One folder per project
 │       ├── scaffold.md             ← Page specification
 │       ├── sections/               ← Raw generated section components
@@ -119,24 +126,37 @@ web-builder/
 │       └── site/                   ← Rendered Next.js project (--deploy)
 │           ├── package.json
 │           ├── src/app/            ← layout.tsx, globals.css, page.tsx
-│           └── src/components/     ← sections/ + smooth-scroll.tsx
+│           └── src/components/sections/
 │
 ├── scripts/                        ← Orchestration and utility scripts
-│   ├── orchestrate.py              ← Sequential pipeline (requires ANTHROPIC_API_KEY)
-│   ├── orchestrate_parallel.py     ← Parallel pipeline (requires ANTHROPIC_API_KEY)
-│   └── quality/                    ← URL-to-brief and enrichment utilities
-│       ├── url-to-brief.js         ← Generate brief from existing website URL
-│       ├── url-to-preset.js        ← Generate preset from existing website URL
+│   ├── orchestrate.py (957 lines)  ← Main pipeline — 6 stages
+│   └── quality/                    ← URL extraction + validation tools
+│       ├── url-to-preset.js        ← URL → preset markdown
+│       ├── url-to-brief.js         ← URL → brief markdown
 │       ├── enrich-preset.js        ← Enrich preset with design token extraction
-│       └── validate-build.js       ← Validate build output quality
+│       ├── validate-build.js       ← Post-build quality validation
+│       ├── test-animation-detector.js ← Standalone animation detection test
+│       └── lib/
+│           ├── extract-reference.js   ← Playwright extraction engine
+│           ├── animation-detector.js  ← Animation library detection
+│           ├── archetype-mapper.js    ← Section → archetype mapping
+│           ├── design-tokens.js       ← CSS → design token collection
+│           ├── section-context.js     ← Per-section prompt context builder
+│           ├── post-process.js        ← Post-generation cleanup
+│           └── visual-validator.js    ← Visual consistency checker
 │
 ├── agents/                         ← Agent role definitions for multi-agent mode
 │   └── roles.md                    ← Architect, Builder, Reviewer, Fixer roles
 │
+├── plans/                          ← Implementation plans
+│   ├── active/                     ← In-progress plans
+│   └── completed/                  ← Finished plans
+│
 └── retrospectives/                 ← Session documentation and learnings
     ├── 2026-02-08-web-builder-first-build-success.md
     ├── 2026-02-08-turm-kaffee-v2-build-deploy.md
-    └── 2026-02-08-farm-minerals-rebuild.md
+    ├── 2026-02-08-farm-minerals-rebuild.md
+    └── 2026-02-09-nike-golf-light-theme-rebuild.md
 ```
 
 **Architecture:** Site builds live inside `output/{project}/site/`, never at the repo root.
@@ -189,15 +209,19 @@ style header restated in every section prompt.
 # Prerequisites
 pip install anthropic --break-system-packages
 export ANTHROPIC_API_KEY=your-key-here  # Or set in .env file
+# URL mode also requires: cd scripts/quality && npm install && npx playwright install chromium
 
-# Sequential (with review checkpoint)
+# URL Clone Mode — extract from live site, auto-generate preset + brief + build
+python scripts/orchestrate.py my-project --from-url https://example.com --deploy --no-pause
+
+# Manual brief mode (with review checkpoint)
 python scripts/orchestrate.py my-project --preset artisan-food
 
-# Sequential + deploy to runnable Next.js site
+# Manual brief + deploy to runnable Next.js site
 python scripts/orchestrate.py my-project --preset artisan-food --deploy
 
-# Parallel (faster, uses existing scaffold)
-python scripts/orchestrate_parallel.py my-project --preset artisan-food --deploy
+# Resume from a specific stage
+python scripts/orchestrate.py my-project --preset artisan-food --skip-to sections --deploy
 ```
 
 ### Option C: Manual (Any LLM, No IDE)
@@ -252,7 +276,7 @@ A preset contains:
 
 See `skills/presets/artisan-food.md` for a fully populated example.
 
-### Available Presets (20)
+### Available Presets (23)
 
 | Preset | Industries Covered |
 |--------|--------------------|
@@ -276,6 +300,9 @@ See `skills/presets/artisan-food.md` for a fully populated example.
 | `restaurants-cafes` | Restaurants, cafes, food service |
 | `saas` | SaaS products, tech platforms, startups |
 | `sports-fitness` | Gyms, fitness studios, sports equipment |
+| `farm-minerals-anim` | Agricultural tech, precision agriculture (GSAP + Lottie) |
+| `farm-minerals-promo-v2` | Agricultural products, eco-friendly fertilizers |
+| `nike-golf` | Nike Golf, athletic apparel landing pages |
 
 ---
 
@@ -352,14 +379,14 @@ https://res.cloudinary.com/{CLOUD_NAME}/image/upload/v{VERSION}/{FILENAME}
 ## Tech Stack
 
 All generated output uses:
-- **React 18+** with TypeScript
+- **React 19** with TypeScript
 - **Tailwind CSS v4** for styling
-- **Next.js App Router** conventions (App directory, `"use client"` directives)
+- **Next.js 16 App Router** conventions (App directory, `"use client"` directives)
 - **Animation engine** (determined by preset):
-  - **Framer Motion** — lightweight, `whileInView` scroll triggers
-  - **GSAP + ScrollTrigger** — advanced scroll-aware animations, character reveals, count-ups, timeline sequences
-  - **Lenis** — smooth scrolling (paired with GSAP engine)
-- See `skills/animation-patterns.md` for the full GSAP pattern library
+  - **Framer Motion 12** — lightweight, `whileInView` scroll triggers
+  - **GSAP 3.14 + ScrollTrigger** — advanced scroll-aware animations, character reveals, count-ups, timeline sequences
+- Native browser scroll (Lenis was removed — it conflicts with ScrollTrigger)
+- See `skills/animation-patterns.md` for the full animation pattern library
 
 ---
 
@@ -439,11 +466,26 @@ See `retrospectives/` for build-specific documentation and learnings.
 
 ## Known Issues & Troubleshooting
 
-### Image URLs returning 404
-Unsplash CDN URLs use the format `photo-{TIMESTAMP}-{HASH}`. You CANNOT fabricate these values — they must be discovered from actual Unsplash photo pages. See retrospectives for the verified URL discovery process.
+### NODE_ENV conflict with Next.js 16 build
+`next build` fails with `TypeError: Cannot read properties of null (reading 'useContext')` when `NODE_ENV=development` is set in the shell environment. Fix:
+```bash
+NODE_ENV=production npm run build
+```
 
-### React infinite re-render loop
-If a section uses a countdown timer or any `useEffect` with a `Date` object dependency, the Date must be wrapped in `useMemo`.
+### Next.js 15.x CVE blocking on Vercel
+All Next.js 15.x versions are flagged as vulnerable (CVE-2025-66478) and will fail deployment on Vercel. Use Next.js 16.1.6 instead.
+
+### Framer Motion TypeScript ease type errors
+`ease: [0.22, 1, 0.36, 1]` is typed as `number[]` not the expected tuple `[number, number, number, number]`. Fix: add `// @ts-nocheck` to section files and `typescript: { ignoreBuildErrors: true }` in `next.config.ts`.
+
+### Lenis removed — do not add
+Lenis scroll hijacking conflicts with GSAP ScrollTrigger, causing flickering and broken interactions. Use native browser scroll instead: `html { scroll-behavior: smooth; }`.
+
+### Claude max_tokens truncation
+4096 tokens can truncate complex sections mid-string. Symptoms: missing closing tags, unclosed strings, incomplete JSX. Post-process to detect/repair, or increase token budget for complex sections.
+
+### Image URLs returning 404
+Unsplash CDN URLs use the format `photo-{TIMESTAMP}-{HASH}`. You CANNOT fabricate these values — they must be discovered from actual Unsplash photo pages.
 
 ### Dev server port locked
 If `npm run dev` fails with "port in use" or lock file errors:
@@ -451,12 +493,6 @@ If `npm run dev` fails with "port in use" or lock file errors:
 rm -f output/{project}/site/.next/dev/lock
 lsof -ti:3000 | xargs kill -9
 npm run dev
-```
-
-### `create-next-app` interactive prompt
-Next.js 16+ prompts for React Compiler. Pipe "no" to skip:
-```bash
-echo "no" | npx create-next-app@latest my-site --typescript --tailwind --eslint --app --src-dir --use-npm
 ```
 
 ### Section taxonomy descriptions empty
