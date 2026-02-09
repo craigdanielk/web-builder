@@ -20,8 +20,9 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { extractReference } = require('./lib/extract-reference');
-const { collectTokens, rgbToHex } = require('./lib/design-tokens');
+const { collectTokens, collectAnimationTokens, rgbToHex } = require('./lib/design-tokens');
 const { mapSectionsToArchetypes } = require('./lib/archetype-mapper');
+const { analyzeAnimationEvidence } = require('./lib/animation-detector');
 
 const PRESETS_DIR = path.resolve(__dirname, '../../skills/presets');
 const TEMPLATE_PATH = path.join(PRESETS_DIR, '_template.md');
@@ -84,7 +85,7 @@ function hexToTailwindApprox(hex) {
 // Preset generation via Claude
 // ---------------------------------------------------------------------------
 
-async function generatePreset(url, tokens, mappedSections, extractionData) {
+async function generatePreset(url, tokens, mappedSections, extractionData, animationAnalysis, animationTokens) {
   const client = new Anthropic();
   const template = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 
@@ -138,6 +139,19 @@ ${headings.map((h) => '- "' + h + '"').join('\n') || '(none extracted)'}
 ### CTA Button Text Found
 ${ctas.map((c) => '- "' + c + '"').join('\n') || '(none extracted)'}
 
+### Animation Evidence
+- Detected intensity: ${animationAnalysis.intensity.level} (score: ${animationAnalysis.intensity.score}, confidence: ${(animationAnalysis.intensity.confidence * 100).toFixed(0)}%)
+- Inferred engine: ${animationAnalysis.engine}
+- Libraries found: ${animationAnalysis.libraries.map(l => l.name).join(', ') || 'none'}
+- CSS keyframes: ${animationAnalysis.cssAnimations.keyframes.join(', ') || 'none'}
+- Animated elements: ${animationAnalysis.cssAnimations.animatedElements}
+- Transition elements: ${animationAnalysis.cssAnimations.transitionElements}
+- Scroll triggers: ${animationAnalysis.scrollAnimations.triggerCount} (patterns: ${animationAnalysis.scrollAnimations.patterns.join(', ') || 'none'})
+- Rich assets: ${animationAnalysis.assets.lottie.length} Lottie, ${animationAnalysis.assets.rive.length} Rive, ${animationAnalysis.assets.threeD.length} 3D
+- Animation tokens: ${animationTokens.animationNames.slice(0, 10).join(', ') || 'none'}
+- Transition properties: ${animationTokens.transitionProperties.slice(0, 10).join(', ') || 'none'}
+- Easing functions: ${animationTokens.easingFunctions.slice(0, 5).join(', ') || 'default'}
+
 ## Preset Template
 ${template}
 
@@ -150,7 +164,7 @@ Rules:
 2. Map extracted colors to Tailwind utility names (stone-50, amber-700, etc.) — choose the closest Tailwind color.
 3. Determine color_temperature from the palette: warm-earth, cool-blue, neutral, dark-neutral, etc.
 4. Set border_radius based on extracted radii: sharp (0-4px), medium (6-16px), full (16-32px), pill (32px+).
-5. Set animation_intensity to moderate unless the site clearly has heavy or minimal animation.
+5. Set animation_intensity to "${animationAnalysis.intensity.level}" and animation_engine to "${animationAnalysis.engine}" based on the Animation Evidence above. If confidence is below 50%, default to moderate with css engine.
 6. Use the detected section sequence for Default Section Sequence.
 7. Write realistic Content Direction based on the heading tone and CTA language found.
 8. Set the preset name to match the site's industry/type.
@@ -185,28 +199,43 @@ async function main() {
   console.log('');
 
   // Step 1: Extract
-  console.log('  [1/4] Extracting visual data from URL...');
+  console.log('  [1/5] Extracting visual data from URL...');
   // Use provided extraction dir or default (with preset name for backwards compatibility)
   const extractionDir = config.extractionDir || path.resolve(__dirname, '../../output/extractions', config.presetName);
   const extractionData = await extractReference(config.url, extractionDir);
 
   // Step 2: Collect tokens
-  console.log('  [2/4] Collecting design tokens...');
+  console.log('  [2/5] Collecting design tokens...');
   const tokens = collectTokens(extractionData);
   console.log('    Fonts: ' + tokens.fonts.slice(0, 4).join(', '));
   console.log('    Colors: ' + tokens.backgroundColors.length + ' bg, ' + tokens.colors.length + ' text');
   console.log('    Radii: ' + tokens.borderRadii.join(', '));
 
   // Step 3: Map archetypes
-  console.log('  [3/4] Mapping sections to archetypes...');
+  console.log('  [3/5] Mapping sections to archetypes...');
   const mapped = mapSectionsToArchetypes(extractionData.sections, extractionData.textContent);
   for (const m of mapped) {
     console.log('    ' + m.archetype + ' | ' + m.variant + ' (' + m.method + ', ' + (m.confidence * 100).toFixed(0) + '%)');
   }
 
+  // Step 3b: Analyze animations
+  console.log('  [3b/5] Analyzing animation patterns...');
+  const animationAnalysis = analyzeAnimationEvidence(
+    extractionData.animations?.evidence || {},
+    extractionData.animations?.networkResults || {},
+    extractionData.sections,
+    extractionData.renderedDOM
+  );
+  const animationTokens = collectAnimationTokens(extractionData);
+  console.log('    Intensity: ' + animationAnalysis.intensity.level +
+    ' (score: ' + animationAnalysis.intensity.score +
+    ', confidence: ' + (animationAnalysis.intensity.confidence * 100).toFixed(0) + '%)');
+  console.log('    Engine: ' + animationAnalysis.engine);
+  console.log('    Libraries: ' + (animationAnalysis.libraries.map(l => l.name).join(', ') || 'none'));
+
   // Step 4: Generate preset via Claude
-  console.log('  [4/4] Generating preset via Claude...');
-  const presetContent = await generatePreset(config.url, tokens, mapped, extractionData);
+  console.log('  [4/5] Generating preset via Claude...');
+  const presetContent = await generatePreset(config.url, tokens, mapped, extractionData, animationAnalysis, animationTokens);
 
   // Save preset with atomic write (temp file + rename to prevent race conditions)
   const outputPath = path.join(config.outputDir, config.presetName + '.md');
@@ -230,6 +259,12 @@ async function main() {
   const tmpMappedPath = mappedPath + '.tmp-' + Date.now();
   fs.writeFileSync(tmpMappedPath, JSON.stringify(mapped, null, 2), 'utf-8');
   fs.renameSync(tmpMappedPath, mappedPath);
+
+  // Save animation analysis (atomic write)
+  const animPath = path.join(extractionDir, 'animation-analysis.json');
+  const tmpAnimPath = animPath + '.tmp-' + Date.now();
+  fs.writeFileSync(tmpAnimPath, JSON.stringify(animationAnalysis, null, 2), 'utf-8');
+  fs.renameSync(tmpAnimPath, animPath);
 
   console.log('\n  PRESET GENERATED');
   console.log('  Saved to: ' + outputPath);

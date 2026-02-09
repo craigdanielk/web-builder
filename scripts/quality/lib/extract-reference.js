@@ -24,6 +24,12 @@ const { chromium } = require('playwright');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
+const {
+  getPreNavigationScript,
+  setupNetworkInterception,
+  getMutationObserverScript,
+  extractAnimationData,
+} = require('./animation-detector');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -64,6 +70,10 @@ const CSS_PROPERTIES = [
   'textTransform',
   'gap',
   'maxWidth',
+  'animationName',
+  'animationDuration',
+  'animationTimingFunction',
+  'transition',
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -124,11 +134,18 @@ async function extractReference(url, outputDir) {
     });
     const page = await context.newPage();
 
+    // ── Animation: pre-navigation hooks ────────────────────────────────
+    await page.addInitScript(getPreNavigationScript());
+    const getNetworkResults = await setupNetworkInterception(page);
+
     // ── 2. Navigate and wait for load ──────────────────────────────────
     console.log(`[extract] Navigating to ${url}`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
     await sleep(POST_LOAD_DELAY_MS);
     console.log(`[extract] Page loaded, settling for ${POST_LOAD_DELAY_MS}ms`);
+
+    // ── Animation: mutation observer for scroll-triggered changes ─────
+    await page.evaluate(getMutationObserverScript());
 
     // ── 3. Measure page height ─────────────────────────────────────────
     const pageHeight = await page.evaluate(() => document.body.scrollHeight);
@@ -231,6 +248,16 @@ async function extractReference(url, outputDir) {
     );
 
     console.log(`[extract] Extracted ${renderedDOM.length} DOM elements`);
+
+    // ── 6b. Extract animation data ──────────────────────────────────
+    console.log('[extract] Detecting animation patterns...');
+    const rawAnimationEvidence = await extractAnimationData(page);
+    const networkAnimationResults = getNetworkResults();
+    console.log(
+      `[extract] Animation: ${rawAnimationEvidence.libraries.length} libraries, ` +
+        `${rawAnimationEvidence.cssKeyframes.length} keyframes, ` +
+        `${rawAnimationEvidence.animatedElementCount} animated elements`
+    );
 
     // ── 7. Identify visual sections ────────────────────────────────────
     // Sections are defined as block-level children of <main> or <body>
@@ -506,6 +533,10 @@ async function extractReference(url, outputDir) {
             )
           : sectionScreenshots,
         scrollCaptures: scrollCaptures.length, // just the count (buffers are large)
+      },
+      animations: {
+        evidence: rawAnimationEvidence,
+        networkResults: networkAnimationResults,
       },
     };
 

@@ -87,6 +87,60 @@ function collectTokens(extractionData) {
   };
 }
 
+/**
+ * Collects animation-specific design tokens from extraction data.
+ * Extracts animation names, transition properties, durations, and easing
+ * functions from the rendered DOM's computed styles.
+ * @param {Object} extractionData - Full extraction result from extract-reference
+ * @returns {Object} Animation tokens
+ */
+function collectAnimationTokens(extractionData) {
+  const animationNames = new Set();
+  const transitionProps = new Set();
+  const durations = new Set();
+  const easings = new Set();
+
+  for (const el of (extractionData.renderedDOM || [])) {
+    const s = el.styles || {};
+
+    if (s.animationName && s.animationName !== 'none') {
+      for (const name of s.animationName.split(',')) {
+        const trimmed = name.trim();
+        if (trimmed && trimmed !== 'none') animationNames.add(trimmed);
+      }
+    }
+
+    if (s.animationDuration && s.animationDuration !== '0s') {
+      durations.add(s.animationDuration);
+    }
+
+    if (s.animationTimingFunction && s.animationTimingFunction !== 'ease') {
+      easings.add(s.animationTimingFunction);
+    }
+
+    if (s.transition && s.transition !== 'all 0s ease 0s' && s.transition !== 'none') {
+      // Parse transition shorthand — extract property names and durations
+      const parts = s.transition.split(',');
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (!trimmed) continue;
+        transitionProps.add(trimmed.split(/\s+/)[0]); // property name
+        const durationMatch = trimmed.match(/(\d+\.?\d*m?s)/);
+        if (durationMatch) durations.add(durationMatch[1]);
+        const easingMatch = trimmed.match(/(ease[-\w]*|linear|cubic-bezier\([^)]+\))/);
+        if (easingMatch) easings.add(easingMatch[1]);
+      }
+    }
+  }
+
+  return {
+    animationNames: [...animationNames],
+    transitionProperties: [...transitionProps],
+    durations: [...durations],
+    easingFunctions: [...easings],
+  };
+}
+
 function parsePreset(presetPath) {
   const content = fs.readFileSync(presetPath, 'utf-8');
   const name = path.basename(presetPath, '.md');
@@ -208,4 +262,4 @@ function compareToPreset(tokens, presetPath) {
   };
 }
 
-module.exports = { collectTokens, compareToPreset, parsePreset, rgbToHex };
+module.exports = { collectTokens, collectAnimationTokens, compareToPreset, parsePreset, rgbToHex };
