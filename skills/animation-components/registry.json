@@ -1,0 +1,624 @@
+{
+  "version": "1.0.0",
+  "description": "Animation component registry. Maps pattern names to self-contained React components.",
+  "components": {
+    "fade-up-stagger": {
+      "file": "entrance/fade-up-stagger.tsx",
+      "category": "entrance",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children",
+        "selector",
+        "stagger",
+        "duration",
+        "ease",
+        "y",
+        "triggerStart"
+      ],
+      "defaultProps": {
+        "stagger": 0.12,
+        "duration": 0.8,
+        "ease": "power3.out",
+        "y": 40,
+        "triggerStart": "top 80%"
+      },
+      "archetypes": [
+        "FEATURES",
+        "TESTIMONIALS",
+        "GALLERY",
+        "TEAM",
+        "PRODUCT-SHOWCASE",
+        "HOW-IT-WORKS"
+      ],
+      "description": "Elements slide up and fade in with stagger timing. The workhorse pattern for card grids, feature lists, any multi-element layout.",
+      "status": "ready",
+      "source": "21st.dev/ibelick/animated-group"
+    },
+    "fade-up-single": {
+      "file": "entrance/fade-up-single.tsx",
+      "category": "entrance",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children",
+        "duration",
+        "ease",
+        "y",
+        "triggerStart"
+      ],
+      "defaultProps": {
+        "duration": 0.7,
+        "ease": "power2.out",
+        "y": 30,
+        "triggerStart": "top 85%"
+      },
+      "archetypes": [
+        "CONTACT",
+        "NEWSLETTER",
+        "ABOUT"
+      ],
+      "description": "Single element slides up and fades in on scroll.",
+      "status": "ready",
+      "source": "21st.dev/dillionverma/fade-text"
+    },
+    "character-reveal": {
+      "file": "entrance/character-reveal.tsx",
+      "category": "entrance",
+      "engine": "gsap",
+      "dependencies": [
+        "gsap",
+        "@gsap/react"
+      ],
+      "props": [
+        "text",
+        "tag",
+        "stagger",
+        "duration",
+        "ease"
+      ],
+      "defaultProps": {
+        "tag": "h1",
+        "stagger": 0.03,
+        "duration": 0.8,
+        "ease": "power3.out"
+      },
+      "archetypes": [
+        "HERO"
+      ],
+      "description": "Per-character 3D rotation reveal for hero headlines.",
+      "status": "ready",
+      "source": "21st.dev/chetanverma16/text-reveal"
+    },
+    "word-reveal": {
+      "file": "entrance/word-reveal.tsx",
+      "category": "entrance",
+      "engine": "framer-motion",
+      "dependencies": [
+        "motion"
+      ],
+      "props": [
+        "text",
+        "tag",
+        "stagger",
+        "duration",
+        "ease"
+      ],
+      "defaultProps": {
+        "tag": "h2",
+        "stagger": 0.06,
+        "duration": 0.7,
+        "ease": "power3.out"
+      },
+      "archetypes": [
+        "ABOUT",
+        "CTA"
+      ],
+      "description": "Words clip-reveal upward with stagger timing.",
+      "status": "ready",
+      "source": "21st.dev/molecule-lab-rushil/word-rotate"
+    },
+    "slide-in-left": {
+      "file": "entrance/slide-in-left.tsx",
+      "category": "entrance",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children",
+        "duration",
+        "ease",
+        "x"
+      ],
+      "defaultProps": {
+        "duration": 0.8,
+        "ease": "power3.out",
+        "x": -60
+      },
+      "archetypes": [
+        "COMPARISON"
+      ],
+      "description": "Element slides in from the left edge.",
+      "status": "ready",
+      "source": "21st.dev/minhxthanh/slide-tabs"
+    },
+    "slide-in-right": {
+      "file": "entrance/slide-in-right.tsx",
+      "category": "entrance",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children",
+        "duration",
+        "ease",
+        "x"
+      ],
+      "defaultProps": {
+        "duration": 0.8,
+        "ease": "power3.out",
+        "x": 60
+      },
+      "archetypes": [],
+      "description": "Element slides in from the right edge.",
+      "status": "ready",
+      "source": "21st.dev/minhxthanh/slide-tabs"
+    },
+    "scale-up": {
+      "file": "entrance/scale-up.tsx",
+      "category": "entrance",
+      "engine": "framer-motion",
+      "dependencies": [
+        "motion"
+      ],
+      "props": [
+        "children",
+        "duration",
+        "ease",
+        "scale"
+      ],
+      "defaultProps": {
+        "duration": 0.8,
+        "ease": "power3.out",
+        "scale": 0.85
+      },
+      "archetypes": [],
+      "description": "Element scales from small to full size with fade.",
+      "status": "ready",
+      "source": "21st.dev/badtzx0/blur-reveal"
+    },
+    "blur-fade": {
+      "file": "entrance/blur-fade.tsx",
+      "category": "entrance",
+      "engine": "framer-motion",
+      "dependencies": [
+        "motion"
+      ],
+      "props": [
+        "children",
+        "duration",
+        "ease",
+        "blur"
+      ],
+      "defaultProps": {
+        "duration": 0.8,
+        "ease": "power2.out",
+        "blur": 10
+      },
+      "archetypes": [],
+      "description": "Element fades in from blurred to clear.",
+      "status": "ready",
+      "source": "21st.dev/badtzx0/blur-reveal"
+    },
+    "staggered-timeline": {
+      "file": "entrance/staggered-timeline.tsx",
+      "category": "entrance",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children",
+        "duration",
+        "ease",
+        "stagger",
+        "triggerStart"
+      ],
+      "defaultProps": {
+        "duration": 0.8,
+        "ease": "power3.out",
+        "stagger": 0.15,
+        "triggerStart": "top 75%"
+      },
+      "archetypes": [
+        "CTA",
+        "HERO"
+      ],
+      "description": "Sequential reveal of headline, subtitle, body, CTA in order.",
+      "status": "ready",
+      "source": "21st.dev/ibelick/animated-group"
+    },
+    "parallax-section": {
+      "file": "scroll/parallax-section.tsx",
+      "category": "scroll",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children",
+        "speed",
+        "direction"
+      ],
+      "defaultProps": {
+        "speed": 0.3,
+        "direction": "up"
+      },
+      "archetypes": [
+        "HERO"
+      ],
+      "description": "Background image moves at different speed than content on scroll.",
+      "status": "ready",
+      "source": "21st.dev/sshahaider/zoom-parallax"
+    },
+    "parallax-layers": {
+      "file": "scroll/parallax-layers.tsx",
+      "category": "scroll",
+      "engine": "framer-motion",
+      "dependencies": [
+        "motion"
+      ],
+      "props": [
+        "children",
+        "layers"
+      ],
+      "defaultProps": {
+        "layers": 3
+      },
+      "archetypes": [],
+      "description": "Multiple layers move at different scroll speeds.",
+      "status": "ready",
+      "source": "21st.dev/bundui/floating-paths"
+    },
+    "scroll-progress": {
+      "file": "scroll/scroll-progress.tsx",
+      "category": "scroll",
+      "engine": "framer-motion",
+      "dependencies": [
+        "lucide-react",
+        "motion"
+      ],
+      "props": [
+        "children"
+      ],
+      "defaultProps": {},
+      "archetypes": [],
+      "description": "Element animates tied to scroll position (scrub).",
+      "status": "ready",
+      "source": "21st.dev/skyleen77/scroll-progress"
+    },
+    "pin-and-reveal": {
+      "file": "scroll/pin-and-reveal.tsx",
+      "category": "scroll",
+      "engine": "css",
+      "dependencies": [],
+      "props": [
+        "children",
+        "panels"
+      ],
+      "defaultProps": {},
+      "archetypes": [
+        "HOW-IT-WORKS"
+      ],
+      "description": "Section pins in place while content reveals on scroll.",
+      "status": "ready",
+      "source": "21st.dev/minhxthanh/sticky-scroll-cards-section"
+    },
+    "horizontal-scroll": {
+      "file": "scroll/horizontal-scroll.tsx",
+      "category": "scroll",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children"
+      ],
+      "defaultProps": {},
+      "archetypes": [],
+      "description": "Horizontal scrolling section triggered by vertical scroll.",
+      "status": "ready",
+      "source": "21st.dev/uniquesonu/horizontal-scroll-carousel"
+    },
+    "hover-lift": {
+      "file": "interactive/hover-lift.tsx",
+      "category": "interactive",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children",
+        "lift",
+        "shadow"
+      ],
+      "defaultProps": {
+        "lift": -4,
+        "shadow": true
+      },
+      "archetypes": [
+        "FEATURES",
+        "PRODUCT-SHOWCASE",
+        "PRICING"
+      ],
+      "description": "Card lifts up with shadow on hover.",
+      "status": "ready",
+      "source": "21st.dev/JurreHoutkamp/hover-zoom"
+    },
+    "hover-glow": {
+      "file": "interactive/hover-glow.tsx",
+      "category": "interactive",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children",
+        "color",
+        "intensity"
+      ],
+      "defaultProps": {
+        "color": "accent",
+        "intensity": 0.3
+      },
+      "archetypes": [],
+      "description": "Element glows on hover.",
+      "status": "ready",
+      "source": "21st.dev/yashvw25/neon-flow"
+    },
+    "magnetic-button": {
+      "file": "interactive/magnetic-button.tsx",
+      "category": "interactive",
+      "engine": "framer-motion",
+      "dependencies": [
+        "motion"
+      ],
+      "props": [
+        "children",
+        "strength"
+      ],
+      "defaultProps": {
+        "strength": 0.3
+      },
+      "archetypes": [],
+      "description": "Button follows cursor with magnetic pull effect.",
+      "status": "ready",
+      "source": "21st.dev/uilayout.contact/button-magnetic"
+    },
+    "tilt-card": {
+      "file": "interactive/tilt-card.tsx",
+      "category": "interactive",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children",
+        "maxTilt",
+        "perspective"
+      ],
+      "defaultProps": {
+        "maxTilt": 10,
+        "perspective": 1000
+      },
+      "archetypes": [],
+      "description": "Card tilts in 3D following mouse position.",
+      "status": "ready",
+      "source": "21st.dev/JurreHoutkamp/tilt-card"
+    },
+    "accordion-expand": {
+      "file": "interactive/accordion-expand.tsx",
+      "category": "interactive",
+      "engine": "css",
+      "dependencies": [],
+      "props": [
+        "children",
+        "duration"
+      ],
+      "defaultProps": {
+        "duration": 0.3
+      },
+      "archetypes": [
+        "FAQ"
+      ],
+      "description": "Smooth expand/collapse for FAQ accordion items.",
+      "status": "ready",
+      "source": "21st.dev/meschacirung/faq"
+    },
+    "floating": {
+      "file": "continuous/floating.tsx",
+      "category": "continuous",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion",
+        "lucide-react"
+      ],
+      "props": [
+        "children",
+        "amplitude",
+        "duration"
+      ],
+      "defaultProps": {
+        "amplitude": 10,
+        "duration": 3
+      },
+      "archetypes": [],
+      "description": "Gentle floating up/down loop.",
+      "status": "ready",
+      "source": "21st.dev/ln-dev7/floating-button"
+    },
+    "marquee": {
+      "file": "continuous/marquee.tsx",
+      "category": "continuous",
+      "engine": "css",
+      "dependencies": [],
+      "props": [
+        "children",
+        "speed",
+        "direction"
+      ],
+      "defaultProps": {
+        "speed": 30,
+        "direction": "left"
+      },
+      "archetypes": [
+        "LOGO-BAR"
+      ],
+      "description": "Infinite horizontal scroll for logos or text.",
+      "status": "ready",
+      "source": "21st.dev/lukacho/marquee"
+    },
+    "gradient-shift": {
+      "file": "continuous/gradient-shift.tsx",
+      "category": "continuous",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "colors",
+        "duration",
+        "angle"
+      ],
+      "defaultProps": {
+        "duration": 8,
+        "angle": 45
+      },
+      "archetypes": [
+        "HERO"
+      ],
+      "description": "Animated gradient background that shifts colors.",
+      "status": "ready",
+      "source": "21st.dev/sshahaider/gradient-background"
+    },
+    "count-up": {
+      "file": "continuous/count-up.tsx",
+      "category": "continuous",
+      "engine": "framer-motion",
+      "dependencies": [
+        "motion",
+        "react-use-measure"
+      ],
+      "props": [
+        "target",
+        "duration",
+        "decimals",
+        "prefix",
+        "suffix"
+      ],
+      "defaultProps": {
+        "duration": 1.6,
+        "decimals": 0,
+        "prefix": "",
+        "suffix": ""
+      },
+      "archetypes": [
+        "STATS"
+      ],
+      "description": "Animated number counter triggered on scroll.",
+      "status": "ready",
+      "source": "21st.dev/ibelick/sliding-number"
+    },
+    "typewriter": {
+      "file": "text/typewriter.tsx",
+      "category": "text",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "text",
+        "speed",
+        "cursor"
+      ],
+      "defaultProps": {
+        "speed": 0.05,
+        "cursor": true
+      },
+      "archetypes": [],
+      "description": "Character-by-character typing effect.",
+      "status": "ready",
+      "source": "21st.dev/aceternity/typewriter-effect"
+    },
+    "text-gradient-flow": {
+      "file": "text/text-gradient-flow.tsx",
+      "category": "text",
+      "engine": "framer-motion",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "props": [
+        "children",
+        "colors",
+        "duration"
+      ],
+      "defaultProps": {
+        "duration": 4
+      },
+      "archetypes": [],
+      "description": "Animated gradient flowing across text.",
+      "status": "ready",
+      "source": "21st.dev/ibelick/text-shimmer-wave"
+    },
+    "text-scramble": {
+      "file": "text/text-scramble.tsx",
+      "category": "text",
+      "engine": "css",
+      "dependencies": [
+        "three"
+      ],
+      "props": [
+        "text",
+        "duration"
+      ],
+      "defaultProps": {
+        "duration": 1
+      },
+      "archetypes": [],
+      "description": "Text scrambles/decodes into final form.",
+      "status": "ready",
+      "source": "21st.dev/dhileepkumargm/digital-glitch"
+    },
+    "split-text-stagger": {
+      "file": "text/split-text-stagger.tsx",
+      "category": "text",
+      "engine": "css",
+      "dependencies": [],
+      "props": [
+        "text",
+        "tag",
+        "splitBy",
+        "stagger",
+        "duration"
+      ],
+      "defaultProps": {
+        "tag": "h2",
+        "splitBy": "chars",
+        "stagger": 0.02,
+        "duration": 0.6
+      },
+      "archetypes": [
+        "HERO"
+      ],
+      "description": "Split text into chars/words with stagger animation.",
+      "status": "ready",
+      "source": "21st.dev/minhxthanh/bubble-text"
+    }
+  }
+}

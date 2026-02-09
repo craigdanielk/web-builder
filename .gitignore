@@ -1,6 +1,9 @@
 # Generated output (raw pipeline output)
 output/
 
+# Downloaded 21st.dev component library (large cache, re-crawlable)
+skills/animation-components/21st-dev-library/
+
 # Python
 __pycache__/
 *.pyc

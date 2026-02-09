@@ -1,7 +1,7 @@
 # Web Builder — System Context
 
 **Last Updated:** 2026-02-09
-**System Version:** v0.5.0
+**System Version:** v0.6.0
 
 ---
 
@@ -12,7 +12,7 @@
 | Runtime | Python 3 + Node.js (hybrid pipeline) |
 | Generated stack | Next.js 16.1.6 / React 19 / Tailwind CSS 4 / TypeScript 5 |
 | Animation engines | GSAP 3.14 + Framer Motion 12 (both can coexist) |
-| Pipeline entry | `scripts/orchestrate.py` (1161 lines) |
+| Pipeline entry | `scripts/orchestrate.py` (1211 lines) |
 | API | Anthropic Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) |
 | Deployment | Vercel CLI (`vercel --yes`) |
 | API key | `ANTHROPIC_API_KEY` in `.env` (gitignored) |
@@ -111,6 +111,13 @@ web-builder/
 │   ├── style-schema.md                ← 7 style dimensions with Tailwind mappings
 │   ├── animation-patterns.md          ← 20+ named GSAP/Framer Motion patterns
 │   ├── image-extraction.md            ← Image categorization spec (10 categories)
+│   ├── animation-components/            ← Pre-built animation component library
+│   │   ├── registry.json (303)          ← Pattern → component file mapping (27 entries)
+│   │   ├── entrance/                    ← Scroll-triggered entrance animations (9 slots)
+│   │   ├── scroll/                      ← Scroll-linked animations (5 slots)
+│   │   ├── interactive/                 ← User-triggered animations (5 slots)
+│   │   ├── continuous/                  ← Always-running animations (5 slots)
+│   │   └── text/                        ← Text-specific animations (4 slots)
 │   ├── presets/ (23 presets + _template)
 │   │   ├── _template.md
 │   │   ├── artisan-food.md            ← Coffee, bakery, artisan food
@@ -152,7 +159,7 @@ web-builder/
 │   └── {project}.md                   ← One per project
 │
 ├── scripts/
-│   ├── orchestrate.py (1161 lines)    ← Main pipeline — 6 stages + injection wiring
+│   ├── orchestrate.py (1211 lines)    ← Main pipeline — 6 stages + injection wiring + component copy
 │   └── quality/                       ← URL extraction + validation tools
 │       ├── url-to-preset.js (275)     ← URL → preset markdown
 │       ├── url-to-brief.js (201)      ← URL → brief markdown
@@ -161,12 +168,14 @@ web-builder/
 │       ├── test-animation-detector.js (196) ← Standalone animation test
 │       └── lib/
 │           ├── extract-reference.js (556)   ← Playwright extraction engine
-│           ├── animation-detector.js (454)  ← Animation library detection
+│           ├── animation-detector.js (750)  ← Animation detection + GSAP interception + section grouping
 │           ├── archetype-mapper.js (269)    ← Section → archetype mapping
 │           ├── design-tokens.js (265)       ← CSS → design token collection
-│           ├── animation-injector.js (403)  ← Per-section animation prompt builder
+│           ├── animation-injector.js (808)  ← 3-tier animation injection (library > extracted > snippet)
 │           ├── asset-injector.js (378)     ← Per-section asset prompt builder
 │           ├── asset-downloader.js (257)   ← Download + verify extracted assets
+│           ├── gsap-extractor.js (454)      ← Static JS bundle GSAP call extraction
+│           ├── animation-summarizer.js (209) ← Token-efficient animation signature builder
 │           ├── section-context.js (192)     ← Per-section prompt context builder
 │           ├── post-process.js (313)        ← Post-generation cleanup
 │           └── visual-validator.js (401)    ← Visual consistency checker
@@ -202,7 +211,8 @@ web-builder/
     ├── 2026-02-08-farm-minerals-rebuild.md
     ├── 2026-02-09-nike-golf-light-theme-rebuild.md
     ├── 2026-02-09-system-docs-automation-success.md
-    └── 2026-02-09-data-injection-pipeline-success.md
+    ├── 2026-02-09-data-injection-pipeline-success.md
+    └── 2026-02-09-animation-component-library-infra-success.md
 ```
 
 ---
@@ -254,6 +264,7 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 - Font imports from preset's Type line
 - `globals.css` with engine-specific styles
 - Copies sections to `src/components/sections/`
+- Copies animation components from library to `src/components/animations/` (non-placeholder only, matched by archetype)
 - Downloads verified assets to `public/images/` and `public/lottie/` (via asset-injector + asset-downloader)
 - Runs `npm install`
 
@@ -269,10 +280,12 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 | bluebird-coffee-roastery | artisan-food | framer-motion | Vercel |
 | nike-golf | nike-golf | gsap | Vercel |
 | farm-minerals-anim | farm-minerals-anim | gsap* | Vercel |
+| farm-minerals-v3 | farm-minerals-promo-v2 | gsap | Vercel |
 
 *farm-minerals-anim: Built before v0.5.0 injection pipeline — preset says gsap but sections use framer-motion. Rebuild with injection pipeline to fix.
 
 ### Active Plans
+- **Animation Component Library** — Infrastructure built v0.6.0. Registry (27 patterns), 3-tier injection (library > extracted > snippet), component copy in stage_deploy. Awaiting 21st.dev component population.
 - **[Data Injection Pipeline](plans/active/data-injection-pipeline.md)** — Implemented v0.5.0. Animation injector + asset injector + engine-branched prompts + dynamic token budgets + dependency fix.
 - **[System Documentation Automation](plans/active/system-documentation-automation.md)** — Implemented v0.4.1. CLAUDE.md created, README/cursorrules refreshed, retro skill doc-sync integrated.
 
@@ -282,7 +295,12 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 
 ### Active Issues
 
-None currently. All known gaps have been resolved in v0.5.0.
+**parse_fonts() recurring corruption (2 occurrences)**
+- `parse_fonts()` (orchestrate.py) regex fails on certain preset formatting
+- Symptoms: Preset YAML content leaks into layout.tsx font imports, causing build failure
+- Workaround: Manually overwrite layout.tsx with clean font setup after deploy
+- Hit in: farm-minerals-v2, farm-minerals-v3
+- Priority: Medium — fix the regex or add layout.tsx validation
 
 ### Resolved Issues (Keep for Reference)
 
@@ -347,10 +365,10 @@ None currently. All known gaps have been resolved in v0.5.0.
 | Scaffold | 2048 | claude-sonnet-4-5-20250929 |
 | Section (simple/framer) | 4096 | claude-sonnet-4-5-20250929 |
 | Section (complex GSAP/Lottie) | 6144 | claude-sonnet-4-5-20250929 |
-| Section (multi-pattern) | 8192 | claude-sonnet-4-5-20250929 |
+| Section (multi-pattern or component injection) | 8192 | claude-sonnet-4-5-20250929 |
 | Review | 4096 | claude-sonnet-4-5-20250929 |
 
-Section token budgets are dynamic — `animation-injector.js` calculates per-section based on pattern complexity, engine, and Lottie usage.
+Section token budgets are dynamic — `animation-injector.js` calculates per-section based on pattern complexity, engine, Lottie usage, and whether a library component is being injected (always 8192 for component injection).
 
 ### Running the Pipeline
 
@@ -389,7 +407,8 @@ vercel --yes --prod             # Production deployment
 | Change model | `orchestrate.py:69-73` (MODELS dict) |
 | Change Next.js version | `orchestrate.py:680` (deps dict in stage_deploy) |
 | Fix dependency resolution | `orchestrate.py:684-700` (engine deps in stage_deploy) |
-| Add animation pattern | `animation-injector.js:16-30` (ARCHETYPE_PATTERN_MAP) + `skills/animation-patterns.md` |
+| Add animation pattern | `animation-injector.js:220-240` (ARCHETYPE_PATTERN_MAP) + `skills/animation-patterns.md` |
+| Add animation component | `skills/animation-components/{category}/{name}.tsx` + update `registry.json` (set status to "ready") |
 | Add image category | `asset-injector.js:21-47` (URL/ALT category signals) + `asset-injector.js:53-68` (section map) |
 | Add extraction CSS properties | `scripts/quality/lib/extract-reference.js:73-76` |
 
@@ -397,11 +416,12 @@ vercel --yes --prod             # Production deployment
 
 ## System Version
 
-**Current:** v0.5.0 (2026-02-09)
+**Current:** v0.6.0 (2026-02-09)
 
 ### Changelog
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.6.0 | 2026-02-09 | Animation component library: registry (27 patterns), 3-tier injection (library > extracted > snippet), gsap-extractor, animation-summarizer, per-section grouping, component copy in stage_deploy |
 | v0.5.0 | 2026-02-09 | Data injection pipeline: animation injector, asset injector/downloader, engine-branched prompts, dynamic token budgets, dependency fix |
 | v0.4.1 | 2026-02-09 | Doc-sync integration into retrospective skill; CLAUDE.md, README.md, .cursorrules refresh |
 | v0.4.0 | 2026-02-09 | Animation extraction integration (detector, analyzer, preset injection) |

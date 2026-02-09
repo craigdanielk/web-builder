@@ -5,9 +5,227 @@
  * Transforms animation analysis data + preset config into per-section prompt
  * blocks that get injected into section generation prompts.
  *
- * Consumes: animation-analysis.json (from animation-detector.js)
- * Produces: animation context strings with token budgets and dependency lists
+ * Three-tier injection strategy (in priority order):
+ * 1. Component Library: If a matching component exists in skills/animation-components/,
+ *    inject the full source code with customized props from extracted data.
+ * 2. Extracted Signature: If perSection data has captured animations,
+ *    inject summarized extracted signature (from animation-summarizer).
+ * 3. Pattern Snippet: Fall back to reference code snippets (original behavior).
+ *
+ * Consumes: animation-analysis.json, registry.json, component .tsx files
+ * Produces: animation context strings with token budgets, dependency lists,
+ *           and component file paths for stage_deploy() to copy.
  */
+
+const fs = require('fs');
+const path = require('path');
+const { summarizeSection } = require('./animation-summarizer');
+
+// ---------------------------------------------------------------------------
+// Registry management
+// ---------------------------------------------------------------------------
+
+const REGISTRY_PATH = path.resolve(__dirname, '../../../skills/animation-components/registry.json');
+const COMPONENTS_DIR = path.resolve(__dirname, '../../../skills/animation-components');
+
+let _registryCache = null;
+
+/**
+ * Load and cache the animation component registry.
+ * @returns {Object} The registry object with component definitions
+ */
+function loadRegistry() {
+  if (_registryCache) return _registryCache;
+
+  try {
+    const raw = fs.readFileSync(REGISTRY_PATH, 'utf8');
+    _registryCache = JSON.parse(raw);
+    return _registryCache;
+  } catch (err) {
+    console.warn(`[animation-injector] Could not load registry: ${err.message}`);
+    _registryCache = { components: {} };
+    return _registryCache;
+  }
+}
+
+/**
+ * Look up a component in the registry by pattern name.
+ * Returns null if not found or if it's a placeholder.
+ * @param {string} patternName
+ * @returns {Object|null} Component definition from registry
+ */
+function lookupComponent(patternName) {
+  const registry = loadRegistry();
+  const comp = registry.components[patternName];
+  if (!comp) return null;
+  if (comp.status === 'placeholder') return null;
+  return comp;
+}
+
+/**
+ * Read a component's source file from the library.
+ * @param {string} relativePath - Relative path within skills/animation-components/
+ * @returns {string|null} Component source code, or null if file not found
+ */
+function readComponentSource(relativePath) {
+  const fullPath = path.join(COMPONENTS_DIR, relativePath);
+  try {
+    return fs.readFileSync(fullPath, 'utf8');
+  } catch (err) {
+    console.warn(`[animation-injector] Component file not found: ${relativePath}`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Extracted data → pattern mapping
+// ---------------------------------------------------------------------------
+
+/**
+ * Map extracted GSAP animation data to a library pattern name.
+ * Uses heuristics based on animation properties to determine the best match.
+ * @param {Object} sectionData - Per-section extracted animation data
+ * @returns {string|null} Pattern name or null if no confident match
+ */
+function mapExtractedToPattern(sectionData) {
+  if (!sectionData || !sectionData.animations || sectionData.animations.length === 0) {
+    return null;
+  }
+
+  const anims = sectionData.animations;
+
+  // Check for counter pattern (onUpdate with textContent)
+  const hasCounter = anims.some(function (a) {
+    const vars = a.vars || {};
+    return vars.onUpdate && (
+      String(vars.onUpdate).includes('textContent') ||
+      String(vars.onUpdate).includes('innerText') ||
+      String(vars.onUpdate).includes('toFixed')
+    );
+  });
+  if (hasCounter) return 'count-up';
+
+  // Check for timeline with text targets → character-reveal
+  const hasTimeline = anims.some(function (a) { return a.type === 'timeline'; });
+  const hasTextTarget = anims.some(function (a) {
+    const target = String(a.target || '');
+    return target.includes('char') || target.includes('letter') ||
+           target.includes('span') || target.includes('.char');
+  });
+  if (hasTimeline && hasTextTarget) return 'character-reveal';
+
+  // Check for word-level targets
+  const hasWordTarget = anims.some(function (a) {
+    const target = String(a.target || '');
+    return target.includes('word') || target.includes('[data-word]');
+  });
+  if (hasWordTarget) return 'word-reveal';
+
+  // Check for ScrollTrigger with pin → pin-and-reveal
+  const hasPinnedScroll = anims.some(function (a) {
+    const st = a.scrollTrigger || (a.vars && a.vars.scrollTrigger) || {};
+    return st.pin === true || st.pin;
+  });
+  if (hasPinnedScroll) return 'pin-and-reveal';
+
+  // Check for ScrollTrigger with scrub → parallax-section
+  const hasScrub = anims.some(function (a) {
+    const st = a.scrollTrigger || (a.vars && a.vars.scrollTrigger) || {};
+    return st.scrub === true || typeof st.scrub === 'number';
+  });
+  if (hasScrub) return 'parallax-section';
+
+  // Check for stagger → fade-up-stagger
+  const hasStagger = anims.some(function (a) {
+    const vars = a.vars || {};
+    return vars.stagger !== undefined && vars.stagger !== 0;
+  });
+  const hasYMovement = anims.some(function (a) {
+    const vars = a.vars || {};
+    return vars.y !== undefined;
+  });
+
+  // Timeline without text targets → staggered-timeline
+  if (hasTimeline && !hasTextTarget && !hasStagger) return 'staggered-timeline';
+
+  // Stagger with Y movement → fade-up-stagger
+  if (hasStagger && hasYMovement) return 'fade-up-stagger';
+  if (hasStagger) return 'fade-up-stagger';
+
+  // Simple Y movement → fade-up-single
+  if (hasYMovement) return 'fade-up-single';
+
+  // X movement → slide-in
+  const hasXMovement = anims.some(function (a) {
+    const vars = a.vars || {};
+    return vars.x !== undefined;
+  });
+  if (hasXMovement) {
+    const xVal = anims.find(function (a) { return (a.vars || {}).x !== undefined; }).vars.x;
+    return xVal < 0 ? 'slide-in-left' : 'slide-in-right';
+  }
+
+  // Scale → scale-up
+  const hasScale = anims.some(function (a) {
+    const vars = a.vars || {};
+    return vars.scale !== undefined;
+  });
+  if (hasScale) return 'scale-up';
+
+  return null;
+}
+
+/**
+ * Extract prop overrides from extracted animation data to customize a component.
+ * @param {Object} sectionData - Per-section extracted animation data
+ * @param {Object} componentDef - Component definition from registry
+ * @returns {Object} Props to override on the component
+ */
+function extractPropOverrides(sectionData, componentDef) {
+  const overrides = {};
+  if (!sectionData || !sectionData.animations || sectionData.animations.length === 0) {
+    return overrides;
+  }
+
+  const defaults = componentDef.defaultProps || {};
+  const allowedProps = componentDef.props || [];
+
+  // Find the primary animation (first one with vars)
+  const primary = sectionData.animations.find(function (a) {
+    return a.vars && Object.keys(a.vars).length > 0;
+  });
+  if (!primary) return overrides;
+
+  const vars = primary.vars;
+
+  // Map extracted values to component props
+  if (allowedProps.includes('duration') && vars.duration !== undefined && vars.duration !== defaults.duration) {
+    overrides.duration = vars.duration;
+  }
+  if (allowedProps.includes('ease') && vars.ease && vars.ease !== defaults.ease) {
+    overrides.ease = vars.ease;
+  }
+  if (allowedProps.includes('stagger') && vars.stagger !== undefined && vars.stagger !== defaults.stagger) {
+    overrides.stagger = typeof vars.stagger === 'object' ? vars.stagger.each || vars.stagger.amount : vars.stagger;
+  }
+  if (allowedProps.includes('y') && vars.y !== undefined && vars.y !== defaults.y) {
+    overrides.y = vars.y;
+  }
+  if (allowedProps.includes('x') && vars.x !== undefined && vars.x !== defaults.x) {
+    overrides.x = vars.x;
+  }
+  if (allowedProps.includes('scale') && vars.scale !== undefined && vars.scale !== defaults.scale) {
+    overrides.scale = vars.scale;
+  }
+
+  // ScrollTrigger start
+  const st = vars.scrollTrigger || primary.scrollTrigger || {};
+  if (allowedProps.includes('triggerStart') && st.start && st.start !== defaults.triggerStart) {
+    overrides.triggerStart = st.start;
+  }
+
+  return overrides;
+}
 
 // ---------------------------------------------------------------------------
 // Pattern-to-Archetype Map (from animation-patterns.md)
@@ -27,10 +245,15 @@ const ARCHETYPE_PATTERN_MAP = {
   TEAM: ['fade-up-stagger'],
   CONTACT: ['fade-up-single'],
   FOOTER: null,            // static — no animation
+  'LOGO-BAR': ['marquee'],
+  PRICING: ['fade-up-stagger'],
+  FAQ: ['fade-up-single'],
+  NEWSLETTER: ['fade-up-single'],
+  'TRUST-BADGES': null,    // static — no animation
 };
 
 // ---------------------------------------------------------------------------
-// Reference code snippets keyed by pattern name (from animation-patterns.md)
+// Reference code snippets keyed by pattern name (fallback when no component)
 // ---------------------------------------------------------------------------
 
 const PATTERN_SNIPPETS = {
@@ -112,8 +335,7 @@ tl.from(".headline", { y: 40, opacity: 0, duration: 0.8 })
   .from(".cta-button", { y: 20, opacity: 0, duration: 0.4 }, "-=0.2");`,
 };
 
-// Framer Motion fallback snippet used when engine is framer-motion or as
-// the graceful default when animationAnalysis is missing.
+// Framer Motion fallback snippet
 const FRAMER_FADE_UP_SNIPPET = `<motion.div
   initial={{ opacity: 0, y: 20 }}
   whileInView={{ opacity: 1, y: 0 }}
@@ -142,7 +364,7 @@ function detectEngine(presetContent) {
  * Parse section_overrides from preset content.
  * Format example: "section_overrides: hero:lottie-hero features:scroll-reveal"
  * @param {string} presetContent
- * @returns {Object<string, string>} Map of uppercase archetype to override pattern
+ * @returns {Object<string, string>}
  */
 function parseSectionOverrides(presetContent) {
   const overrides = {};
@@ -162,11 +384,10 @@ function parseSectionOverrides(presetContent) {
 }
 
 /**
- * Determine the animation pattern(s) for a section archetype, considering
- * preset overrides and the default archetype map.
- * @param {string} archetype - Uppercase section archetype (e.g. "HERO")
- * @param {Object<string, string>} overrides - Parsed preset section overrides
- * @returns {string[]|null} Array of pattern names, or null for static sections
+ * Determine the animation pattern(s) for a section archetype.
+ * @param {string} archetype
+ * @param {Object<string, string>} overrides
+ * @returns {string[]|null}
  */
 function resolvePatterns(archetype, overrides) {
   const normalized = (archetype || '').toUpperCase();
@@ -186,7 +407,7 @@ function resolvePatterns(archetype, overrides) {
 /**
  * Determine intensity label from the animation analysis.
  * @param {Object|null} animationAnalysis
- * @returns {string} 'none' | 'subtle' | 'moderate' | 'expressive'
+ * @returns {string}
  */
 function getIntensity(animationAnalysis) {
   if (!animationAnalysis) return 'moderate';
@@ -201,12 +422,10 @@ function getIntensity(animationAnalysis) {
  * @returns {{ isLottie: boolean, filename: string|null }}
  */
 function checkLottie(animationAnalysis, archetype, overridePattern) {
-  // Override explicitly requests lottie
   if (overridePattern && overridePattern.startsWith('lottie')) {
     return { isLottie: true, filename: null };
   }
 
-  // Check analysis for Lottie files matching this section
   if (animationAnalysis && animationAnalysis.assets && animationAnalysis.assets.lottie) {
     const normalized = (archetype || '').toLowerCase();
     const match = animationAnalysis.assets.lottie.find(function (l) {
@@ -224,30 +443,26 @@ function checkLottie(animationAnalysis, archetype, overridePattern) {
 }
 
 /**
- * Determine token budget for a section based on its patterns, engine, and
- * whether Lottie is involved.
+ * Determine token budget for a section.
  * @param {string[]|null} patterns
  * @param {string} engine
  * @param {boolean} isLottie
+ * @param {boolean} hasComponentSource - Whether a library component is being injected
  * @returns {number}
  */
-function calculateTokenBudget(patterns, engine, isLottie) {
+function calculateTokenBudget(patterns, engine, isLottie, hasComponentSource) {
   // Static sections
   if (patterns === null) return 4096;
+
+  // Component source injection needs more room
+  if (hasComponentSource) return 8192;
 
   const complexPatterns = ['character-reveal', 'count-up', 'staggered-timeline'];
   const hasComplex = patterns.some(function (p) { return complexPatterns.includes(p); });
 
-  // Multi-pattern complex section
   if (patterns.length > 1 && hasComplex) return 8192;
-
-  // Lottie + GSAP combo
   if (isLottie && engine === 'gsap') return 6144;
-
-  // Complex pattern with GSAP
   if (hasComplex && engine === 'gsap') return 6144;
-
-  // Simple patterns or framer-motion
   return 4096;
 }
 
@@ -255,22 +470,115 @@ function calculateTokenBudget(patterns, engine, isLottie) {
  * Build the dependency list for a section.
  * @param {string} engine
  * @param {boolean} isLottie
+ * @param {Object|null} componentDef - Component definition from registry
  * @returns {string[]}
  */
-function buildDependencies(engine, isLottie) {
-  const deps = [];
+function buildDependencies(engine, isLottie, componentDef) {
+  const deps = new Set();
 
-  if (engine === 'gsap') {
-    deps.push('gsap', 'framer-motion');
+  // Component-specific dependencies
+  if (componentDef && componentDef.dependencies) {
+    componentDef.dependencies.forEach(function (d) { deps.add(d); });
+  } else if (engine === 'gsap') {
+    deps.add('gsap');
+    deps.add('framer-motion');
   } else {
-    deps.push('framer-motion');
+    deps.add('framer-motion');
   }
 
   if (isLottie) {
-    deps.push('@lottiefiles/dotlottie-react');
+    deps.add('@lottiefiles/dotlottie-react');
   }
 
-  return deps;
+  return Array.from(deps);
+}
+
+// ---------------------------------------------------------------------------
+// Component injection context builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an animation context block using a library component.
+ * @param {Object} componentDef - Component definition from registry
+ * @param {string} source - Component source code
+ * @param {Object} propOverrides - Props to override on the component
+ * @param {string} patternName - The pattern name
+ * @returns {string} Context block for the section prompt
+ */
+function buildComponentContext(componentDef, source, propOverrides, patternName) {
+  const lines = [];
+
+  lines.push('## Animation Context — Component Library Injection');
+  lines.push(`Engine: ${componentDef.engine}`);
+  lines.push(`Pattern: ${patternName}`);
+  lines.push(`Category: ${componentDef.category}`);
+  lines.push('');
+
+  // Component source code
+  lines.push('### Animation Component Source');
+  lines.push('Copy this component file exactly to `src/components/animations/' + patternName + '.tsx`:');
+  lines.push('```tsx');
+  lines.push(source.trim());
+  lines.push('```');
+  lines.push('');
+
+  // Import instruction
+  const componentName = patternName
+    .split('-')
+    .map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); })
+    .join('');
+  lines.push('### Usage');
+  lines.push(`Import: \`import ${componentName} from "@/components/animations/${patternName}";\``);
+  lines.push('');
+
+  // Props with overrides
+  const mergedProps = Object.assign({}, componentDef.defaultProps || {}, propOverrides);
+  const propsEntries = Object.entries(mergedProps);
+
+  if (propsEntries.length > 0) {
+    lines.push('### Props (customized from source site extraction)');
+    lines.push('```tsx');
+    const propsStr = propsEntries
+      .map(function (entry) {
+        const val = typeof entry[1] === 'string' ? `"${entry[1]}"` : `{${JSON.stringify(entry[1])}}`;
+        return `  ${entry[0]}=${val}`;
+      })
+      .join('\n');
+    lines.push(`<${componentName}`);
+    lines.push(propsStr);
+    lines.push('>');
+    lines.push('  {/* section content here */}');
+    lines.push(`</${componentName}>`);
+    lines.push('```');
+    lines.push('');
+  } else {
+    lines.push(`Wrap section content with \`<${componentName}>{children}</${componentName}>\``);
+    lines.push('');
+  }
+
+  lines.push('IMPORTANT: Use this component exactly as provided. Do NOT re-implement the animation logic inline.');
+  lines.push('The component handles all animation setup, cleanup, and ScrollTrigger configuration.');
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Lottie block builder (shared)
+// ---------------------------------------------------------------------------
+
+function buildLottieBlock(lottieInfo) {
+  const filename = lottieInfo.filename || 'animation';
+  const lines = [];
+  lines.push('## Lottie Animation');
+  lines.push('This section includes a Lottie animation player.');
+  lines.push(`URL: /lottie/${filename}.json`);
+  lines.push('');
+  lines.push("Use @lottiefiles/dotlottie-react:");
+  lines.push('```tsx');
+  lines.push("import { DotLottieReact } from '@lottiefiles/dotlottie-react';");
+  lines.push(`<DotLottieReact src="/lottie/${filename}.json" loop autoplay className="w-full h-auto" />`);
+  lines.push('```');
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -280,13 +588,20 @@ function buildDependencies(engine, isLottie) {
 /**
  * Build the animation context block for a single section.
  *
- * @param {Object|null} animationAnalysis - Output from animation-detector's analyzeAnimationEvidence
- * @param {string} presetContent - Full text content of the preset file
- * @param {string} sectionArchetype - Uppercase section archetype (e.g. "HERO", "STATS")
- * @param {number} sectionIndex - Zero-based index of the section
- * @returns {{ animationContext: string, tokenBudget: number, dependencies: string[] }}
+ * Three-tier strategy:
+ * 1. Component Library — if registry has a non-placeholder component
+ * 2. Extracted Signature — if perSection data has captured animations
+ * 3. Pattern Snippet — fallback reference code
+ *
+ * @param {Object|null} animationAnalysis
+ * @param {string} presetContent
+ * @param {string} sectionArchetype
+ * @param {number} sectionIndex
+ * @returns {{ animationContext: string, tokenBudget: number, dependencies: string[], componentFiles: string[] }}
  */
 function buildAnimationContext(animationAnalysis, presetContent, sectionArchetype, sectionIndex) {
+  const componentFiles = [];
+
   // Graceful fallback: no analysis available
   if (!animationAnalysis) {
     const lines = [
@@ -306,6 +621,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
       animationContext: lines.join('\n'),
       tokenBudget: 4096,
       dependencies: ['framer-motion'],
+      componentFiles: componentFiles,
     };
   }
 
@@ -315,35 +631,118 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
   const intensity = getIntensity(animationAnalysis);
   const overridePattern = overrides[(sectionArchetype || '').toUpperCase()] || null;
   const lottieInfo = checkLottie(animationAnalysis, sectionArchetype, overridePattern);
-  const tokenBudget = calculateTokenBudget(patterns, engine, lottieInfo.isLottie);
-  const dependencies = buildDependencies(engine, lottieInfo.isLottie);
-
-  const lines = [];
+  const perSection = animationAnalysis.perSection || {};
+  const sectionData = perSection[sectionIndex] || null;
 
   // Static sections
   if (patterns === null) {
-    lines.push('## Animation Context');
-    lines.push('Engine: none (static section)');
-    lines.push('Pattern: none');
-    lines.push(`Intensity: ${intensity}`);
-    lines.push('');
-    lines.push('This section should use CSS transitions only (hover states, focus states).');
-    lines.push('Do NOT add scroll-triggered animations or GSAP/Framer Motion imports.');
+    const tokenBudget = calculateTokenBudget(patterns, engine, lottieInfo.isLottie, false);
+    const lines = [
+      '## Animation Context',
+      'Engine: none (static section)',
+      'Pattern: none',
+      `Intensity: ${intensity}`,
+      '',
+      'This section should use CSS transitions only (hover states, focus states).',
+      'Do NOT add scroll-triggered animations or GSAP/Framer Motion imports.',
+    ];
     return {
       animationContext: lines.join('\n'),
       tokenBudget: tokenBudget,
       dependencies: [],
+      componentFiles: componentFiles,
     };
   }
 
-  // Animated sections
+  // -----------------------------------------------------------------------
+  // TIER 1: Component Library Injection
+  // -----------------------------------------------------------------------
+
+  // Determine the best pattern: extracted data → preset override → archetype default
+  let selectedPattern = null;
+
+  // Try mapping from extracted data first
+  if (sectionData) {
+    selectedPattern = mapExtractedToPattern(sectionData);
+  }
+
+  // Fall back to first resolved pattern
+  if (!selectedPattern && patterns && patterns.length > 0) {
+    selectedPattern = patterns[0];
+  }
+
+  // Check if we have a real component (not placeholder) in the library
+  const componentDef = selectedPattern ? lookupComponent(selectedPattern) : null;
+
+  if (componentDef) {
+    const source = readComponentSource(componentDef.file);
+    if (source) {
+      // We have a real component — inject it
+      const propOverrides = extractPropOverrides(sectionData, componentDef);
+      const dependencies = buildDependencies(engine, lottieInfo.isLottie, componentDef);
+      const tokenBudget = calculateTokenBudget(patterns, engine, lottieInfo.isLottie, true);
+
+      componentFiles.push(componentDef.file);
+
+      const lines = [buildComponentContext(componentDef, source, propOverrides, selectedPattern)];
+
+      // Add Lottie block if needed
+      if (lottieInfo.isLottie) {
+        lines.push('');
+        lines.push(buildLottieBlock(lottieInfo));
+      }
+
+      return {
+        animationContext: lines.join('\n'),
+        tokenBudget: tokenBudget,
+        dependencies: dependencies,
+        componentFiles: componentFiles,
+      };
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // TIER 2: Extracted Signature Injection
+  // -----------------------------------------------------------------------
+
+  const hasExtractedData = sectionData &&
+    ((sectionData.animations && sectionData.animations.length > 0) ||
+     (sectionData.lottie && sectionData.lottie.length > 0));
+
+  if (hasExtractedData) {
+    const summary = summarizeSection(sectionData, engine);
+    const dependencies = buildDependencies(engine, lottieInfo.isLottie, null);
+    const tokenBudget = 8192;
+
+    const lines = [summary];
+
+    if (lottieInfo.isLottie && (!sectionData.lottie || sectionData.lottie.length === 0)) {
+      lines.push('');
+      lines.push(buildLottieBlock(lottieInfo));
+    }
+
+    return {
+      animationContext: lines.join('\n'),
+      tokenBudget: tokenBudget,
+      dependencies: dependencies,
+      componentFiles: componentFiles,
+    };
+  }
+
+  // -----------------------------------------------------------------------
+  // TIER 3: Pattern Snippet Fallback
+  // -----------------------------------------------------------------------
+
+  const dependencies = buildDependencies(engine, lottieInfo.isLottie, null);
+  const tokenBudget = calculateTokenBudget(patterns, engine, lottieInfo.isLottie, false);
+
+  const lines = [];
   lines.push('## Animation Context');
   lines.push(`Engine: ${engine}`);
   lines.push(`Pattern: ${patterns.join(' + ')}`);
   lines.push(`Intensity: ${intensity}`);
   lines.push('');
 
-  // Reference snippets for each pattern
   for (const pattern of patterns) {
     const snippet = PATTERN_SNIPPETS[pattern];
     if (snippet) {
@@ -358,18 +757,8 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
     }
   }
 
-  // Lottie integration block
   if (lottieInfo.isLottie) {
-    const filename = lottieInfo.filename || 'animation';
-    lines.push('## Lottie Animation');
-    lines.push('This section includes a Lottie animation player.');
-    lines.push(`URL: /lottie/${filename}.json`);
-    lines.push('');
-    lines.push("Use @lottiefiles/dotlottie-react:");
-    lines.push("```tsx");
-    lines.push("import { DotLottieReact } from '@lottiefiles/dotlottie-react';");
-    lines.push(`<DotLottieReact src="/lottie/${filename}.json" loop autoplay className="w-full h-auto" />`);
-    lines.push('```');
+    lines.push(buildLottieBlock(lottieInfo));
     lines.push('');
   }
 
@@ -377,27 +766,43 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
     animationContext: lines.join('\n'),
     tokenBudget: tokenBudget,
     dependencies: dependencies,
+    componentFiles: componentFiles,
   };
 }
 
 /**
  * Build animation context blocks for all sections.
  *
- * @param {Object|null} animationAnalysis - Output from animation-detector's analyzeAnimationEvidence
- * @param {string} presetContent - Full text content of the preset file
- * @param {Array<{ archetype: string, variant: string, content: any }>} sections - Section list
- * @returns {Object<number, { animationContext: string, tokenBudget: number, dependencies: string[] }>}
+ * @param {Object|null} animationAnalysis
+ * @param {string} presetContent
+ * @param {Array<{ archetype: string, variant: string, content: any }>} sections
+ * @returns {{ contexts: Object, allComponentFiles: string[], allDependencies: string[] }}
  */
 function buildAllAnimationContexts(animationAnalysis, presetContent, sections) {
   const contexts = {};
-  if (!Array.isArray(sections)) return contexts;
+  const allComponentFiles = new Set();
+  const allDependencies = new Set();
+
+  if (!Array.isArray(sections)) {
+    return { contexts: contexts, allComponentFiles: [], allDependencies: [] };
+  }
 
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
     const archetype = (section.archetype || '').toUpperCase();
-    contexts[i] = buildAnimationContext(animationAnalysis, presetContent, archetype, i);
+    const result = buildAnimationContext(animationAnalysis, presetContent, archetype, i);
+    contexts[i] = result;
+
+    // Collect component files and dependencies across all sections
+    result.componentFiles.forEach(function (f) { allComponentFiles.add(f); });
+    result.dependencies.forEach(function (d) { allDependencies.add(d); });
   }
-  return contexts;
+
+  return {
+    contexts: contexts,
+    allComponentFiles: Array.from(allComponentFiles),
+    allDependencies: Array.from(allDependencies),
+  };
 }
 
-module.exports = { buildAnimationContext, buildAllAnimationContexts };
+module.exports = { buildAnimationContext, buildAllAnimationContexts, loadRegistry };

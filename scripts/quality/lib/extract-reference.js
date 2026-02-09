@@ -30,6 +30,7 @@ const {
   getMutationObserverScript,
   extractAnimationData,
 } = require('./animation-detector');
+const { extractGsapFromBundles, mergeGsapData } = require('./gsap-extractor');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -258,6 +259,25 @@ async function extractReference(url, outputDir) {
         `${rawAnimationEvidence.cssKeyframes.length} keyframes, ` +
         `${rawAnimationEvidence.animatedElementCount} animated elements`
     );
+
+    // ── 6c. GSAP static bundle analysis + merge ──────────────────────
+    const jsFileUrls = networkAnimationResults.jsFiles || [];
+    let mergedGsapCalls = rawAnimationEvidence.gsapCalls || [];
+    if (jsFileUrls.length > 0) {
+      console.log(`[extract] Analyzing ${jsFileUrls.length} JS bundles for GSAP calls...`);
+      try {
+        const staticResult = await extractGsapFromBundles(jsFileUrls);
+        console.log(
+          `[extract] Static GSAP analysis: ${staticResult.totalCalls} calls from ${staticResult.bundlesAnalyzed} bundles`
+        );
+        mergedGsapCalls = mergeGsapData(staticResult.calls, mergedGsapCalls);
+        console.log(`[extract] Merged GSAP calls: ${mergedGsapCalls.length} total`);
+      } catch (err) {
+        console.warn(`[extract] GSAP static analysis failed: ${err.message}`);
+      }
+    }
+    // Attach merged calls back to evidence for downstream consumption
+    rawAnimationEvidence.gsapCalls = mergedGsapCalls;
 
     // ── 7. Identify visual sections ────────────────────────────────────
     // Sections are defined as block-level children of <main> or <body>

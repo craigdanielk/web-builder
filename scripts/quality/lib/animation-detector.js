@@ -34,6 +34,134 @@ function getPreNavigationScript() {
       return observer;
     };
     window.IntersectionObserver.prototype = OriginalIO.prototype;
+
+    // GSAP Runtime Interception
+    window.__wb_gsap_calls = [];
+    window.__wb_gsap_timeline_id = 0;
+
+    function __wb_captureTarget(target) {
+      if (typeof target === 'string') return target;
+      if (target instanceof Element) {
+        return target.className ? '.' + target.className.split(' ')[0] : target.tagName.toLowerCase();
+      }
+      if (target instanceof NodeList || Array.isArray(target)) {
+        const first = target[0];
+        if (first instanceof Element) {
+          return first.className ? '.' + first.className.split(' ')[0] : first.tagName.toLowerCase();
+        }
+      }
+      return null;
+    }
+
+    function __wb_captureVars(vars) {
+      if (!vars || typeof vars !== 'object') return {};
+      const keep = ['y','x','opacity','scale','scaleX','scaleY','rotation','rotateX','rotateY',
+                    'duration','ease','stagger','delay','transformOrigin'];
+      const result = {};
+      for (const k of keep) {
+        if (vars[k] !== undefined) result[k] = vars[k];
+      }
+      return result;
+    }
+
+    function __wb_captureScrollTrigger(vars) {
+      if (!vars || !vars.scrollTrigger) return null;
+      const st = typeof vars.scrollTrigger === 'object' ? vars.scrollTrigger : {};
+      return {
+        trigger: typeof st.trigger === 'string' ? st.trigger : null,
+        start: st.start || null,
+        end: st.end || null,
+        scrub: st.scrub || false,
+        pin: st.pin || false,
+        once: st.once !== undefined ? st.once : null
+      };
+    }
+
+    function __wb_getElementY(target) {
+      try {
+        const el = typeof target === 'string' ? document.querySelector(target) :
+                   (target instanceof Element ? target : null);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          return rect.top + window.scrollY + rect.height / 2;
+        }
+      } catch(e) {}
+      return null;
+    }
+
+    function __wb_wrapGsap(gsapInstance) {
+      const methods = ['from', 'to', 'fromTo'];
+      for (const method of methods) {
+        const orig = gsapInstance[method].bind(gsapInstance);
+        gsapInstance[method] = function(target, vars, vars2) {
+          if (window.__wb_gsap_calls.length < 200) {
+            const record = {
+              method: method,
+              targetSelector: __wb_captureTarget(target),
+              vars: __wb_captureVars(method === 'fromTo' ? vars2 : vars),
+              duration: (method === 'fromTo' ? vars2 : vars)?.duration || null,
+              ease: (method === 'fromTo' ? vars2 : vars)?.ease || null,
+              stagger: (method === 'fromTo' ? vars2 : vars)?.stagger || null,
+              delay: (method === 'fromTo' ? vars2 : vars)?.delay || null,
+              scrollTrigger: __wb_captureScrollTrigger(method === 'fromTo' ? vars2 : vars),
+              timelineId: null,
+              elementY: __wb_getElementY(target),
+              source: 'runtime'
+            };
+            window.__wb_gsap_calls.push(record);
+          }
+          return orig(target, vars, vars2);
+        };
+      }
+
+      // Wrap timeline creation
+      const origTimeline = gsapInstance.timeline.bind(gsapInstance);
+      gsapInstance.timeline = function(defaults) {
+        const tl = origTimeline(defaults);
+        const tlId = 'tl_' + (window.__wb_gsap_timeline_id++);
+        const scrollTrigger = __wb_captureScrollTrigger(defaults || {});
+
+        for (const method of ['from', 'to', 'fromTo']) {
+          const origMethod = tl[method].bind(tl);
+          tl[method] = function(target, vars, vars2, position) {
+            if (window.__wb_gsap_calls.length < 200) {
+              const actualVars = method === 'fromTo' ? vars2 : vars;
+              window.__wb_gsap_calls.push({
+                method: 'timeline.' + method,
+                targetSelector: __wb_captureTarget(target),
+                vars: __wb_captureVars(actualVars),
+                duration: actualVars?.duration || (defaults?.defaults?.duration) || null,
+                ease: actualVars?.ease || (defaults?.defaults?.ease) || null,
+                stagger: actualVars?.stagger || null,
+                delay: typeof (method === 'fromTo' ? position : (vars2 || position)) === 'string' ?
+                       (method === 'fromTo' ? position : (vars2 || position)) : null,
+                scrollTrigger: scrollTrigger,
+                timelineId: tlId,
+                elementY: __wb_getElementY(target),
+                source: 'runtime'
+              });
+            }
+            return origMethod(target, vars, vars2, position);
+          };
+        }
+
+        return tl;
+      };
+
+      return gsapInstance;
+    }
+
+    // Use Object.defineProperty to intercept GSAP assignment (handles late/async loading)
+    Object.defineProperty(window, 'gsap', {
+      configurable: true,
+      enumerable: true,
+      set: function(val) {
+        window.__wb_gsap_real = __wb_wrapGsap(val);
+      },
+      get: function() {
+        return window.__wb_gsap_real;
+      }
+    });
   `;
 }
 
@@ -44,7 +172,7 @@ function getPreNavigationScript() {
  * @returns {Promise<Function>} Getter that returns collected network results
  */
 async function setupNetworkInterception(page) {
-  const networkResults = { lottieFiles: [], riveFiles: [], threeDFiles: [], cssFiles: [] };
+  const networkResults = { lottieFiles: [], riveFiles: [], threeDFiles: [], cssFiles: [], jsFiles: [] };
 
   page.on('response', async (response) => {
     try {
@@ -57,6 +185,12 @@ async function setupNetworkInterception(page) {
         networkResults.threeDFiles.push(url);
       } else if (url.endsWith('.css') || contentType.includes('text/css')) {
         networkResults.cssFiles.push(url);
+      } else if ((url.endsWith('.js') || contentType.includes('javascript')) &&
+                 !url.includes('analytics') && !url.includes('gtag') && !url.includes('gtm')) {
+        const contentLength = parseInt(response.headers()['content-length'] || '0', 10);
+        if (contentLength === 0 || contentLength <= 2 * 1024 * 1024) {
+          networkResults.jsFiles.push(url);
+        }
       } else if (contentType.includes('application/json') || url.endsWith('.json')) {
         try {
           const body = await response.text();
@@ -130,6 +264,8 @@ async function extractAnimationData(page) {
       intersectionObservers: [],
       scrollMutations: { classChanges: [], styleChanges: 0 },
       scriptPatterns: [],
+      gsapCalls: [],
+      lottieElements: [],
     };
 
     // --- A) Global library detection ---
@@ -208,7 +344,10 @@ async function extractAnimationData(page) {
           if (!rules) continue;
           for (const rule of rules) {
             if (rule instanceof CSSKeyframesRule) {
-              result.cssKeyframes.push({ name: rule.name });
+              result.cssKeyframes.push({
+                name: rule.name,
+                body: rule.cssText.slice(0, 500)
+              });
             }
           }
         } catch (_) { /* cross-origin stylesheet, skip */ }
@@ -269,6 +408,29 @@ async function extractAnimationData(page) {
       }
     }
 
+    // --- G) Runtime-captured GSAP calls ---
+    if (window.__wb_gsap_calls && window.__wb_gsap_calls.length > 0) {
+      result.gsapCalls = window.__wb_gsap_calls;
+    }
+
+    // --- H) Lottie element positions ---
+    result.lottieElements = [];
+    try {
+      const lottieSelectors = 'lottie-player, dotlottie-player, [data-lottie], canvas[data-animation-url]';
+      const lottiePlayers = document.querySelectorAll(lottieSelectors);
+      for (const el of lottiePlayers) {
+        const rect = el.getBoundingClientRect();
+        const src = el.src || el.getAttribute('src') || el.getAttribute('data-src') ||
+                    el.getAttribute('data-animation-url') || '';
+        result.lottieElements.push({
+          url: src,
+          elementY: rect.top + window.scrollY + rect.height / 2,
+          width: rect.width,
+          height: rect.height
+        });
+      }
+    } catch(_) {}
+
     return result;
   });
 }
@@ -292,7 +454,7 @@ function analyzeAnimationEvidence(evidence, networkResults, sections, renderedDO
   const ioData = evidence.intersectionObservers || [];
   const scrollMuts = evidence.scrollMutations || { classChanges: [], styleChanges: 0 };
   const scriptPats = evidence.scriptPatterns || [];
-  const defaultNet = { lottieFiles: [], riveFiles: [], threeDFiles: [], cssFiles: [] };
+  const defaultNet = { lottieFiles: [], riveFiles: [], threeDFiles: [], cssFiles: [], jsFiles: [] };
   const net = Object.assign(defaultNet, networkResults || {});
 
   // --- Intensity scoring ---
@@ -414,6 +576,11 @@ function analyzeAnimationEvidence(evidence, networkResults, sections, renderedDO
     }
   }
 
+  // --- Per-section animation grouping ---
+  const gsapCalls = evidence.gsapCalls || [];
+  const lottieElements = evidence.lottieElements || [];
+  const perSection = groupAnimationsBySection(gsapCalls, lottieElements, keyframes, safeSections);
+
   return {
     libraries: mergedLibraries.map(l => ({
       name: l.name,
@@ -424,6 +591,7 @@ function analyzeAnimationEvidence(evidence, networkResults, sections, renderedDO
     engine,
     cssAnimations: {
       keyframes: keyframes.map(k => k.name),
+      keyframeDetails: keyframes,
       animatedElements: animatedEls,
       transitionElements: transitionEls,
     },
@@ -442,7 +610,134 @@ function analyzeAnimationEvidence(evidence, networkResults, sections, renderedDO
       threeD: net.threeDFiles,
     },
     sectionOverrides,
+    perSection,
+    gsapCallCount: gsapCalls.length,
+    lottieElementCount: lottieElements.length,
   };
+}
+
+/**
+ * Groups captured GSAP calls, Lottie elements, and CSS keyframes by section.
+ * Uses element Y positions to map each animation to its containing section.
+ *
+ * @param {Array} gsapCalls - Merged GSAP calls (runtime + static)
+ * @param {Array} lottieElements - Lottie player positions from extractAnimationData
+ * @param {Array} cssKeyframes - CSS keyframe rules with bodies
+ * @param {Array} sections - Section boundary rects from page extraction
+ * @returns {Object} Per-section animation data keyed by section index
+ */
+function groupAnimationsBySection(gsapCalls, lottieElements, cssKeyframes, sections) {
+  const perSection = {};
+  const safeSections = sections || [];
+
+  // Helper: find which section an element Y position belongs to
+  function findSectionIndex(elementY) {
+    if (elementY == null) return -1;
+    for (const sec of safeSections) {
+      const secTop = sec.rect.y;
+      const secBottom = sec.rect.y + sec.rect.height;
+      // Use tolerance of ±100px
+      if (elementY >= secTop - 100 && elementY <= secBottom + 100) {
+        return sec.index;
+      }
+    }
+    return -1;
+  }
+
+  // Initialize each section
+  for (const sec of safeSections) {
+    perSection[sec.index] = {
+      animations: [],
+      lottie: [],
+      cssKeyframes: [],
+    };
+  }
+  // Global bucket for unmatched animations
+  perSection['global'] = { animations: [], lottie: [], cssKeyframes: [] };
+
+  // Group GSAP calls by section
+  // First, group timeline steps together
+  const timelineGroups = new Map();
+  const standaloneCalls = [];
+
+  for (const call of (gsapCalls || [])) {
+    if (call.timelineId) {
+      if (!timelineGroups.has(call.timelineId)) {
+        timelineGroups.set(call.timelineId, []);
+      }
+      timelineGroups.get(call.timelineId).push(call);
+    } else {
+      standaloneCalls.push(call);
+    }
+  }
+
+  // Place standalone calls into sections
+  for (const call of standaloneCalls) {
+    // Prefer scrollTrigger.trigger element position, then elementY
+    let y = call.elementY;
+    const secIdx = findSectionIndex(y);
+    const bucket = secIdx >= 0 ? perSection[secIdx] : perSection['global'];
+    bucket.animations.push({
+      method: call.method,
+      targetSelector: call.targetSelector,
+      vars: call.vars,
+      duration: call.duration,
+      ease: call.ease,
+      stagger: call.stagger,
+      delay: call.delay,
+      scrollTrigger: call.scrollTrigger,
+      source: call.source,
+    });
+  }
+
+  // Place timeline groups into sections (use first target's Y position)
+  for (const [tlId, steps] of timelineGroups) {
+    const firstY = steps.find(s => s.elementY != null)?.elementY ?? null;
+    const secIdx = findSectionIndex(firstY);
+    const bucket = secIdx >= 0 ? perSection[secIdx] : perSection['global'];
+
+    bucket.animations.push({
+      method: 'timeline',
+      steps: steps.map(s => ({
+        method: s.method,
+        targetSelector: s.targetSelector,
+        vars: s.vars,
+        duration: s.duration,
+        ease: s.ease,
+        stagger: s.stagger,
+        delay: s.delay,
+      })),
+      scrollTrigger: steps[0]?.scrollTrigger || null,
+      source: steps[0]?.source || 'unknown',
+    });
+  }
+
+  // Place Lottie elements into sections
+  for (const lottie of (lottieElements || [])) {
+    const secIdx = findSectionIndex(lottie.elementY);
+    const bucket = secIdx >= 0 ? perSection[secIdx] : perSection['global'];
+    bucket.lottie.push({
+      url: lottie.url,
+      width: lottie.width,
+      height: lottie.height,
+    });
+  }
+
+  // CSS keyframes go to global (they apply page-wide)
+  perSection['global'].cssKeyframes = (cssKeyframes || []).map(k => ({
+    name: k.name,
+    body: k.body || null,
+  }));
+
+  // Clean up empty sections
+  for (const key of Object.keys(perSection)) {
+    const data = perSection[key];
+    if (data.animations.length === 0 && data.lottie.length === 0 && data.cssKeyframes.length === 0) {
+      if (key !== 'global') delete perSection[key];
+    }
+  }
+
+  return perSection;
 }
 
 module.exports = {
@@ -451,4 +746,5 @@ module.exports = {
   getMutationObserverScript,
   extractAnimationData,
   analyzeAnimationEvidence,
+  groupAnimationsBySection,
 };

@@ -638,11 +638,16 @@ def detect_animation_engine(preset_content: str) -> str:
 
 
 def parse_fonts(preset_content: str) -> dict:
-    """Extract heading and body font names from preset's Type line."""
-    match = re.search(r"heading:([^,]+),", preset_content)
-    heading = match.group(1).strip() if match else "Inter"
-    match = re.search(r"body:([^,]+),", preset_content)
-    body = match.group(1).strip() if match else "Inter"
+    """Extract heading and body font names from preset's YAML style config."""
+    # Match YAML format: heading_font: FontName
+    heading = "Inter"
+    body = "Inter"
+    h_match = re.search(r"heading_font:\s*([A-Za-z][A-Za-z0-9_ ]+)", preset_content)
+    if h_match:
+        heading = h_match.group(1).strip()
+    b_match = re.search(r"body_font:\s*([A-Za-z][A-Za-z0-9_ ]+)", preset_content)
+    if b_match:
+        body = b_match.group(1).strip()
     return {"heading": heading, "body": body}
 
 
@@ -817,27 +822,61 @@ def stage_deploy(
 
     # ── Generate layout.tsx ──
     print("  Generating layout.tsx...")
-    heading_import = font_import_name(fonts["heading"])
-    body_import = font_import_name(fonts["body"])
+    heading_font = fonts["heading"]
+    body_font = fonts["body"]
 
-    layout_imports = [
-        'import type { Metadata } from "next";',
-        f'import {{ {heading_import}, {body_import} }} from "next/font/google";',
-        'import "./globals.css";',
-    ]
-    # Build font config lines
+    # Common Google Fonts that can be imported via next/font/google
+    GOOGLE_FONTS = {
+        "Inter", "Roboto", "Open Sans", "Lato", "Montserrat", "Poppins",
+        "Source Sans Pro", "Source Sans 3", "Raleway", "Nunito", "Playfair Display",
+        "Merriweather", "DM Sans", "Space Grotesk", "Plus Jakarta Sans",
+        "Outfit", "Sora", "Geist", "Manrope", "Urbanist", "Archivo",
+        "Work Sans", "Libre Baskerville", "Cormorant Garamond",
+    }
+
+    heading_is_google = heading_font in GOOGLE_FONTS
+    body_is_google = body_font in GOOGLE_FONTS
+
+    heading_import = font_import_name(heading_font) if heading_is_google else None
+    body_import = font_import_name(body_font) if body_is_google else None
+
+    # Extract weights from preset
     heading_weights = '"400"'
     body_weights = '["400", "500", "700"]'
-    # Try to extract weight from preset
-    h_weight_match = re.search(r"heading:[^,]+,(\d+)", preset_content)
+    h_weight_match = re.search(r"heading_weight:\s*(\d+)", preset_content)
     if h_weight_match:
         heading_weights = f'"{h_weight_match.group(1)}"'
 
-    layout_code = f"""{chr(10).join(layout_imports)}
+    # Build layout.tsx
+    import_lines = ['import type { Metadata } from "next";']
+    google_imports = []
+    if heading_import:
+        google_imports.append(heading_import)
+    if body_import and body_import != heading_import:
+        google_imports.append(body_import)
+    if google_imports:
+        import_lines.append(f'import {{ {", ".join(google_imports)} }} from "next/font/google";')
+    import_lines.append('import "./globals.css";')
 
-const {heading_import.lower()} = {heading_import}({{ subsets: ["latin"], weight: {heading_weights} }});
-const {body_import.lower()} = {body_import}({{ subsets: ["latin"], weight: {body_weights} }});
+    font_config_lines = []
+    if heading_import:
+        font_config_lines.append(
+            f'const {heading_import.lower()} = {heading_import}({{ subsets: ["latin"], weight: {heading_weights} }});'
+        )
+    if body_import and body_import != heading_import:
+        font_config_lines.append(
+            f'const {body_import.lower()} = {body_import}({{ subsets: ["latin"], weight: {body_weights} }});'
+        )
 
+    # Build font-family CSS fallback for non-Google fonts
+    font_family = f"'{heading_font}', system-ui, sans-serif"
+
+    font_config = chr(10).join(font_config_lines) if font_config_lines else ""
+    if font_config:
+        font_config = chr(10) + font_config + chr(10)
+
+    layout_code = f"""{chr(10).join(import_lines)}
+{font_config}
 export const metadata: Metadata = {{
   title: "{project_name.replace('-', ' ').title()}",
   description: "Built with web-builder pipeline",
@@ -846,7 +885,7 @@ export const metadata: Metadata = {{
 export default function RootLayout({{ children }}: {{ children: React.ReactNode }}) {{
   return (
     <html lang="en">
-      <body className="antialiased">
+      <body className="antialiased" style={{{{ fontFamily: "{font_family}" }}}}>
         {{children}}
       </body>
     </html>
@@ -861,6 +900,56 @@ export default function RootLayout({{ children }}: {{ children: React.ReactNode 
     for filepath in section_files:
         code = read_file(filepath)
         write_file(comp_dir / filepath.name, code)
+
+    # ── Copy animation components from library ──
+    anim_components_dir = SKILLS_DIR / "animation-components"
+    registry_path = anim_components_dir / "registry.json"
+    if registry_path.exists():
+        try:
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            components = registry.get("components", {})
+            # Collect archetypes used in this build
+            used_archetypes = set()
+            for sec in sections:
+                used_archetypes.add(sec.get("archetype", "").upper().replace("_", "-"))
+            # Find components that match used archetypes and are not placeholders
+            anim_dest = src_dir / "components" / "animations"
+            copied_count = 0
+            new_deps = {}
+            for pattern_name, comp_def in components.items():
+                if comp_def.get("status") == "placeholder":
+                    continue
+                comp_archetypes = [a.upper() for a in comp_def.get("archetypes", [])]
+                # Copy if any archetype matches, or if component has no archetype restriction
+                if not comp_archetypes or used_archetypes.intersection(comp_archetypes):
+                    src_file = anim_components_dir / comp_def.get("file", "")
+                    if src_file.exists():
+                        anim_dest.mkdir(parents=True, exist_ok=True)
+                        dest_file = anim_dest / f"{pattern_name}.tsx"
+                        write_file(dest_file, src_file.read_text(encoding="utf-8"))
+                        copied_count += 1
+                        for dep in comp_def.get("dependencies", []):
+                            new_deps[dep] = "latest"
+            if copied_count > 0:
+                print(f"  ✓ Copied {copied_count} animation component(s) to components/animations/")
+                # Add any new deps to package.json
+                if new_deps:
+                    pkg_path = site_dir / "package.json"
+                    pkg_data = json.loads(pkg_path.read_text(encoding="utf-8"))
+                    existing_deps = pkg_data.get("dependencies", {})
+                    added = []
+                    for dep_name, dep_ver in new_deps.items():
+                        if dep_name not in existing_deps:
+                            existing_deps[dep_name] = dep_ver
+                            added.append(dep_name)
+                    if added:
+                        pkg_data["dependencies"] = existing_deps
+                        write_file(pkg_path, json.dumps(pkg_data, indent=2) + "\n")
+                        print(f"  ✓ Added dependencies: {', '.join(added)}")
+            else:
+                print("  ℹ No animation components ready (all placeholders)")
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  ⚠ Could not process animation registry: {e}")
 
     # ── Generate page.tsx ──
     print("  Generating page.tsx...")
