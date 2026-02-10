@@ -35,7 +35,22 @@
       ],
       "description": "Elements slide up and fade in with stagger timing. The workhorse pattern for card grids, feature lists, any multi-element layout.",
       "status": "ready",
-      "source": "21st.dev/ibelick/animated-group"
+      "source": "21st.dev/ibelick/animated-group",
+      "intensity": "subtle",
+      "affinity": {
+        "FEATURES": 0.9,
+        "TESTIMONIALS": 0.9,
+        "GALLERY": 0.85,
+        "TEAM": 0.85,
+        "PRODUCT-SHOWCASE": 0.8,
+        "HOW-IT-WORKS": 0.8,
+        "PRICING": 0.7,
+        "TRUST-BADGES": 0.6,
+        "LOGO-BAR": 0.5,
+        "ABOUT": 0.5,
+        "FAQ": 0.4,
+        "STATS": 0.4
+      }
     },
     "fade-up-single": {
       "file": "entrance/fade-up-single.tsx",
@@ -64,7 +79,17 @@
       ],
       "description": "Single element slides up and fades in on scroll.",
       "status": "ready",
-      "source": "21st.dev/dillionverma/fade-text"
+      "source": "21st.dev/dillionverma/fade-text",
+      "intensity": "subtle",
+      "affinity": {
+        "CONTACT": 0.9,
+        "NEWSLETTER": 0.9,
+        "ABOUT": 0.85,
+        "CTA": 0.7,
+        "FOOTER": 0.6,
+        "FAQ": 0.5,
+        "STATS": 0.4
+      }
     },
     "character-reveal": {
       "file": "entrance/character-reveal.tsx",
@@ -92,7 +117,13 @@
       ],
       "description": "Per-character 3D rotation reveal for hero headlines.",
       "status": "ready",
-      "source": "21st.dev/chetanverma16/text-reveal"
+      "source": "21st.dev/chetanverma16/text-reveal",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 1.0,
+        "CTA": 0.6,
+        "ABOUT": 0.4
+      }
     },
     "word-reveal": {
       "file": "entrance/word-reveal.tsx",
@@ -120,7 +151,15 @@
       ],
       "description": "Words clip-reveal upward with stagger timing.",
       "status": "ready",
-      "source": "21st.dev/molecule-lab-rushil/word-rotate"
+      "source": "21st.dev/molecule-lab-rushil/word-rotate",
+      "intensity": "moderate",
+      "affinity": {
+        "ABOUT": 0.9,
+        "CTA": 0.85,
+        "HERO": 0.7,
+        "HOW-IT-WORKS": 0.5,
+        "FEATURES": 0.4
+      }
     },
     "slide-in-left": {
       "file": "entrance/slide-in-left.tsx",
@@ -145,7 +184,15 @@
       ],
       "description": "Element slides in from the left edge.",
       "status": "ready",
-      "source": "21st.dev/minhxthanh/slide-tabs"
+      "source": "21st.dev/minhxthanh/slide-tabs",
+      "intensity": "subtle",
+      "affinity": {
+        "ABOUT": 0.7,
+        "PRODUCT-SHOWCASE": 0.7,
+        "HOW-IT-WORKS": 0.6,
+        "FEATURES": 0.5,
+        "TESTIMONIALS": 0.4
+      }
     },
     "slide-in-right": {
       "file": "entrance/slide-in-right.tsx",
@@ -168,7 +215,15 @@
       "archetypes": [],
       "description": "Element slides in from the right edge.",
       "status": "ready",
-      "source": "21st.dev/minhxthanh/slide-tabs"
+      "source": "21st.dev/minhxthanh/slide-tabs",
+      "intensity": "subtle",
+      "affinity": {
+        "ABOUT": 0.7,
+        "PRODUCT-SHOWCASE": 0.7,
+        "HOW-IT-WORKS": 0.6,
+        "FEATURES": 0.5,
+        "TESTIMONIALS": 0.4
+      }
     },
     "scale-up": {
       "file": "entrance/scale-up.tsx",
@@ -191,7 +246,15 @@
       "archetypes": [],
       "description": "Element scales from small to full size with fade.",
       "status": "ready",
-      "source": "21st.dev/badtzx0/blur-reveal"
+      "source": "21st.dev/badtzx0/blur-reveal",
+      "intensity": "subtle",
+      "affinity": {
+        "HERO": 0.7,
+        "PRODUCT-SHOWCASE": 0.7,
+        "GALLERY": 0.6,
+        "CTA": 0.5,
+        "ABOUT": 0.4
+      }
     },
     "blur-fade": {
       "file": "entrance/blur-fade.tsx",
@@ -214,7 +277,17 @@
       "archetypes": [],
       "description": "Element fades in from blurred to clear.",
       "status": "ready",
-      "source": "21st.dev/badtzx0/blur-reveal"
+      "source": "21st.dev/badtzx0/blur-reveal",
+      "intensity": "subtle",
+      "affinity": {
+        "HERO": 0.7,
+        "ABOUT": 0.7,
+        "GALLERY": 0.6,
+        "PRODUCT-SHOWCASE": 0.6,
+        "CTA": 0.5,
+        "NEWSLETTER": 0.4,
+        "CONTACT": 0.4
+      }
     },
     "staggered-timeline": {
       "file": "entrance/staggered-timeline.tsx",
@@ -242,7 +315,15 @@
       ],
       "description": "Sequential reveal of headline, subtitle, body, CTA in order.",
       "status": "ready",
-      "source": "21st.dev/ibelick/animated-group"
+      "source": "21st.dev/ibelick/animated-group",
+      "intensity": "moderate",
+      "affinity": {
+        "HERO": 0.9,
+        "CTA": 0.9,
+        "ABOUT": 0.7,
+        "PRODUCT-SHOWCASE": 0.6,
+        "HOW-IT-WORKS": 0.5
+      }
     },
     "parallax-section": {
       "file": "scroll/parallax-section.tsx",
@@ -265,7 +346,15 @@
       ],
       "description": "Background image moves at different speed than content on scroll.",
       "status": "ready",
-      "source": "21st.dev/sshahaider/zoom-parallax"
+      "source": "21st.dev/sshahaider/zoom-parallax",
+      "intensity": "moderate",
+      "affinity": {
+        "HERO": 0.9,
+        "ABOUT": 0.7,
+        "CTA": 0.6,
+        "PRODUCT-SHOWCASE": 0.5,
+        "GALLERY": 0.4
+      }
     },
     "parallax-layers": {
       "file": "scroll/parallax-layers.tsx",
@@ -284,7 +373,14 @@
       "archetypes": [],
       "description": "Multiple layers move at different scroll speeds.",
       "status": "ready",
-      "source": "21st.dev/bundui/floating-paths"
+      "source": "21st.dev/bundui/floating-paths",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 0.9,
+        "ABOUT": 0.5,
+        "PRODUCT-SHOWCASE": 0.5,
+        "CTA": 0.4
+      }
     },
     "scroll-progress": {
       "file": "scroll/scroll-progress.tsx",
@@ -301,7 +397,13 @@
       "archetypes": [],
       "description": "Element animates tied to scroll position (scrub).",
       "status": "ready",
-      "source": "21st.dev/skyleen77/scroll-progress"
+      "source": "21st.dev/skyleen77/scroll-progress",
+      "intensity": "expressive",
+      "affinity": {
+        "NAV": 0.9,
+        "HOW-IT-WORKS": 0.6,
+        "STATS": 0.5
+      }
     },
     "pin-and-reveal": {
       "file": "scroll/pin-and-reveal.tsx",
@@ -318,7 +420,14 @@
       ],
       "description": "Section pins in place while content reveals on scroll.",
       "status": "ready",
-      "source": "21st.dev/minhxthanh/sticky-scroll-cards-section"
+      "source": "21st.dev/minhxthanh/sticky-scroll-cards-section",
+      "intensity": "expressive",
+      "affinity": {
+        "HOW-IT-WORKS": 1.0,
+        "FEATURES": 0.7,
+        "PRODUCT-SHOWCASE": 0.6,
+        "ABOUT": 0.4
+      }
     },
     "horizontal-scroll": {
       "file": "scroll/horizontal-scroll.tsx",
@@ -334,7 +443,14 @@
       "archetypes": [],
       "description": "Horizontal scrolling section triggered by vertical scroll.",
       "status": "ready",
-      "source": "21st.dev/uniquesonu/horizontal-scroll-carousel"
+      "source": "21st.dev/uniquesonu/horizontal-scroll-carousel",
+      "intensity": "expressive",
+      "affinity": {
+        "GALLERY": 0.9,
+        "PRODUCT-SHOWCASE": 0.8,
+        "TESTIMONIALS": 0.6,
+        "FEATURES": 0.5
+      }
     },
     "hover-lift": {
       "file": "interactive/hover-lift.tsx",
@@ -359,7 +475,17 @@
       ],
       "description": "Card lifts up with shadow on hover.",
       "status": "ready",
-      "source": "21st.dev/JurreHoutkamp/hover-zoom"
+      "source": "21st.dev/JurreHoutkamp/hover-zoom",
+      "intensity": "moderate",
+      "affinity": {
+        "FEATURES": 0.9,
+        "PRODUCT-SHOWCASE": 0.9,
+        "PRICING": 0.9,
+        "TEAM": 0.7,
+        "GALLERY": 0.7,
+        "TESTIMONIALS": 0.6,
+        "TRUST-BADGES": 0.5
+      }
     },
     "hover-glow": {
       "file": "interactive/hover-glow.tsx",
@@ -380,7 +506,15 @@
       "archetypes": [],
       "description": "Element glows on hover.",
       "status": "ready",
-      "source": "21st.dev/yashvw25/neon-flow"
+      "source": "21st.dev/yashvw25/neon-flow",
+      "intensity": "expressive",
+      "affinity": {
+        "CTA": 0.8,
+        "PRICING": 0.7,
+        "FEATURES": 0.6,
+        "PRODUCT-SHOWCASE": 0.6,
+        "HERO": 0.5
+      }
     },
     "magnetic-button": {
       "file": "interactive/magnetic-button.tsx",
@@ -399,7 +533,14 @@
       "archetypes": [],
       "description": "Button follows cursor with magnetic pull effect.",
       "status": "ready",
-      "source": "21st.dev/uilayout.contact/button-magnetic"
+      "source": "21st.dev/uilayout.contact/button-magnetic",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 0.8,
+        "CTA": 0.8,
+        "NAV": 0.5,
+        "CONTACT": 0.4
+      }
     },
     "tilt-card": {
       "file": "interactive/tilt-card.tsx",
@@ -420,7 +561,15 @@
       "archetypes": [],
       "description": "Card tilts in 3D following mouse position.",
       "status": "ready",
-      "source": "21st.dev/JurreHoutkamp/tilt-card"
+      "source": "21st.dev/JurreHoutkamp/tilt-card",
+      "intensity": "expressive",
+      "affinity": {
+        "PRODUCT-SHOWCASE": 0.9,
+        "FEATURES": 0.7,
+        "PRICING": 0.6,
+        "TEAM": 0.5,
+        "GALLERY": 0.5
+      }
     },
     "accordion-expand": {
       "file": "interactive/accordion-expand.tsx",
@@ -439,7 +588,13 @@
       ],
       "description": "Smooth expand/collapse for FAQ accordion items.",
       "status": "ready",
-      "source": "21st.dev/meschacirung/faq"
+      "source": "21st.dev/meschacirung/faq",
+      "intensity": "moderate",
+      "affinity": {
+        "FAQ": 1.0,
+        "HOW-IT-WORKS": 0.4,
+        "FEATURES": 0.3
+      }
     },
     "floating": {
       "file": "continuous/floating.tsx",
@@ -461,7 +616,14 @@
       "archetypes": [],
       "description": "Gentle floating up/down loop.",
       "status": "ready",
-      "source": "21st.dev/ln-dev7/floating-button"
+      "source": "21st.dev/ln-dev7/floating-button",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 0.7,
+        "CTA": 0.6,
+        "PRODUCT-SHOWCASE": 0.5,
+        "ABOUT": 0.4
+      }
     },
     "marquee": {
       "file": "continuous/marquee.tsx",
@@ -482,7 +644,14 @@
       ],
       "description": "Infinite horizontal scroll for logos or text.",
       "status": "ready",
-      "source": "21st.dev/lukacho/marquee"
+      "source": "21st.dev/lukacho/marquee",
+      "intensity": "moderate",
+      "affinity": {
+        "LOGO-BAR": 1.0,
+        "TRUST-BADGES": 0.8,
+        "TESTIMONIALS": 0.5,
+        "GALLERY": 0.4
+      }
     },
     "gradient-shift": {
       "file": "continuous/gradient-shift.tsx",
@@ -505,7 +674,14 @@
       ],
       "description": "Animated gradient background that shifts colors.",
       "status": "ready",
-      "source": "21st.dev/sshahaider/gradient-background"
+      "source": "21st.dev/sshahaider/gradient-background",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 0.9,
+        "CTA": 0.7,
+        "NEWSLETTER": 0.5,
+        "ABOUT": 0.4
+      }
     },
     "count-up": {
       "file": "continuous/count-up.tsx",
@@ -533,7 +709,13 @@
       ],
       "description": "Animated number counter triggered on scroll.",
       "status": "ready",
-      "source": "21st.dev/ibelick/sliding-number"
+      "source": "21st.dev/ibelick/sliding-number",
+      "intensity": "moderate",
+      "affinity": {
+        "STATS": 1.0,
+        "ABOUT": 0.5,
+        "TRUST-BADGES": 0.4
+      }
     },
     "typewriter": {
       "file": "text/typewriter.tsx",
@@ -554,7 +736,14 @@
       "archetypes": [],
       "description": "Character-by-character typing effect.",
       "status": "ready",
-      "source": "21st.dev/aceternity/typewriter-effect"
+      "source": "21st.dev/aceternity/typewriter-effect",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 0.8,
+        "CTA": 0.6,
+        "ABOUT": 0.5,
+        "NEWSLETTER": 0.3
+      }
     },
     "text-gradient-flow": {
       "file": "text/text-gradient-flow.tsx",
@@ -574,7 +763,14 @@
       "archetypes": [],
       "description": "Animated gradient flowing across text.",
       "status": "ready",
-      "source": "21st.dev/ibelick/text-shimmer-wave"
+      "source": "21st.dev/ibelick/text-shimmer-wave",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 0.8,
+        "CTA": 0.7,
+        "ABOUT": 0.5,
+        "FEATURES": 0.4
+      }
     },
     "text-scramble": {
       "file": "text/text-scramble.tsx",
@@ -593,7 +789,14 @@
       "archetypes": [],
       "description": "Text scrambles/decodes into final form.",
       "status": "ready",
-      "source": "21st.dev/dhileepkumargm/digital-glitch"
+      "source": "21st.dev/dhileepkumargm/digital-glitch",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 0.7,
+        "CTA": 0.5,
+        "STATS": 0.4,
+        "ABOUT": 0.3
+      }
     },
     "split-text-stagger": {
       "file": "text/split-text-stagger.tsx",
@@ -618,7 +821,196 @@
       ],
       "description": "Split text into chars/words with stagger animation.",
       "status": "ready",
-      "source": "21st.dev/minhxthanh/bubble-text"
+      "source": "21st.dev/minhxthanh/bubble-text",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 0.9,
+        "CTA": 0.7,
+        "ABOUT": 0.5,
+        "FEATURES": 0.3
+      }
+    },
+    "character-flip": {
+      "file": "text/character-flip.tsx",
+      "category": "text",
+      "engine": "framer-motion",
+      "dependencies": ["framer-motion"],
+      "props": ["text", "className", "staggerDuration", "rotationRange"],
+      "defaultProps": {
+        "staggerDuration": 0.03,
+        "rotationRange": 90
+      },
+      "archetypes": ["HERO", "CTA", "ABOUT"],
+      "description": "3D character-by-character flip reveal animation with configurable stagger and rotation.",
+      "status": "ready",
+      "source": "vengenceui/flip-text",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 0.85,
+        "CTA": 0.7,
+        "ABOUT": 0.5
+      }
+    },
+    "border-beam": {
+      "file": "effect/border-beam.tsx",
+      "category": "effect",
+      "engine": "css",
+      "dependencies": [],
+      "props": ["children", "className", "size", "duration", "delay", "colorFrom", "colorTo"],
+      "defaultProps": {
+        "size": 200,
+        "duration": 15,
+        "delay": 0
+      },
+      "archetypes": ["PRICING", "FEATURES", "CTA", "PRODUCT-SHOWCASE"],
+      "description": "Animated gradient beam traveling along element border. Pure CSS keyframes.",
+      "status": "ready",
+      "source": "vengenceui/border-beam",
+      "intensity": "moderate",
+      "affinity": {
+        "PRICING": 0.9,
+        "FEATURES": 0.7,
+        "CTA": 0.7,
+        "PRODUCT-SHOWCASE": 0.6
+      }
+    },
+    "glow-border": {
+      "file": "effect/glow-border.tsx",
+      "category": "effect",
+      "engine": "css",
+      "dependencies": [],
+      "props": ["children", "className", "colors", "speed", "preset"],
+      "defaultProps": {
+        "speed": 3,
+        "preset": "aurora"
+      },
+      "archetypes": ["PRICING", "FEATURES", "CTA"],
+      "description": "Rotating aurora conic-gradient glow around card edges.",
+      "status": "ready",
+      "source": "vengenceui/glow-border-card",
+      "intensity": "expressive",
+      "affinity": {
+        "PRICING": 0.85,
+        "FEATURES": 0.6,
+        "CTA": 0.6,
+        "PRODUCT-SHOWCASE": 0.5
+      }
+    },
+    "staggered-grid": {
+      "file": "entrance/staggered-grid.tsx",
+      "category": "entrance",
+      "engine": "gsap",
+      "dependencies": ["gsap"],
+      "props": ["children", "className", "stagger", "duration", "ease"],
+      "defaultProps": {
+        "stagger": 0.1,
+        "duration": 0.8,
+        "ease": "power3.out"
+      },
+      "archetypes": ["GALLERY", "TEAM", "PRODUCT-SHOWCASE", "FEATURES"],
+      "description": "GSAP ScrollTrigger staggered grid reveal. Items appear sequentially on scroll.",
+      "status": "ready",
+      "source": "vengenceui/staggered-grid",
+      "intensity": "expressive",
+      "affinity": {
+        "GALLERY": 0.95,
+        "TEAM": 0.85,
+        "PRODUCT-SHOWCASE": 0.85,
+        "FEATURES": 0.7
+      }
+    },
+    "spotlight-follow": {
+      "file": "interactive/spotlight-follow.tsx",
+      "category": "interactive",
+      "engine": "framer-motion",
+      "dependencies": ["framer-motion"],
+      "props": ["items", "className", "activeColor"],
+      "defaultProps": {},
+      "archetypes": ["NAV"],
+      "description": "Spotlight effect that follows mouse across navigation items with spring animation.",
+      "status": "ready",
+      "source": "vengenceui/spotlight-navbar",
+      "intensity": "expressive",
+      "affinity": {
+        "NAV": 0.95
+      }
+    },
+    "cursor-trail": {
+      "file": "interactive/cursor-trail.tsx",
+      "category": "interactive",
+      "engine": "css",
+      "dependencies": [],
+      "props": ["images", "className", "spawnThreshold"],
+      "defaultProps": {
+        "spawnThreshold": 50
+      },
+      "archetypes": ["HERO"],
+      "description": "Mouse trail effect with pixelated image slices following cursor movement.",
+      "status": "ready",
+      "source": "vengenceui/pixelated-image-trail",
+      "intensity": "dramatic",
+      "affinity": {
+        "HERO": 0.6
+      }
+    },
+    "page-loader": {
+      "file": "entrance/page-loader.tsx",
+      "category": "entrance",
+      "engine": "gsap",
+      "dependencies": ["gsap"],
+      "props": ["text", "className", "direction", "staggerOrder"],
+      "defaultProps": {
+        "text": "Loading",
+        "direction": "up",
+        "staggerOrder": "start"
+      },
+      "archetypes": [],
+      "description": "Full-screen GSAP stagger page entrance loader with customizable text and direction.",
+      "status": "ready",
+      "source": "vengenceui/reveal-loader",
+      "intensity": "dramatic",
+      "affinity": {
+        "HERO": 0.4
+      }
+    },
+    "perspective-grid": {
+      "file": "background/perspective-grid.tsx",
+      "category": "background",
+      "engine": "css",
+      "dependencies": [],
+      "props": ["className", "rows", "columns", "tiltX", "tiltY"],
+      "defaultProps": {
+        "rows": 6,
+        "columns": 8,
+        "tiltX": 55,
+        "tiltY": 0
+      },
+      "archetypes": ["HERO", "CTA"],
+      "description": "3D rotated CSS grid background with perspective effect and radial gradient mask.",
+      "status": "ready",
+      "source": "vengenceui/perspective-grid",
+      "intensity": "moderate",
+      "affinity": {
+        "HERO": 0.5,
+        "CTA": 0.4
+      }
+    },
+    "aurora-background": {
+      "file": "background/aurora-background.tsx",
+      "category": "background",
+      "engine": "css",
+      "dependencies": [],
+      "props": ["children", "className"],
+      "defaultProps": {},
+      "archetypes": ["HERO", "CTA"],
+      "description": "Animated stripe/aurora background effect. Children render over the animated background.",
+      "status": "ready",
+      "source": "vengenceui/animated-hero",
+      "intensity": "expressive",
+      "affinity": {
+        "HERO": 0.75,
+        "CTA": 0.5
+      }
     }
   }
 }

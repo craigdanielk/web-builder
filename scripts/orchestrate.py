@@ -686,6 +686,8 @@ def stage_deploy(
             "react": "19.2.3",
             "react-dom": "19.2.3",
             "framer-motion": "^12.33.0",  # Always included (hover/tap effects)
+            "clsx": "^2.1.1",
+            "tailwind-merge": "^2.6.0",
         }
         if engine == "gsap":
             deps["gsap"] = "^3.14.2"
@@ -893,6 +895,12 @@ export default function RootLayout({{ children }}: {{ children: React.ReactNode 
 }}
 """
     write_file(app_dir / "layout.tsx", layout_code)
+
+    # ── Generate cn() utility (clsx + tailwind-merge) ──
+    lib_dir = src_dir / "lib"
+    lib_dir.mkdir(parents=True, exist_ok=True)
+    cn_util = 'import { clsx, type ClassValue } from "clsx";\nimport { twMerge } from "tailwind-merge";\n\nexport function cn(...inputs: ClassValue[]) {\n  return twMerge(clsx(inputs));\n}\n'
+    write_file(lib_dir / "utils.ts", cn_util)
 
     # ── Copy sections ──
     print("  Copying sections...")

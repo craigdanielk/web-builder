@@ -1,7 +1,7 @@
 # Web Builder — System Context
 
-**Last Updated:** 2026-02-09
-**System Version:** v0.6.0
+**Last Updated:** 2026-02-10
+**System Version:** v0.7.0
 
 ---
 
@@ -112,12 +112,14 @@ web-builder/
 │   ├── animation-patterns.md          ← 20+ named GSAP/Framer Motion patterns
 │   ├── image-extraction.md            ← Image categorization spec (10 categories)
 │   ├── animation-components/            ← Pre-built animation component library
-│   │   ├── registry.json (303)          ← Pattern → component file mapping (27 entries)
-│   │   ├── entrance/                    ← Scroll-triggered entrance animations (9 slots)
+│   │   ├── registry.json (1016)         ← Pattern → component file mapping (36 entries, intensity + affinity scored)
+│   │   ├── entrance/                    ← Scroll-triggered entrance animations (11 slots)
 │   │   ├── scroll/                      ← Scroll-linked animations (5 slots)
-│   │   ├── interactive/                 ← User-triggered animations (5 slots)
+│   │   ├── interactive/                 ← User-triggered animations (7 slots)
 │   │   ├── continuous/                  ← Always-running animations (5 slots)
-│   │   └── text/                        ← Text-specific animations (4 slots)
+│   │   ├── text/                        ← Text-specific animations (5 slots)
+│   │   ├── effect/                      ← Border/glow/decoration effects (2 slots)
+│   │   └── background/                  ← Full-section background animations (2 slots)
 │   ├── presets/ (23 presets + _template)
 │   │   ├── _template.md
 │   │   ├── artisan-food.md            ← Coffee, bakery, artisan food
@@ -159,7 +161,7 @@ web-builder/
 │   └── {project}.md                   ← One per project
 │
 ├── scripts/
-│   ├── orchestrate.py (1211 lines)    ← Main pipeline — 6 stages + injection wiring + component copy
+│   ├── orchestrate.py (1258 lines)    ← Main pipeline — 6 stages + injection wiring + component copy + cn() utility
 │   └── quality/                       ← URL extraction + validation tools
 │       ├── url-to-preset.js (275)     ← URL → preset markdown
 │       ├── url-to-brief.js (201)      ← URL → brief markdown
@@ -171,7 +173,7 @@ web-builder/
 │           ├── animation-detector.js (750)  ← Animation detection + GSAP interception + section grouping
 │           ├── archetype-mapper.js (269)    ← Section → archetype mapping
 │           ├── design-tokens.js (265)       ← CSS → design token collection
-│           ├── animation-injector.js (808)  ← 3-tier animation injection (library > extracted > snippet)
+│           ├── animation-injector.js (956)  ← 3-tier animation injection + selectAnimation() affinity algorithm
 │           ├── asset-injector.js (378)     ← Per-section asset prompt builder
 │           ├── asset-downloader.js (257)   ← Download + verify extracted assets
 │           ├── gsap-extractor.js (454)      ← Static JS bundle GSAP call extraction
@@ -198,13 +200,16 @@ web-builder/
 │
 ├── plans/
 │   ├── _close-checklist.md                    ← Build close protocol template
-│   ├── active/                                ← Plans in progress
+│   ├── active/
+│   │   └── generated-reference-docs.md        ← Auto-generated API/dep/data-flow docs
+│   ├── backlog/                               ← Future plans (not yet implemented)
+│   │   ├── template-library-upgrade-plan.md   ← Aurelix pattern library
+│   │   └── url-site-structure-calculator.md   ← Shopify migration calculator
 │   └── completed/
+│       ├── animation-classification-vengenceui-integration.md ← v0.7.0
 │       ├── animation-extraction-integration.md ← v0.4.0
 │       ├── data-injection-pipeline.md          ← v0.5.0
-│       ├── system-documentation-automation.md  ← v0.4.1
-│       ├── template-library-upgrade-plan.md    ← v0.2.0
-│       └── url-site-structure-calculator.md    ← v0.3.0
+│       └── system-documentation-automation.md  ← v0.4.1
 │
 └── retrospectives/                    ← Session documentation
     ├── 2026-02-08-web-builder-first-build-success.md
@@ -261,9 +266,10 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 ### Stage 5: Deploy (`stage_deploy`, orchestrate.py:654)
 
 **No API call.** Creates Next.js project scaffold:
-- `package.json` with engine-specific deps (framer-motion always + GSAP conditional + Lottie conditional)
+- `package.json` with engine-specific deps (framer-motion always + GSAP conditional + Lottie conditional + clsx/tailwind-merge always)
 - Font imports from preset's Type line
 - `globals.css` with engine-specific styles
+- Generates `src/lib/utils.ts` with `cn()` utility (clsx + tailwind-merge)
 - Copies sections to `src/components/sections/`
 - Copies animation components from library to `src/components/animations/` (non-placeholder only, matched by archetype)
 - Downloads verified assets to `public/images/` and `public/lottie/` (via asset-injector + asset-downloader)
@@ -286,14 +292,17 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 *farm-minerals-anim: Built before v0.5.0 injection pipeline — preset says gsap but sections use framer-motion. Rebuild with injection pipeline to fix.
 
 ### Active Plans
-- **Animation Component Library** — Infrastructure built v0.6.0. Registry (27 patterns), 3-tier injection (library > extracted > snippet), component copy in stage_deploy. Awaiting 21st.dev component population.
+- **Generated Reference Docs** — `scripts/generate-docs.js` to auto-generate api-reference.md, dependencies.md, data-flow.md from source code. See `plans/active/generated-reference-docs.md`.
 
 ### Completed Plans
+- **[Animation Classification + VengenceUI Integration](plans/completed/animation-classification-vengenceui-integration.md)** — v0.7.0. Registry schema upgrade (intensity + affinity scoring for 36 components), 11 VengenceUI components extracted, `selectAnimation()` affinity algorithm, cn() utility in stage_deploy, deduplication across sections.
 - **[Data Injection Pipeline](plans/completed/data-injection-pipeline.md)** — v0.5.0. Animation injector + asset injector + engine-branched prompts + dynamic token budgets + dependency fix.
 - **[System Documentation Automation](plans/completed/system-documentation-automation.md)** — v0.4.1. CLAUDE.md created, README/cursorrules refreshed, retro skill doc-sync integrated.
 - **[Animation Extraction Integration](plans/completed/animation-extraction-integration.md)** — v0.4.0. Animation detection, analysis, preset injection.
-- **[URL Site Structure Calculator](plans/completed/url-site-structure-calculator.md)** — v0.3.0. URL clone mode, auto-generated presets and briefs.
-- **[Template Library Upgrade](plans/completed/template-library-upgrade-plan.md)** — v0.2.0. Multi-agent builds, build isolation, 18 industry presets.
+
+### Backlog Plans
+- **[URL Site Structure Calculator](plans/backlog/url-site-structure-calculator.md)** — Shopify migration architecture calculator (Aurelix). Not yet implemented.
+- **[Aurelix Pattern Library](plans/backlog/template-library-upgrade-plan.md)** — Autonomous pattern recognition system. Not yet implemented.
 
 ---
 
@@ -422,11 +431,12 @@ vercel --yes --prod             # Production deployment
 
 ## System Version
 
-**Current:** v0.6.0 (2026-02-09)
+**Current:** v0.7.0 (2026-02-10)
 
 ### Changelog
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.7.0 | 2026-02-10 | Animation classification: registry schema upgrade (intensity + affinity on 36 components), 11 VengenceUI components extracted (character-flip, border-beam, glow-border, staggered-grid, spotlight-follow, cursor-trail, page-loader, perspective-grid, aurora-background + count-up/marquee replacements), `selectAnimation()` affinity algorithm with deduplication, cn() utility generation in stage_deploy, new `effect/` and `background/` component categories |
 | v0.6.0 | 2026-02-09 | Animation component library: registry (27 patterns), 3-tier injection (library > extracted > snippet), gsap-extractor, animation-summarizer, per-section grouping, component copy in stage_deploy |
 | v0.5.0 | 2026-02-09 | Data injection pipeline: animation injector, asset injector/downloader, engine-branched prompts, dynamic token budgets, dependency fix |
 | v0.4.1 | 2026-02-09 | Doc-sync integration into retrospective skill; CLAUDE.md, README.md, .cursorrules refresh |

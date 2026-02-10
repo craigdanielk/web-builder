@@ -551,8 +551,140 @@ Named eases used across patterns:
 
 ---
 
+## I. VengenceUI Components (v0.7.0)
+
+Pre-built React components from VengenceUI, refactored to web-builder conventions. Each is a self-contained `.tsx` file in the animation component library. Import via the component injection system (Tier 1) — `selectAnimation()` handles selection automatically based on archetype affinity and intensity.
+
+### `character-flip`
+
+3D character flip animation using Framer Motion `AnimatePresence`. Each character rotates on Y-axis with stagger timing. Higher visual impact than `character-reveal`.
+
+**Category:** `text/` | **Engine:** framer-motion | **Intensity:** expressive
+**Pattern:** Standalone — takes `text` prop, renders character spans
+**Best for:** HERO (0.9), CTA (0.5), ABOUT (0.3)
+
+---
+
+### `border-beam`
+
+Rotating gradient beam that travels along the border of a container. Pure CSS animation using `conic-gradient` and `@keyframes`. Low performance cost.
+
+**Category:** `effect/` | **Engine:** css | **Intensity:** moderate
+**Pattern:** Wrapper — wraps children, adds beam overlay via `::after`
+**Best for:** PRICING (0.9), CTA (0.8), FEATURES (0.7), PRODUCT-SHOWCASE (0.6)
+
+---
+
+### `glow-border`
+
+Aurora-style conic-gradient glow effect around card borders. Animated with CSS `@keyframes` rotation. More dramatic than `border-beam`.
+
+**Category:** `effect/` | **Engine:** css | **Intensity:** expressive
+**Pattern:** Wrapper — wraps children with animated glow border
+**Best for:** CTA (0.9), PRICING (0.8), PRODUCT-SHOWCASE (0.7), FEATURES (0.5)
+
+---
+
+### `staggered-grid`
+
+GSAP ScrollTrigger-powered grid reveal. Children appear in staggered sequence with scale + opacity. More dynamic than `fade-up-stagger` for grid layouts.
+
+**Category:** `entrance/` | **Engine:** gsap | **Intensity:** expressive
+**Pattern:** Wrapper — children become grid items that stagger-reveal on scroll
+**Best for:** GALLERY (0.95), FEATURES (0.8), TEAM (0.8), PRODUCT-SHOWCASE (0.7), PORTFOLIO (0.9)
+
+---
+
+### `spotlight-follow`
+
+Mouse-following spotlight effect using Framer Motion `useMotionValue`. Creates a radial gradient highlight that tracks cursor position. Navigation-optimized.
+
+**Category:** `interactive/` | **Engine:** framer-motion | **Intensity:** expressive
+**Pattern:** Standalone — designed for navigation bars, takes menu items as children
+**Best for:** NAV (0.95), HERO (0.3)
+
+---
+
+### `cursor-trail`
+
+Pixelated image trail that follows mouse movement. Creates grid of colored squares at cursor path with fade-out. Page-level effect — attaches to document.
+
+**Category:** `interactive/` | **Engine:** css+react | **Intensity:** dramatic
+**Pattern:** Standalone — mounts at page level, listens to `mousemove` on document
+**Best for:** HERO (0.7), GALLERY (0.5), PORTFOLIO (0.5)
+
+---
+
+### `page-loader`
+
+Full-screen GSAP-powered loading overlay that reveals the page beneath. Uses clip-path animation for the reveal transition.
+
+**Category:** `entrance/` | **Engine:** gsap | **Intensity:** dramatic
+**Pattern:** Standalone — full-screen overlay, auto-dismisses after animation
+**Best for:** HERO (0.8), NAV (0.3)
+
+---
+
+### `perspective-grid`
+
+3D perspective CSS grid background. Creates a visual depth effect with CSS `perspective` and `transform: rotateX()`. Static but visually striking.
+
+**Category:** `background/` | **Engine:** css | **Intensity:** moderate
+**Pattern:** Standalone — renders grid element, accepts `className` for sizing
+**Best for:** HERO (0.8), CTA (0.6), FEATURES (0.5), ABOUT (0.4)
+
+---
+
+### `aurora-background`
+
+Animated aurora/northern-lights gradient background using CSS keyframes + Framer Motion for entrance. Soft gradient blobs shift and blend.
+
+**Category:** `background/` | **Engine:** css+framer | **Intensity:** expressive
+**Pattern:** Wrapper — children render over the animated background
+**Best for:** HERO (0.95), CTA (0.7), ABOUT (0.4)
+
+---
+
+### `count-up` (v0.7.0 replacement)
+
+Smooth vertical slide number animation using Framer Motion `layoutId` and spring physics. Replaces v0.6.0 basic GSAP counter. Each digit slides independently.
+
+**Category:** `continuous/` | **Engine:** framer-motion | **Intensity:** moderate
+**Pattern:** Standalone — takes `value` prop (number), renders animated digits
+**Best for:** STATS (1.0), HERO (0.3)
+
+---
+
+### `marquee` (v0.7.0 replacement)
+
+Infinite horizontal scroll with progressive blur masks on edges. CSS-only animation with configurable speed and direction. Replaces v0.6.0 basic CSS marquee.
+
+**Category:** `continuous/` | **Engine:** css | **Intensity:** subtle
+**Pattern:** Wrapper — children become marquee items, duplicated for seamless loop
+**Best for:** LOGOS (1.0), TESTIMONIALS (0.7), GALLERY (0.5)
+
+---
+
+## Pattern-to-Archetype Map (Updated v0.7.0)
+
+The `selectAnimation()` algorithm in `animation-injector.js` uses the `affinity` field in `registry.json` for automated selection. The table below is a simplified reference — for exact scores see `registry.json`.
+
+| Section Archetype | Subtle | Moderate | Expressive | Dramatic |
+|---|---|---|---|---|
+| **HERO** | fade-up-single | perspective-grid | character-reveal, aurora-background, character-flip | page-loader, cursor-trail |
+| **FEATURES** | fade-up-stagger | border-beam | staggered-grid, glow-border | — |
+| **STATS** | fade-up-stagger | count-up | — | — |
+| **CTA** | fade-up-single | border-beam | glow-border, aurora-background | — |
+| **GALLERY** | fade-up-stagger | — | staggered-grid | — |
+| **PRICING** | fade-up-stagger | border-beam | glow-border | — |
+| **NAV** | — | — | spotlight-follow | — |
+| **LOGOS** | marquee | — | — | — |
+
+---
+
 ## Maintenance Log
 
 | Date | Change | Source |
 |------|--------|--------|
+| 2026-02-10 | Added 11 VengenceUI patterns (9 new + 2 replacements), new effect/ and background/ categories, updated archetype map with affinity scores | Animation classification plan v0.7.0 |
 | 2026-02-08 | Initial library created from farm-minerals-site production patterns | farm-minerals-promo rebuild |

@@ -1,123 +1,132 @@
+"use client";
 // @ts-nocheck
-'use client';
-import { useEffect, useId } from 'react';
-import {
-  MotionValue,
-  motion,
-  useSpring,
-  useTransform,
-  motionValue,
-} from 'motion/react';
-import useMeasure from 'react-use-measure';
 
-const TRANSITION = {
-  type: 'spring' as const,
-  stiffness: 280,
-  damping: 18,
-  mass: 0.3,
-};
+import React, { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
-function Digit({ value, place }: { value: number; place: number }) {
-  const valueRoundedToPlace = Math.floor(value / place) % 10;
-  const initial = motionValue(valueRoundedToPlace);
-  const animatedValue = useSpring(initial, TRANSITION);
+function cn(...classes: (string | undefined | false)[]) {
+  return classes.filter(Boolean).join(" ");
+}
+
+interface CountUpProps {
+  /** The numeric value to display */
+  value?: number;
+  /** Additional CSS classes */
+  className?: string;
+}
+
+function CountUp({ value = 0, className }: CountUpProps) {
+  return (
+    <div className={cn("flex items-center", className)}>
+      <div className="flex relative items-center">
+        {value.toString().split("").map((digit, index) => (
+          <SingleNumberHolder key={index} value={digit} index={index} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SingleNumberHolder({ value, index }: { value: string; index: number }) {
+  const [height, setHeight] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  let notANumber = false;
 
   useEffect(() => {
-    animatedValue.set(valueRoundedToPlace);
-  }, [animatedValue, valueRoundedToPlace]);
-
-  return (
-    <div className='relative inline-block w-[1ch] overflow-x-visible overflow-y-clip leading-none tabular-nums'>
-      <div className='invisible'>0</div>
-      {Array.from({ length: 10 }, (_, i) => (
-        <Number key={i} mv={animatedValue} number={i} />
-      ))}
-    </div>
-  );
-}
-
-function Number({ mv, number }: { mv: MotionValue<number>; number: number }) {
-  const uniqueId = useId();
-  const [ref, bounds] = useMeasure();
-
-  const y = useTransform(mv, (latest) => {
-    if (!bounds.height) return 0;
-    const placeValue = latest % 10;
-    const offset = (10 + number - placeValue) % 10;
-    let memo = offset * bounds.height;
-
-    if (offset > 5) {
-      memo -= 10 * bounds.height;
+    if (containerRef.current) {
+      setHeight(getComputedStyle(containerRef.current).height);
     }
+  }, []);
 
-    return memo;
-  });
-
-  // don't render the animated number until we know the height
-  if (!bounds.height) {
-    return (
-      <span ref={ref} className='invisible absolute'>
-        {number}
-      </span>
-    );
+  if (index === 0) {
+    notANumber = isNaN(Number.parseInt(value));
   }
 
+  const vars = {
+    init: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+  };
+
   return (
-    <motion.span
-      style={{ y }}
-      layoutId={`${uniqueId}-${number}`}
-      className='absolute inset-0 flex items-center justify-center'
-      transition={TRANSITION}
-      ref={ref}
+    <div
+      className="relative"
+      style={{ height: height || "auto", overflowY: "hidden", overflowX: "clip" }}
+      ref={containerRef}
     >
-      {number}
-    </motion.span>
-  );
-}
-
-type SlidingNumberProps = {
-  value: number;
-  padStart?: boolean;
-  decimalSeparator?: string;
-};
-
-export function SlidingNumber({
-  value,
-  padStart = false,
-  decimalSeparator = '.',
-}: SlidingNumberProps) {
-  const absValue = Math.abs(value);
-  const [integerPart, decimalPart] = absValue.toString().split('.');
-  const integerValue = parseInt(integerPart, 10);
-  const paddedInteger =
-    padStart && integerValue < 10 ? `0${integerPart}` : integerPart;
-  const integerDigits = paddedInteger.split('');
-  const integerPlaces = integerDigits.map((_, i) =>
-    Math.pow(10, integerDigits.length - i - 1)
-  );
-
-  return (
-    <div className='flex items-center'>
-      {value < 0 && '-'}
-      {integerDigits.map((_, index) => (
-        <Digit
-          key={`pos-${integerPlaces[index]}`}
-          value={integerValue}
-          place={integerPlaces[index]}
-        />
-      ))}
-      {decimalPart && (
-        <>
-          <span>{decimalSeparator}</span>
-          {decimalPart.split('').map((_, index) => (
-            <Digit
-              key={`decimal-${index}`}
-              value={parseInt(decimalPart, 10)}
-              place={Math.pow(10, decimalPart.length - index - 1)}
-            />
-          ))}
-        </>
+      {notANumber && (
+        <motion.span
+          initial="init"
+          animate="animate"
+          exit="exit"
+          variants={vars}
+          key={value}
+          layout="size"
+        >
+          {value}
+        </motion.span>
       )}
+      {!notANumber && <RenderStrip value={value} eleHeight={height} />}
     </div>
   );
 }
+
+const zeroToNine = Array.from({ length: 10 }, (_, k) => k);
+
+function RenderStrip({ eleHeight, value }: { eleHeight: string | null; value: string }) {
+  const heightInNumber = Number.parseInt(eleHeight?.replace("px", "") || "48");
+  const negative = heightInNumber * -1;
+  const pos = heightInNumber;
+  const prev = useRef(value);
+
+  const currentVal = parseInt(value);
+  const prevVal = parseInt(prev.current);
+
+  const diff = prevVal - currentVal;
+  const dir = currentVal > prevVal ? pos * diff * -1 : negative * diff;
+
+  useEffect(() => {
+    prev.current = value;
+  }, [value]);
+
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={value}
+        initial={{ y: dir }}
+        animate={{ y: 0 }}
+        exit={{ y: 0, transition: { duration: 0.1 } }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="flex relative flex-col"
+      >
+        <motion.span
+          layout
+          key={`negative-${value}`}
+          className="flex flex-col items-center absolute bottom-full left-0"
+        >
+          {zeroToNine
+            .filter((val) => val < currentVal)
+            .map((val, idx) => (
+              <span key={`${val}_${idx}`}>{val}</span>
+            ))}
+        </motion.span>
+
+        <span key={`current-${value}`}>{value}</span>
+
+        <motion.span
+          layout
+          key={`positive-${value}`}
+          className="flex flex-col items-center absolute top-full left-0"
+        >
+          {zeroToNine
+            .filter((val) => val > currentVal)
+            .map((val, idx) => (
+              <span key={`${val}_${idx}`}>{val}</span>
+            ))}
+        </motion.span>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+export default CountUp;

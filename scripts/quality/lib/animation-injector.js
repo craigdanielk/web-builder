@@ -253,6 +253,66 @@ const ARCHETYPE_PATTERN_MAP = {
 };
 
 // ---------------------------------------------------------------------------
+// Affinity-based animation selection (Tier 3 enhancement)
+// ---------------------------------------------------------------------------
+
+/**
+ * Select the best animation pattern for an archetype using affinity scores
+ * from the component registry, filtered by engine compatibility, intensity,
+ * and deduplication across sections.
+ *
+ * @param {string} archetype - Section archetype (e.g. 'HERO', 'FEATURES')
+ * @param {string} presetIntensity - From parsePresetIntensity()
+ * @param {string} engine - 'gsap' | 'framer-motion'
+ * @param {string[]} usedPatterns - Patterns already selected in earlier sections
+ * @returns {string|null} Best pattern name, or null if no candidates
+ */
+function selectAnimation(archetype, presetIntensity, engine, usedPatterns) {
+  var registry = loadRegistry();
+  var intensityRank = { subtle: 1, moderate: 2, expressive: 3, dramatic: 4 };
+  var presetRank = intensityRank[presetIntensity] || 2;
+
+  var candidates = [];
+
+  var entries = Object.entries(registry.components);
+  for (var i = 0; i < entries.length; i++) {
+    var name = entries[i][0];
+    var comp = entries[i][1];
+
+    // Filter: engine match (or css/css+react/css+framer which work with both)
+    var compEngine = comp.engine || 'framer-motion';
+    if (compEngine !== 'css' && compEngine !== 'css+react' && compEngine !== 'css+framer' && compEngine !== engine) continue;
+
+    // Filter: intensity <= preset intensity (don't use expressive on subtle preset)
+    var compRank = intensityRank[comp.intensity] || 2;
+    if (compRank > presetRank) continue;
+
+    // Filter: must have affinity data for this archetype
+    var affinity = comp.affinity || {};
+    var score = affinity[archetype] || 0;
+    if (score === 0) continue;
+
+    // Filter: not already used in recent sections (deduplication)
+    if (usedPatterns.indexOf(name) !== -1) continue;
+
+    // Filter: must be "ready" status
+    if (comp.status !== 'ready') continue;
+
+    candidates.push({ name: name, score: score, intensity: comp.intensity });
+  }
+
+  if (candidates.length === 0) return null;
+
+  // Sort: highest affinity first, break ties by preferring higher intensity
+  candidates.sort(function (a, b) {
+    if (b.score !== a.score) return b.score - a.score;
+    return (intensityRank[b.intensity] || 0) - (intensityRank[a.intensity] || 0);
+  });
+
+  return candidates[0].name;
+}
+
+// ---------------------------------------------------------------------------
 // Reference code snippets keyed by pattern name (fallback when no component)
 // ---------------------------------------------------------------------------
 
@@ -348,6 +408,16 @@ const FRAMER_FADE_UP_SNIPPET = `<motion.div
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Parse the animation_intensity setting from a preset file.
+ * @param {string} presetContent - Full text of the preset file
+ * @returns {string} 'subtle' | 'moderate' | 'expressive' | 'dramatic'
+ */
+function parsePresetIntensity(presetContent) {
+  var match = presetContent.match(/animation_intensity:\s*(subtle|moderate|expressive|dramatic)/i);
+  return match ? match[1].toLowerCase() : 'moderate';
+}
 
 /**
  * Detect animation engine from a preset's Motion line.
@@ -597,14 +667,68 @@ function buildLottieBlock(lottieInfo) {
  * @param {string} presetContent
  * @param {string} sectionArchetype
  * @param {number} sectionIndex
- * @returns {{ animationContext: string, tokenBudget: number, dependencies: string[], componentFiles: string[] }}
+ * @param {string[]} [usedPatterns] - Patterns already selected in earlier sections (for dedup)
+ * @returns {{ animationContext: string, tokenBudget: number, dependencies: string[], componentFiles: string[], selectedPattern: string|null }}
  */
-function buildAnimationContext(animationAnalysis, presetContent, sectionArchetype, sectionIndex) {
+function buildAnimationContext(animationAnalysis, presetContent, sectionArchetype, sectionIndex, usedPatterns) {
+  usedPatterns = usedPatterns || [];
   const componentFiles = [];
 
-  // Graceful fallback: no analysis available
+  // Free-design builds: no analysis available — use selectAnimation with affinity
   if (!animationAnalysis) {
-    const lines = [
+    var freeEngine = detectEngine(presetContent);
+    var freeIntensity = parsePresetIntensity(presetContent);
+    var freeSelected = selectAnimation(
+      sectionArchetype, freeIntensity, freeEngine, usedPatterns
+    );
+
+    // Try component library injection for selected pattern
+    if (freeSelected) {
+      var freeCompDef = lookupComponent(freeSelected);
+      if (freeCompDef) {
+        var freeSource = readComponentSource(freeCompDef.file);
+        if (freeSource) {
+          var freeDeps = buildDependencies(freeEngine, false, freeCompDef);
+          componentFiles.push(freeCompDef.file);
+          return {
+            animationContext: buildComponentContext(freeCompDef, freeSource, {}, freeSelected),
+            tokenBudget: 8192,
+            dependencies: freeDeps,
+            componentFiles: componentFiles,
+            selectedPattern: freeSelected,
+          };
+        }
+      }
+
+      // Component not available — use snippet for the selected pattern
+      var freeSnippet = PATTERN_SNIPPETS[freeSelected];
+      if (freeSnippet) {
+        var freeLines = [
+          '## Animation Context',
+          'Engine: ' + freeEngine,
+          'Pattern: ' + freeSelected,
+          'Intensity: ' + freeIntensity,
+          '',
+          '### Reference Animation Pattern',
+          'Pattern: `' + freeSelected + '`',
+          '```tsx',
+          freeSnippet,
+          '```',
+          'Use the above pattern as a reference. Adapt the timing values to match',
+          'the Motion line in the style header.',
+        ];
+        return {
+          animationContext: freeLines.join('\n'),
+          tokenBudget: calculateTokenBudget([freeSelected], freeEngine, false, false),
+          dependencies: buildDependencies(freeEngine, false, null),
+          componentFiles: componentFiles,
+          selectedPattern: freeSelected,
+        };
+      }
+    }
+
+    // Final fallback: generic framer-motion fade-up
+    var fallbackLines = [
       '## Animation Context',
       'Engine: framer-motion',
       'Pattern: fade-up',
@@ -618,10 +742,11 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
       'the Motion line in the style header.',
     ];
     return {
-      animationContext: lines.join('\n'),
+      animationContext: fallbackLines.join('\n'),
       tokenBudget: 4096,
       dependencies: ['framer-motion'],
       componentFiles: componentFiles,
+      selectedPattern: null,
     };
   }
 
@@ -651,6 +776,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
       tokenBudget: tokenBudget,
       dependencies: [],
       componentFiles: componentFiles,
+      selectedPattern: null,
     };
   }
 
@@ -697,6 +823,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
         tokenBudget: tokenBudget,
         dependencies: dependencies,
         componentFiles: componentFiles,
+        selectedPattern: selectedPattern,
       };
     }
   }
@@ -726,6 +853,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
       tokenBudget: tokenBudget,
       dependencies: dependencies,
       componentFiles: componentFiles,
+      selectedPattern: selectedPattern,
     };
   }
 
@@ -733,17 +861,30 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
   // TIER 3: Pattern Snippet Fallback
   // -----------------------------------------------------------------------
 
+  // Try affinity-based selection first, fall back to ARCHETYPE_PATTERN_MAP
+  var presetIntensity = parsePresetIntensity(presetContent);
+  var affinityPattern = selectAnimation(
+    (sectionArchetype || '').toUpperCase(),
+    presetIntensity,
+    engine,
+    usedPatterns
+  );
+
+  var tier3Patterns = affinityPattern ? [affinityPattern] : patterns;
+  var tier3SelectedPattern = affinityPattern || (patterns && patterns.length > 0 ? patterns[0] : null);
+
   const dependencies = buildDependencies(engine, lottieInfo.isLottie, null);
-  const tokenBudget = calculateTokenBudget(patterns, engine, lottieInfo.isLottie, false);
+  const tokenBudget = calculateTokenBudget(tier3Patterns, engine, lottieInfo.isLottie, false);
 
   const lines = [];
   lines.push('## Animation Context');
   lines.push(`Engine: ${engine}`);
-  lines.push(`Pattern: ${patterns.join(' + ')}`);
+  lines.push(`Pattern: ${tier3Patterns.join(' + ')}`);
   lines.push(`Intensity: ${intensity}`);
   lines.push('');
 
-  for (const pattern of patterns) {
+  for (var pi = 0; pi < tier3Patterns.length; pi++) {
+    var pattern = tier3Patterns[pi];
     const snippet = PATTERN_SNIPPETS[pattern];
     if (snippet) {
       lines.push('### Reference Animation Pattern');
@@ -767,6 +908,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
     tokenBudget: tokenBudget,
     dependencies: dependencies,
     componentFiles: componentFiles,
+    selectedPattern: tier3SelectedPattern,
   };
 }
 
@@ -782,6 +924,7 @@ function buildAllAnimationContexts(animationAnalysis, presetContent, sections) {
   const contexts = {};
   const allComponentFiles = new Set();
   const allDependencies = new Set();
+  var usedPatterns = [];
 
   if (!Array.isArray(sections)) {
     return { contexts: contexts, allComponentFiles: [], allDependencies: [] };
@@ -790,8 +933,13 @@ function buildAllAnimationContexts(animationAnalysis, presetContent, sections) {
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
     const archetype = (section.archetype || '').toUpperCase();
-    const result = buildAnimationContext(animationAnalysis, presetContent, archetype, i);
+    const result = buildAnimationContext(animationAnalysis, presetContent, archetype, i, usedPatterns);
     contexts[i] = result;
+
+    // Track selected patterns for deduplication across sections
+    if (result.selectedPattern) {
+      usedPatterns.push(result.selectedPattern);
+    }
 
     // Collect component files and dependencies across all sections
     result.componentFiles.forEach(function (f) { allComponentFiles.add(f); });
