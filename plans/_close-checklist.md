@@ -24,6 +24,11 @@ Create `retrospectives/YYYY-MM-DD-{plan-name}.md` covering:
 mv plans/active/{plan-name}.md plans/completed/
 ```
 
+### 2.5 Regenerate Reference Docs
+```bash
+node scripts/generate-docs.js
+```
+
 ### 3. Update CLAUDE.md
 - [ ] **Active Plans** section: remove the closed plan
 - [ ] **Completed Builds** table: add entry if a site was deployed

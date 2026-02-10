@@ -1,7 +1,7 @@
 # Web Builder — System Context
 
 **Last Updated:** 2026-02-10
-**System Version:** v0.7.0
+**System Version:** v0.7.1
 
 ---
 
@@ -160,7 +160,13 @@ web-builder/
 │   ├── _template.md
 │   └── {project}.md                   ← One per project
 │
+├── docs/ (auto-generated — do not edit)
+│   ├── api-reference.md               ← Function signatures + caller graph
+│   ├── dependencies.md                ← NPM packages + configuration constants
+│   └── data-flow.md                   ← Module I/O contracts + require graph
+│
 ├── scripts/
+│   ├── generate-docs.js               ← Generates docs/ from source code
 │   ├── orchestrate.py (1258 lines)    ← Main pipeline — 6 stages + injection wiring + component copy + cn() utility
 │   └── quality/                       ← URL extraction + validation tools
 │       ├── url-to-preset.js (275)     ← URL → preset markdown
@@ -200,8 +206,7 @@ web-builder/
 │
 ├── plans/
 │   ├── _close-checklist.md                    ← Build close protocol template
-│   ├── active/
-│   │   └── generated-reference-docs.md        ← Auto-generated API/dep/data-flow docs
+│   ├── active/                                ← (none currently)
 │   ├── backlog/                               ← Future plans (not yet implemented)
 │   │   ├── template-library-upgrade-plan.md   ← Aurelix pattern library
 │   │   └── url-site-structure-calculator.md   ← Shopify migration calculator
@@ -209,6 +214,7 @@ web-builder/
 │       ├── animation-classification-vengenceui-integration.md ← v0.7.0
 │       ├── animation-extraction-integration.md ← v0.4.0
 │       ├── data-injection-pipeline.md          ← v0.5.0
+│       ├── generated-reference-docs.md         ← v0.7.1
 │       └── system-documentation-automation.md  ← v0.4.1
 │
 └── retrospectives/                    ← Session documentation
@@ -292,9 +298,10 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 *farm-minerals-anim: Built before v0.5.0 injection pipeline — preset says gsap but sections use framer-motion. Rebuild with injection pipeline to fix.
 
 ### Active Plans
-- **Generated Reference Docs** — `scripts/generate-docs.js` to auto-generate api-reference.md, dependencies.md, data-flow.md from source code. See `plans/active/generated-reference-docs.md`.
+- None
 
 ### Completed Plans
+- **[Generated Reference Docs](plans/completed/generated-reference-docs.md)** — v0.7.1. `scripts/generate-docs.js` auto-generates api-reference.md, dependencies.md, data-flow.md from source code. Integrated into close checklist.
 - **[Animation Classification + VengenceUI Integration](plans/completed/animation-classification-vengenceui-integration.md)** — v0.7.0. Registry schema upgrade (intensity + affinity scoring for 36 components), 11 VengenceUI components extracted, `selectAnimation()` affinity algorithm, cn() utility in stage_deploy, deduplication across sections.
 - **[Data Injection Pipeline](plans/completed/data-injection-pipeline.md)** — v0.5.0. Animation injector + asset injector + engine-branched prompts + dynamic token budgets + dependency fix.
 - **[System Documentation Automation](plans/completed/system-documentation-automation.md)** — v0.4.1. CLAUDE.md created, README/cursorrules refreshed, retro skill doc-sync integrated.
@@ -431,11 +438,12 @@ vercel --yes --prod             # Production deployment
 
 ## System Version
 
-**Current:** v0.7.0 (2026-02-10)
+**Current:** v0.7.1 (2026-02-10)
 
 ### Changelog
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.7.1 | 2026-02-10 | Generated reference docs: `scripts/generate-docs.js` produces `docs/api-reference.md` (488 lines, all exported functions with signatures + caller graph), `docs/dependencies.md` (NPM packages + config constants), `docs/data-flow.md` (module I/O + require graph). Integrated into close checklist. |
 | v0.7.0 | 2026-02-10 | Animation classification: registry schema upgrade (intensity + affinity on 36 components), 11 VengenceUI components extracted (character-flip, border-beam, glow-border, staggered-grid, spotlight-follow, cursor-trail, page-loader, perspective-grid, aurora-background + count-up/marquee replacements), `selectAnimation()` affinity algorithm with deduplication, cn() utility generation in stage_deploy, new `effect/` and `background/` component categories |
 | v0.6.0 | 2026-02-09 | Animation component library: registry (27 patterns), 3-tier injection (library > extracted > snippet), gsap-extractor, animation-summarizer, per-section grouping, component copy in stage_deploy |
 | v0.5.0 | 2026-02-09 | Data injection pipeline: animation injector, asset injector/downloader, engine-branched prompts, dynamic token budgets, dependency fix |
@@ -444,6 +452,15 @@ vercel --yes --prod             # Production deployment
 | v0.3.0 | 2026-02-08 | URL clone mode (`--from-url`), auto-generated presets and briefs |
 | v0.2.0 | 2026-02-08 | Multi-agent builds, build isolation, Vercel deployment, 18 industry presets |
 | v0.1.0 | 2026-02-08 | Initial pipeline: brief → scaffold → sections → assembly → review |
+
+---
+
+## Generated Reference Docs
+
+Run `node scripts/generate-docs.js` to regenerate. Always current.
+- `docs/api-reference.md` — Function signatures, params, return types, caller graph
+- `docs/dependencies.md` — NPM packages, versions, configuration constants
+- `docs/data-flow.md` — Module input/output contracts, require graph, artifact flow
 
 ---
 
