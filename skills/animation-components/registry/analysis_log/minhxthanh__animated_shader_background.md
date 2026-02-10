@@ -1,0 +1,52 @@
+# minhxthanh__animated_shader_background
+
+**Source:** `21st-dev-library/minhxthanh/animated-shader-background.tsx`
+**Component Type:** ui
+**Framework:** three.js
+**Animation Type:** entrance
+**Line Count:** 124
+
+## Extracted Features
+
+- **Triggers:** mount
+- **Motion Intents:** entrance
+- **Interaction Intents:** none
+- **Supported Elements:** background
+- **Layout Contexts:** background
+- **Section Archetypes:** none
+- **Directionality:** omnidirectional
+- **Axis:** none
+
+## Capabilities
+
+- Stagger: true
+- Interruptible: true
+- Reversible: false
+- Composable: false
+- Looping: false
+- Duration Range: 300ms - 800ms
+- Easing: ease-out
+
+## Performance and Risk
+
+- GPU Accelerated: false
+- Layout Shift Risk: low
+- Scroll Coupling Risk: low
+- Motion Stacking Risk: low
+- Mobile Safe: false
+- Accessibility Safe: true
+- Reduced Motion Fallback: false
+- Requires Layout Measurement: false
+
+## Classification Rationale
+
+Classified as **UI** component.   
+
+## Uncertainty Notes
+
+No significant classification uncertainties.
+
+## Fallback Assumptions
+
+- Default duration: 300ms - 800ms (defaulted - no explicit duration found)
+- Default easing: ease-out (defaulted)

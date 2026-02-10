@@ -1,7 +1,7 @@
 # Web Builder — System Context
 
 **Last Updated:** 2026-02-10
-**System Version:** v0.7.1
+**System Version:** v0.8.0
 
 ---
 
@@ -111,16 +111,23 @@ web-builder/
 │   ├── style-schema.md                ← 7 style dimensions with Tailwind mappings
 │   ├── animation-patterns.md          ← 20+ named GSAP/Framer Motion patterns
 │   ├── image-extraction.md            ← Image categorization spec (10 categories)
-│   ├── animation-components/            ← Pre-built animation component library
-│   │   ├── registry.json (1016)         ← Pattern → component file mapping (36 entries, intensity + affinity scored)
+│   ├── animation-components/            ← Pre-built animation component library (1022 total)
+│   │   ├── registry.json (1016)         ← Legacy pattern → component file mapping (36 entries)
+│   │   ├── registry/                    ← NEW: Comprehensive machine-usable registry
+│   │   │   ├── animation_registry.json (1.6MB) ← Full analysis of all 1022 components
+│   │   │   ├── animation_taxonomy.json  ← Controlled vocabulary (motion intents, triggers, roles)
+│   │   │   ├── animation_search_index.json ← Query-optimised lookup by intent/trigger/section/framework
+│   │   │   ├── animation_capability_matrix.csv ← Tabular capabilities (189KB)
+│   │   │   └── analysis_log/ (1022 files) ← Per-component classification rationale
 │   │   ├── entrance/                    ← Scroll-triggered entrance animations (11 slots)
 │   │   ├── scroll/                      ← Scroll-linked animations (5 slots)
 │   │   ├── interactive/                 ← User-triggered animations (7 slots)
 │   │   ├── continuous/                  ← Always-running animations (5 slots)
 │   │   ├── text/                        ← Text-specific animations (5 slots)
 │   │   ├── effect/                      ← Border/glow/decoration effects (2 slots)
-│   │   └── background/                  ← Full-section background animations (2 slots)
-│   ├── presets/ (23 presets + _template)
+│   │   ├── background/                  ← Full-section background animations (2 slots)
+│   │   └── 21st-dev-library/ (986 .tsx) ← Community components from 21st.dev
+│   ├── presets/ (24 presets + _template)
 │   │   ├── _template.md
 │   │   ├── artisan-food.md            ← Coffee, bakery, artisan food
 │   │   ├── beauty-cosmetics.md
@@ -136,6 +143,7 @@ web-builder/
 │   │   ├── hotels-hospitality.md
 │   │   ├── jewelry-watches.md
 │   │   ├── medical-dental.md
+│   │   ├── nicola-romei.md              ← Creative portfolio / digital studio
 │   │   ├── nike-golf.md
 │   │   ├── nonprofits-social.md
 │   │   ├── outdoor-adventure.md
@@ -174,6 +182,7 @@ web-builder/
 │       ├── enrich-preset.js (161)     ← Enrich preset with extracted tokens
 │       ├── validate-build.js (287)    ← Post-build quality validation
 │       ├── test-animation-detector.js (196) ← Standalone animation test
+│       ├── build-animation-registry.js     ← Analyzes 1022 components → registry artifacts
 │       └── lib/
 │           ├── extract-reference.js (556)   ← Playwright extraction engine
 │           ├── animation-detector.js (750)  ← Animation detection + GSAP interception + section grouping
@@ -186,7 +195,10 @@ web-builder/
 │           ├── animation-summarizer.js (209) ← Token-efficient animation signature builder
 │           ├── section-context.js (192)     ← Per-section prompt context builder
 │           ├── post-process.js (313)        ← Post-generation cleanup
-│           └── visual-validator.js (401)    ← Visual consistency checker
+│           ├── visual-validator.js (401)    ← Visual consistency checker
+│           ├── registry-extractor.js        ← Feature extraction + classification for registry builder
+│           ├── registry-builders.js         ← Registry entry, search index, CSV, analysis log generators
+│           └── registry-utils.js            ← File discovery + quality validation for registry builder
 │
 ├── agents/
 │   └── roles.md                       ← Multi-agent role definitions
@@ -224,7 +236,13 @@ web-builder/
     ├── 2026-02-09-nike-golf-light-theme-rebuild.md
     ├── 2026-02-09-system-docs-automation-success.md
     ├── 2026-02-09-data-injection-pipeline-success.md
-    └── 2026-02-09-animation-component-library-infra-success.md
+    ├── 2026-02-09-animation-component-library-infra-success.md
+    ├── 2026-02-10-nicola-romei-portfolio-build.md
+    ├── 2026-02-10-cascaid-health-rebuild-from-url.md
+    ├── 2026-02-10-cascaid-health-animation-enhancement.md
+    ├── 2026-02-10-farm-minerals-v4-animation-library-test.md
+    ├── 2026-02-10-animation-library-import-fix.md
+    └── 2026-02-10-animation-registry-build.md
 ```
 
 ---
@@ -294,8 +312,12 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 | nike-golf | nike-golf | gsap | Vercel |
 | farm-minerals-anim | farm-minerals-anim | gsap* | Vercel |
 | farm-minerals-v3 | farm-minerals-promo-v2 | gsap | Vercel |
+| nicola-romei | nicola-romei | gsap | Vercel |
+| cascaid-health | health-wellness | gsap+framer | Vercel |
+| turm-kaffee-v3 | artisan-food | framer-motion | Vercel |
 
 *farm-minerals-anim: Built before v0.5.0 injection pipeline — preset says gsap but sections use framer-motion. Rebuild with injection pipeline to fix.
+*nicola-romei: Required manual post-build fixes — preset misclassified color (dark vs light #f3f3f3), 0 sections detected in Webflow site broke asset injection, scaffold parser failed on bold markdown. See retro for details.
 
 ### Active Plans
 - None
@@ -317,6 +339,38 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 
 ### Active Issues
 
+**GSAP `from()` causes invisible elements in Next.js SSR**
+- `gsap.from({ opacity: 0 })` immediately sets elements to the "from" state. In SSR/hydration context, ScrollTrigger `once: true` may never fire, leaving elements permanently invisible.
+- Symptoms: Cards, rows, or other content completely invisible on deployed site despite correct HTML
+- Workaround: Use Framer Motion `whileInView` for all entrance animations. Use GSAP only for interactive effects (hover tilt, continuous pulse) and scroll-linked parallax (`scrub: true`).
+- Hit in: cascaid-health build (2026-02-10) — sections 03-problem, 08-comparison, 09-team
+- Fix: Update section prompt templates to enforce Framer Motion for entrance animations
+- Priority: High — affects any build using GSAP entrance animations
+
+**parse_scaffold() fails on bold markdown formatting**
+- `parse_scaffold()` regex `\d+\.\s+(\w[\w-]*)` requires archetype to start with `\w`, but Claude sometimes generates `**NAV**` with bold markers
+- Symptoms: "Could not parse any sections from scaffold" error, pipeline exits
+- Workaround: Manually strip `**` from scaffold.md, resume with `--skip-to sections`
+- Hit in: nicola-romei build (2026-02-10)
+- Fix: Change regex to `\d+\.\s+\*{0,2}(\w[\w-]*)\*{0,2}` to handle optional bold
+- Priority: High — breaks every build where Claude uses bold formatting
+
+**Zero-section extraction silently bypasses asset injection**
+- When Playwright extraction finds 0 visual `<section>` elements (common on JS-heavy Webflow/WebGL sites), the entire asset injection pipeline is skipped
+- Symptoms: Sections receive no image URLs in prompts → Claude hallucmates fabricated Unsplash URLs that may not load
+- Workaround: Manually insert extracted `assets.images` URLs into section components post-build
+- Hit in: nicola-romei (Webflow + Three.js), potentially any heavily JS-rendered site
+- Fix: Add fallback in asset-injector that distributes `assets.images` heuristically even when section count is 0
+- Priority: High — affects all JS-heavy site clones
+
+**Preset generator misclassifies color temperature on overlay-heavy sites**
+- `url-to-preset.js` → Claude prompt can classify a light site (#f3f3f3) as "dark-neutral" when the site uses dark overlays/modals/tooltips
+- Symptoms: Generated preset has `bg_primary: black` when actual page bg is light
+- Workaround: Manually correct preset palette or fix section colors post-build
+- Hit in: nicola-romei (2026-02-10) — artboard tooltip was dark, page bg was light
+- Fix: Add explicit instruction in url-to-preset.js prompt: prioritize body/wrapper background over overlay backgrounds; cross-check with extracted `renderedDOM[0].styles.backgroundColor`
+- Priority: Medium — requires manual review of every preset for now
+
 **parse_fonts() recurring corruption (2 occurrences)**
 - `parse_fonts()` (orchestrate.py) regex fails on certain preset formatting
 - Symptoms: Preset YAML content leaks into layout.tsx font imports, causing build failure
@@ -325,6 +379,12 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 - Priority: Medium — fix the regex or add layout.tsx validation
 
 ### Resolved Issues (Keep for Reference)
+
+**Animation library components broken — 0 of 32 imported** (FIXED v0.7.2)
+- Was: Library components copied by stage_deploy but never validated. 6/9 key components had wrong export names, 4 imported from `motion/react` instead of `framer-motion`, 4 required missing `@/lib/utils.ts`, 1 contained wrong component entirely (hover-lift had ZoomImageUI).
+- Fix: Rewrote 6 key components (word-reveal, count-up, blur-fade, magnetic-button, hover-lift, magnetic-button), created `@/lib/utils.ts`, refactored 8 sections to import from library, added Phase 0 to animation-upgrade skill. 8 unique components now imported across turm-kaffee-v3.
+- Prevention: Add post-copy `tsc --noEmit` validation to stage_deploy; add registry validator.
+- Resolved: 2026-02-10
 
 **Gap 1: Animation data doesn't reach section output** (FIXED v0.5.0)
 - Was: hardcoded framer-motion in section prompt, either/or dependency bug
@@ -396,13 +456,13 @@ Section token budgets are dynamic — `animation-injector.js` calculates per-sec
 
 ```bash
 # URL clone mode (most common)
-python scripts/orchestrate.py my-project --from-url https://example.com --deploy --no-pause
+python3 scripts/orchestrate.py my-project --from-url https://example.com --deploy --no-pause
 
 # Manual brief mode
-python scripts/orchestrate.py my-project --preset artisan-food --deploy
+python3 scripts/orchestrate.py my-project --preset artisan-food --deploy
 
 # Resume from a specific stage
-python scripts/orchestrate.py my-project --preset artisan-food --skip-to sections --deploy
+python3 scripts/orchestrate.py my-project --preset artisan-food --skip-to sections --deploy
 
 # Test animation detection standalone
 node scripts/quality/test-animation-detector.js https://example.com
@@ -430,7 +490,8 @@ vercel --yes --prod             # Production deployment
 | Change Next.js version | `orchestrate.py:680` (deps dict in stage_deploy) |
 | Fix dependency resolution | `orchestrate.py:684-700` (engine deps in stage_deploy) |
 | Add animation pattern | `animation-injector.js:220-240` (ARCHETYPE_PATTERN_MAP) + `skills/animation-patterns.md` |
-| Add animation component | `skills/animation-components/{category}/{name}.tsx` + update `registry.json` (set status to "ready") |
+| Add animation component | `skills/animation-components/{category}/{name}.tsx` + update `registry.json` + rerun `node scripts/quality/build-animation-registry.js` |
+| Rebuild animation registry | `node scripts/quality/build-animation-registry.js` → regenerates all 5 artifacts in `skills/animation-components/registry/` |
 | Add image category | `asset-injector.js:21-47` (URL/ALT category signals) + `asset-injector.js:53-68` (section map) |
 | Add extraction CSS properties | `scripts/quality/lib/extract-reference.js:73-76` |
 
@@ -438,11 +499,13 @@ vercel --yes --prod             # Production deployment
 
 ## System Version
 
-**Current:** v0.7.1 (2026-02-10)
+**Current:** v0.8.0 (2026-02-10)
 
 ### Changelog
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.8.0 | 2026-02-10 | Animation Registry: `build-animation-registry.js` analyzes all 1022 components (36 curated + 986 21st-dev), generates 5 artifacts: `animation_registry.json` (1.6MB, full analysis), `animation_taxonomy.json` (controlled vocabulary), `animation_search_index.json` (query-optimised by intent/trigger/section/framework), `animation_capability_matrix.csv`, `analysis_log/` (1022 .md files). Classification: 335 animation, 613 UI, 74 hybrid. Fixed 5 broken source library components. Zero quality gate failures. |
+| v0.7.2 | 2026-02-10 | Animation library import fix: rewrote 6 broken components (word-reveal, count-up, blur-fade, magnetic-button, hover-lift), created @/lib/utils.ts, refactored 8 sections to use library imports instead of inline copies. 8 unique animation components now actively imported. Updated animation-upgrade skill with Phase 0 component inventory and import-first mandate. |
 | v0.7.1 | 2026-02-10 | Generated reference docs: `scripts/generate-docs.js` produces `docs/api-reference.md` (488 lines, all exported functions with signatures + caller graph), `docs/dependencies.md` (NPM packages + config constants), `docs/data-flow.md` (module I/O + require graph). Integrated into close checklist. |
 | v0.7.0 | 2026-02-10 | Animation classification: registry schema upgrade (intensity + affinity on 36 components), 11 VengenceUI components extracted (character-flip, border-beam, glow-border, staggered-grid, spotlight-follow, cursor-trail, page-loader, perspective-grid, aurora-background + count-up/marquee replacements), `selectAnimation()` affinity algorithm with deduplication, cn() utility generation in stage_deploy, new `effect/` and `background/` component categories |
 | v0.6.0 | 2026-02-09 | Animation component library: registry (27 patterns), 3-tier injection (library > extracted > snippet), gsap-extractor, animation-summarizer, per-section grouping, component copy in stage_deploy |

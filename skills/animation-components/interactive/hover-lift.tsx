@@ -1,82 +1,44 @@
-// @ts-nocheck
-// --- Pure UI Component ---
-// Этот компонент остается неизменным. Он уже чист, переиспользуем
-// и не зависит от какой-либо внешней среды.
+"use client";
 
-import { jsx as _jsx } from "react/jsx-runtime";
+import React from "react";
 import { motion } from "framer-motion";
-import { useState, startTransition } from "react";
 
-/**
- * ZoomImageUI - это "глупый" компонент, который отображает изображение
- * и увеличивает его при наведении курсора.
- * Вся конфигурация (масштаб, цвета, изображение) передается через props.
- */
-export function ZoomImageUI({
-    image = { 
-        src: "https://framerusercontent.com/images/70D908ZnP0cnDre3T7DlePO12M.jpeg", 
-        alt: "3D Gradient Waves" 
-    },
-    zoomScale = 2.5,
-    transition = { duration: 0.1, ease: "easeInOut" },
-    backgroundColor = "#FFFFFF",
-    borderRadius = 8,
-    style,
-}) {
-    const [isHovered, setIsHovered] = useState(false);
-
-    const zoomInStyle = { scale: zoomScale };
-    const zoomOutStyle = { scale: 1 };
-
-    const updateTransformOrigin = (e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const childElement = e.currentTarget.firstChild;
-        if (childElement) {
-            childElement.style.transformOrigin = `${x}px ${y}px`;
-        }
-    };
-    
-    const handleMouseEnter = () => startTransition(() => setIsHovered(true));
-    const handleMouseLeave = () => startTransition(() => setIsHovered(false));
-
-    return (
-        <motion.div
-            style={{
-                ...style,
-                overflow: "hidden",
-                position: "relative",
-                backgroundColor,
-                borderRadius,
-                width: "100%",
-                height: "100%",
-            }}
-            onMouseMove={updateTransformOrigin}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-        >
-            <motion.div
-                animate={isHovered ? zoomInStyle : zoomOutStyle}
-                transition={transition}
-                style={{
-                    width: "100%",
-                    height: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                }}
-            >
-                <img
-                    src={image.src}
-                    alt={image.alt}
-                    style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                    }}
-                />
-            </motion.div>
-        </motion.div>
-    );
+interface HoverLiftProps {
+  /** Content to wrap with hover-lift effect */
+  children: React.ReactNode;
+  /** How many pixels to lift on hover (negative = up) */
+  lift?: number;
+  /** Shadow on hover */
+  shadow?: string;
+  /** Animation duration (seconds) */
+  duration?: number;
+  /** Additional CSS classes */
+  className?: string;
+  /** Inline styles */
+  style?: React.CSSProperties;
 }
+
+export function HoverLift({
+  children,
+  lift = -6,
+  shadow = "0 20px 40px -12px rgba(0, 0, 0, 0.15)",
+  duration = 0.3,
+  className,
+  style,
+}: HoverLiftProps) {
+  return (
+    <motion.div
+      whileHover={{
+        y: lift,
+        boxShadow: shadow,
+        transition: { duration, ease: [0.33, 1, 0.68, 1] },
+      }}
+      className={className}
+      style={style}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+export default HoverLift;

@@ -1,16 +1,17 @@
-// @ts-nocheck
-"use client"
+"use client";
 
-import * as React from "react"
-import { motion, useInView } from "motion/react"
-
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { motion, useInView } from "framer-motion";
 
 interface BlurRevealProps {
-  className?: string
-  children: React.ReactNode
-  delay?: number
-  duration?: number
+  /** Additional CSS classes */
+  className?: string;
+  /** Content to animate */
+  children: React.ReactNode;
+  /** Delay before animation starts (seconds) */
+  delay?: number;
+  /** Animation duration (seconds) */
+  duration?: number;
 }
 
 export function BlurReveal({
@@ -19,18 +20,20 @@ export function BlurReveal({
   delay = 0,
   duration = 1,
 }: BlurRevealProps) {
-  const spanRef = React.useRef<HTMLSpanElement | null>(null)
-  const isInView: boolean = useInView(spanRef, { once: true })
+  const spanRef = React.useRef<HTMLSpanElement | null>(null);
+  const isInView: boolean = useInView(spanRef, { once: true });
 
   return (
     <motion.span
       ref={spanRef}
       initial={{ opacity: 0, filter: "blur(10px)", y: "20%" }}
       animate={isInView ? { opacity: 1, filter: "blur(0px)", y: "0%" } : {}}
-      transition={{ duration: duration, delay: delay }}
-      className={cn("inline-block", className)}
+      transition={{ duration, delay }}
+      className={className ? `inline-block ${className}` : "inline-block"}
     >
       {children}
     </motion.span>
-  )
+  );
 }
+
+export default BlurReveal;

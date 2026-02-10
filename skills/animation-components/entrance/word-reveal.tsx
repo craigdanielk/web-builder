@@ -1,58 +1,59 @@
-// @ts-nocheck
-"use client"
+"use client";
 
-import React from "react"
-import { AnimatePresence, HTMLMotionProps, motion } from "motion/react"
+import React from "react";
+import { motion } from "framer-motion";
 
-import { cn } from "@/lib/utils"
-
-/**
- * Props for the WordRotate component
- */
-export interface WordRotateProps {
-  /**
-   * Array of words to rotate through
-   */
-  words: string[]
-  /**
-   * Duration in milliseconds for each word display before rotating to the next
-   * @default 2000
-   */
-  duration?: number
+interface WordRevealProps {
+  /** The text to animate word-by-word */
+  text: string;
+  /** Additional CSS classes */
+  className?: string;
+  /** Delay before the animation starts (seconds) */
+  delay?: number;
+  /** Duration per word (seconds) */
+  duration?: number;
+  /** Stagger between words (seconds) */
+  stagger?: number;
 }
 
-export function WordRotate({
-  words,
-  className,
-  duration = 2000,
-}: HTMLMotionProps<"div"> & WordRotateProps) {
-  const [index, setIndex] = React.useState(0)
-
-  React.useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (index === words.length - 1) {
-        setIndex(0)
-      } else {
-        setIndex(index + 1)
-      }
-    }, duration)
-    return () => clearTimeout(timeoutId)
-  }, [index, words])
-
+export function WordReveal({
+  text,
+  className = "",
+  delay = 0,
+  duration = 0.55,
+  stagger = 0.06,
+}: WordRevealProps) {
+  const words = text.split(" ");
   return (
-    <div className="overflow-hidden p-2">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={words[index]}
-          initial={{ opacity: 0, y: 50 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -50 }}
-          transition={{ duration: 0.2, ease: "easeInOut" }}
-          className={cn(className)}
-        >
-          {words[index]}
-        </motion.div>
-      </AnimatePresence>
-    </div>
-  )
+    <motion.span
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true, margin: "-60px" }}
+      className={className}
+    >
+      {words.map((word, i) => (
+        <span key={i} className="inline-block overflow-hidden mr-[0.25em]">
+          <motion.span
+            className="inline-block"
+            variants={{
+              hidden: { y: "110%", opacity: 0 },
+              visible: {
+                y: 0,
+                opacity: 1,
+                transition: {
+                  duration,
+                  delay: delay + i * stagger,
+                  ease: [0.33, 1, 0.68, 1],
+                },
+              },
+            }}
+          >
+            {word}
+          </motion.span>
+        </span>
+      ))}
+    </motion.span>
+  );
 }
+
+export default WordReveal;

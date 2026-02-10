@@ -141,7 +141,17 @@ async function extractReference(url, outputDir) {
 
     // ── 2. Navigate and wait for load ──────────────────────────────────
     console.log(`[extract] Navigating to ${url}`);
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
+    try {
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
+    } catch (e) {
+      if (e.message.includes('Timeout')) {
+        console.log(`[extract] networkidle timed out, falling back to domcontentloaded`);
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await sleep(5000); // extra settle time for JS-heavy sites
+      } else {
+        throw e;
+      }
+    }
     await sleep(POST_LOAD_DELAY_MS);
     console.log(`[extract] Page loaded, settling for ${POST_LOAD_DELAY_MS}ms`);
 
