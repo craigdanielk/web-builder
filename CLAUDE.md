@@ -197,11 +197,12 @@ web-builder/
 │       └── site/                     ← Runnable Next.js project
 │
 ├── plans/
-│   ├── active/
-│   │   ├── data-injection-pipeline.md       ← Animation + asset injection
-│   │   └── system-documentation-automation.md ← This documentation plan
+│   ├── _close-checklist.md                    ← Build close protocol template
+│   ├── active/                                ← Plans in progress
 │   └── completed/
 │       ├── animation-extraction-integration.md ← v0.4.0
+│       ├── data-injection-pipeline.md          ← v0.5.0
+│       ├── system-documentation-automation.md  ← v0.4.1
 │       ├── template-library-upgrade-plan.md    ← v0.2.0
 │       └── url-site-structure-calculator.md    ← v0.3.0
 │
@@ -286,8 +287,13 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 
 ### Active Plans
 - **Animation Component Library** — Infrastructure built v0.6.0. Registry (27 patterns), 3-tier injection (library > extracted > snippet), component copy in stage_deploy. Awaiting 21st.dev component population.
-- **[Data Injection Pipeline](plans/active/data-injection-pipeline.md)** — Implemented v0.5.0. Animation injector + asset injector + engine-branched prompts + dynamic token budgets + dependency fix.
-- **[System Documentation Automation](plans/active/system-documentation-automation.md)** — Implemented v0.4.1. CLAUDE.md created, README/cursorrules refreshed, retro skill doc-sync integrated.
+
+### Completed Plans
+- **[Data Injection Pipeline](plans/completed/data-injection-pipeline.md)** — v0.5.0. Animation injector + asset injector + engine-branched prompts + dynamic token budgets + dependency fix.
+- **[System Documentation Automation](plans/completed/system-documentation-automation.md)** — v0.4.1. CLAUDE.md created, README/cursorrules refreshed, retro skill doc-sync integrated.
+- **[Animation Extraction Integration](plans/completed/animation-extraction-integration.md)** — v0.4.0. Animation detection, analysis, preset injection.
+- **[URL Site Structure Calculator](plans/completed/url-site-structure-calculator.md)** — v0.3.0. URL clone mode, auto-generated presets and briefs.
+- **[Template Library Upgrade](plans/completed/template-library-upgrade-plan.md)** — v0.2.0. Multi-agent builds, build isolation, 18 industry presets.
 
 ---
 
@@ -431,16 +437,26 @@ vercel --yes --prod             # Production deployment
 
 ---
 
+## Build Close Protocol
+
+When a plan is complete, follow `plans/_close-checklist.md` or this summary:
+
+1. **Verify** — all success criteria met, code committed
+2. **Retrospective** — create `retrospectives/YYYY-MM-DD-{name}.md` with: what shipped, what worked, what didn't, carry-forward items
+3. **Move plan** — `mv plans/active/{name}.md plans/completed/`
+4. **Update CLAUDE.md** — use the checklist below
+5. **Update dependent docs** — `.cursorrules` if stages changed, `README.md` if user-facing info changed
+
 ## CLAUDE.md Update Protocol
 
-After every build or integration session:
+After every build, integration session, or plan close:
 
 1. Run the retrospective skill to capture session learnings
 2. Update this file using the checklist below:
    - [ ] **Quick Reference**: version bumps, model changes, dependency versions
    - [ ] **File Map**: new/deleted/moved files with line counts
    - [ ] **Pipeline Stages**: function signatures, line numbers if changed
-   - [ ] **Current System State**: completed builds, plan status changes
+   - [ ] **Current System State**: completed builds, move closed plans from Active to Completed
    - [ ] **Known Issues**: add new issues, mark resolved ones
    - [ ] **System Version**: bump version, add changelog entry
 3. If pipeline stages changed, also update `.cursorrules`
