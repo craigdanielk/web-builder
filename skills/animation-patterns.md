@@ -1345,6 +1345,7 @@ particles.forEach((dot, i) => {
 
 | Date | Change | Source |
 |------|--------|--------|
+| 2026-02-11 | Added K. Card Micro-Animation Effects: 8 card-scoped patterns (card-stroke-draw, card-morph-blob, card-orbit-dot, card-flip-preview, card-text-scramble, card-3d-rotate, card-gradient-shift, card-particle-burst) for PRODUCT-SHOWCASE demo-cards variant | Track B v1.1.0 |
 | 2026-02-11 | Added `pinned-horizontal-scene` pattern, PINNED-SCROLL to archetype map | Track A v1.1.0 |
 | 2026-02-11 | Added F. GSAP Plugin Patterns: SplitText, ScrambleText, Flip, DrawSVG, MorphSVG, MotionPath, Draggable, Observer, ScrollSmoother, CustomEase, matchMedia, EasePack | Pattern doc expansion |
 | 2026-02-10 | Added 11 VengenceUI patterns (9 new + 2 replacements), new effect/ and background/ categories, updated archetype map with affinity scores | Animation classification plan v0.7.0 |

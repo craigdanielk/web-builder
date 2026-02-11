@@ -841,13 +841,14 @@ function adjustTokenBudgetForPlugins(tokenBudget, sectionArchetype, identificati
 }
 
 /**
- * Append plugin context block and section recommendations to result; adjust token budget.
+ * Append plugin context block, section recommendations, and demo-cards block to result; adjust token budget.
  * @param {Object} result - { animationContext, tokenBudget, dependencies, componentFiles, selectedPattern }
  * @param {string} sectionArchetype
  * @param {Object|null} identification
+ * @param {string} [sectionVariant] - Section variant (e.g. 'demo-cards')
  * @returns {Object} result with possibly updated animationContext and tokenBudget
  */
-function augmentResultWithPlugins(result, sectionArchetype, identification) {
+function augmentResultWithPlugins(result, sectionArchetype, identification, sectionVariant) {
   result.tokenBudget = adjustTokenBudgetForPlugins(result.tokenBudget, sectionArchetype, identification);
   if (!identification) return result;
 
@@ -864,6 +865,19 @@ function augmentResultWithPlugins(result, sectionArchetype, identification) {
       return (r.intents && r.intents.length) ? part + ' (' + r.intents.join(', ') + ')' : part;
     }).join('\n');
   }
+
+  // PRODUCT-SHOWCASE demo-cards: append per-card micro-animation assignment block
+  const normalizedArch = (sectionArchetype || '').toUpperCase();
+  const normalizedVariant = (sectionVariant || '').toLowerCase().replace(/\s+/g, '-');
+  if (normalizedArch === 'PRODUCT-SHOWCASE' && normalizedVariant === 'demo-cards') {
+    const cardBlock = buildCardAnimationBlock(identification);
+    if (cardBlock) {
+      ctx += (ctx ? '\n\n' : '') + cardBlock;
+    }
+    // Ensure sufficient token budget for diverse card animations
+    result.tokenBudget = Math.max(result.tokenBudget, 8192);
+  }
+
   result.animationContext = ctx;
   return result;
 }
@@ -915,7 +929,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
             dependencies: freeDeps,
             componentFiles: componentFiles,
             selectedPattern: freeSelected,
-          }, sectionArchetype, identification);
+          }, sectionArchetype, identification, sectionVariant);
         }
       }
 
@@ -942,7 +956,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
           dependencies: buildDependencies(freeEngine, false, null),
           componentFiles: componentFiles,
           selectedPattern: freeSelected,
-        }, sectionArchetype, identification);
+        }, sectionArchetype, identification, sectionVariant);
       }
     }
 
@@ -966,7 +980,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
       dependencies: ['framer-motion'],
       componentFiles: componentFiles,
       selectedPattern: null,
-    }, sectionArchetype, identification);
+    }, sectionArchetype, identification, sectionVariant);
   }
 
   const engine = detectEngine(presetContent);
@@ -996,7 +1010,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
       dependencies: [],
       componentFiles: componentFiles,
       selectedPattern: null,
-    }, sectionArchetype, identification);
+    }, sectionArchetype, identification, sectionVariant);
   }
 
   // -----------------------------------------------------------------------
@@ -1043,7 +1057,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
         dependencies: dependencies,
         componentFiles: componentFiles,
         selectedPattern: selectedPattern,
-      }, sectionArchetype, identification);
+      }, sectionArchetype, identification, sectionVariant);
     }
   }
 
@@ -1073,7 +1087,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
       dependencies: dependencies,
       componentFiles: componentFiles,
       selectedPattern: selectedPattern,
-    }, sectionArchetype, identification);
+    }, sectionArchetype, identification, sectionVariant);
   }
 
   // -----------------------------------------------------------------------
@@ -1128,7 +1142,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
     dependencies: dependencies,
     componentFiles: componentFiles,
     selectedPattern: tier3SelectedPattern,
-  }, sectionArchetype, identification);
+  }, sectionArchetype, identification, sectionVariant);
 }
 
 /**
@@ -1153,7 +1167,8 @@ function buildAllAnimationContexts(animationAnalysis, presetContent, sections, i
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
     const archetype = (section.archetype || '').toUpperCase();
-    const result = buildAnimationContext(animationAnalysis, presetContent, archetype, i, usedPatterns, identification);
+    const variant = section.variant || '';
+    const result = buildAnimationContext(animationAnalysis, presetContent, archetype, i, usedPatterns, identification, variant);
     contexts[i] = result;
 
     // Track selected patterns for deduplication across sections
@@ -1177,6 +1192,8 @@ module.exports = {
   buildAnimationContext,
   buildAllAnimationContexts,
   buildPluginContextBlock,
+  buildCardAnimationBlock,
   getPluginRecommendationsForSection,
   loadRegistry,
+  CARD_ANIMATION_MAP,
 };
