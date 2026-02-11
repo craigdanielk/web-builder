@@ -272,6 +272,11 @@ def stage_identify(extraction_dir: Path, project_name: str) -> dict | None:
     gap_path.parent.mkdir(parents=True, exist_ok=True)
     gap_path.write_text(json.dumps(gap_report, indent=2), encoding="utf-8")
 
+    # Save identification for stage_deploy and section prompts
+    id_path = OUTPUT_DIR / project_name / "identification.json"
+    id_path.parent.mkdir(parents=True, exist_ok=True)
+    id_path.write_text(json.dumps(identification, indent=2), encoding="utf-8")
+
     # Print summary
     color_system = identification.get("colorSystem", {})
     high = sum(1 for g in gaps if g.get("severity") == "high")
@@ -422,8 +427,9 @@ def parse_scaffold(scaffold: str) -> list[dict]:
     sections = []
     for line in scaffold.split("\n"):
         # Match lines like: 1. HERO | full-bleed-overlay | content direction text
+        # Optional *{0,2} allows 1. **NAV** | mega-menu | ... (bold markdown)
         match = re.match(
-            r"\d+\.\s+(\w[\w-]*)\s*\|\s*(\S[\w-]*)\s*\|\s*(.+)",
+            r"\d+\.\s+\*{0,2}(\w[\w-]*)\*{0,2}\s*\|\s*(\S[\w-]*)\s*\|\s*(.+)",
             line.strip(),
         )
         if match:
@@ -498,6 +504,7 @@ def get_animation_contexts(
     animation_analysis: dict | None,
     preset_content: str,
     sections: list[dict],
+    identification: dict | None = None,
 ) -> dict:
     """Call animation-injector.js to get per-section animation context."""
     node_script = f"""
@@ -505,7 +512,8 @@ const {{ buildAllAnimationContexts }} = require('./lib/animation-injector');
 const animAnalysis = {json.dumps(animation_analysis) if animation_analysis else 'null'};
 const presetContent = {json.dumps(preset_content)};
 const sections = {json.dumps(sections)};
-const result = buildAllAnimationContexts(animAnalysis, presetContent, sections);
+const identification = {json.dumps(identification) if identification else 'null'};
+const result = buildAllAnimationContexts(animAnalysis, presetContent, sections, identification);
 console.log(JSON.stringify(result));
 """
     result = subprocess.run(
@@ -591,7 +599,7 @@ def stage_sections(
         print("  Loading injection data...")
         if animation_analysis:
             animation_contexts = get_animation_contexts(
-                animation_analysis, preset_content, sections
+                animation_analysis, preset_content, sections, identification
             )
             if animation_contexts:
                 print(f"  ✓ Animation context for {len(animation_contexts)} sections")
@@ -684,6 +692,12 @@ def stage_sections(
             if id_parts:
                 identification_block = "\n" + "\n\n".join(id_parts) + "\n"
 
+        # GSAP plugin context for section prompt (when identification has detectedPlugins)
+        plugin_block = ""
+        if identification and identification.get("detectedPlugins"):
+            plugins = identification["detectedPlugins"]
+            plugin_block = f"\n═══ GSAP PLUGIN CONTEXT ═══\nDetected plugins: {', '.join(plugins)}\nUse these plugins where appropriate for this section.\n═══════════════════════════\n"
+
         prompt = f"""You are a senior frontend developer generating a single website section
 as a React + Tailwind CSS component.
 
@@ -697,7 +711,7 @@ Content Direction: {section['content']}
 
 ## Structural Reference
 {structure_ref}
-{ref_context_block}{animation_context_block}{asset_context_block}{identification_block}
+{ref_context_block}{animation_context_block}{asset_context_block}{identification_block}{plugin_block}
 {instructions}
 Component name: Section{num}{section['archetype'].replace('-', '')}"""
 
@@ -781,6 +795,12 @@ def parse_fonts(preset_content: str) -> dict:
     b_match = re.search(r"body_font:\s*([A-Za-z][A-Za-z0-9_ ]+)", preset_content)
     if b_match:
         body = b_match.group(1).strip()
+    # Guard: discard if YAML leaked into the capture
+    yaml_markers = ("---", "palette", "bg_primary", "accent")
+    if any(m in heading for m in yaml_markers) or any(m in body for m in yaml_markers):
+        print("⚠ parse_fonts: detected YAML leak, falling back to Inter")
+        heading = "Inter"
+        body = "Inter"
     return {"heading": heading, "body": body}
 
 
@@ -1037,6 +1057,54 @@ export default function RootLayout({{ children }}: {{ children: React.ReactNode 
     cn_util = 'import { clsx, type ClassValue } from "clsx";\nimport { twMerge } from "tailwind-merge";\n\nexport function cn(...inputs: ClassValue[]) {\n  return twMerge(clsx(inputs));\n}\n'
     write_file(lib_dir / "utils.ts", cn_util)
 
+    # ── GSAP setup with plugin imports when plugins detected ──
+    if engine == "gsap":
+        project_dir = OUTPUT_DIR / project_name
+        identification_path = project_dir / "identification.json"
+        plugins = []
+        if identification_path.exists():
+            try:
+                id_data = json.loads(identification_path.read_text(encoding="utf-8"))
+                plugins = id_data.get("detectedPlugins", [])
+            except (json.JSONDecodeError, OSError):
+                pass
+        if plugins:
+            plugin_imports = []
+            plugin_registers = []
+            PLUGIN_IMPORT_MAP = {
+                "SplitText": ("SplitText", "gsap/SplitText"),
+                "Flip": ("Flip", "gsap/Flip"),
+                "DrawSVG": ("DrawSVGPlugin", "gsap/DrawSVGPlugin"),
+                "MorphSVG": ("MorphSVGPlugin", "gsap/MorphSVGPlugin"),
+                "MotionPath": ("MotionPathPlugin", "gsap/MotionPathPlugin"),
+                "CustomEase": ("CustomEase", "gsap/CustomEase"),
+                "Observer": ("Observer", "gsap/Observer"),
+                "ScrambleText": ("ScrambleTextPlugin", "gsap/ScrambleTextPlugin"),
+                "Draggable": ("Draggable", "gsap/Draggable"),
+                "ScrollSmoother": ("ScrollSmoother", "gsap/ScrollSmoother"),
+            }
+            for p in plugins:
+                if p in PLUGIN_IMPORT_MAP:
+                    name, path = PLUGIN_IMPORT_MAP[p]
+                    plugin_imports.append(f'import {{ {name} }} from "{path}";')
+                    plugin_registers.append(name)
+            if plugin_registers:
+                gsap_setup = f'''"use client";
+import gsap from "gsap";
+import {{ ScrollTrigger }} from "gsap/ScrollTrigger";
+{chr(10).join(plugin_imports)}
+
+if (typeof window !== "undefined") {{
+  gsap.registerPlugin(ScrollTrigger, {", ".join(plugin_registers)});
+}}
+
+export {{ gsap, ScrollTrigger, {", ".join(plugin_registers)} }};
+'''
+                gsap_setup_path = site_dir / "src" / "lib" / "gsap-setup.ts"
+                gsap_setup_path.parent.mkdir(parents=True, exist_ok=True)
+                gsap_setup_path.write_text(gsap_setup)
+                print(f"  Created gsap-setup.ts with plugins: {', '.join(plugin_registers)}")
+
     # ── Copy sections ──
     print("  Copying sections...")
     comp_dir.mkdir(parents=True, exist_ok=True)
@@ -1091,6 +1159,40 @@ export default function RootLayout({{ children }}: {{ children: React.ReactNode 
                         print(f"  ✓ Added dependencies: {', '.join(added)}")
             else:
                 print("  ℹ No animation components ready (all placeholders)")
+
+            # Validate copied animation components (Phase 5D)
+            if anim_dest.exists():
+                anim_files = list(anim_dest.glob("*.tsx"))
+                component_issues = []
+                for af in anim_files:
+                    content = af.read_text(encoding="utf-8")
+                    # Check for valid export
+                    if "export default" not in content and "export {" not in content:
+                        component_issues.append(f"  ⚠ {af.name}: missing export")
+                    # Check for wrong import path
+                    if "from 'motion/react'" in content or 'from "motion/react"' in content:
+                        component_issues.append(
+                            f"  ⚠ {af.name}: uses motion/react instead of framer-motion"
+                        )
+                        # Auto-fix
+                        fixed = content.replace(
+                            "from 'motion/react'", "from 'framer-motion'"
+                        ).replace('from "motion/react"', 'from "framer-motion"')
+                        af.write_text(fixed, encoding="utf-8")
+                        component_issues[-1] += " (auto-fixed)"
+                    # Check for @/lib/utils dependency
+                    if "@/lib/utils" in content:
+                        utils_path = site_dir / "src" / "lib" / "utils.ts"
+                        if not utils_path.exists():
+                            component_issues.append(
+                                f"  ⚠ {af.name}: imports @/lib/utils but utils.ts doesn't exist"
+                            )
+                if component_issues:
+                    print(f"  Component validation ({len(component_issues)} issues):")
+                    for ci in component_issues:
+                        print(ci)
+                else:
+                    print(f"  ✅ {len(anim_files)} animation components validated")
         except (json.JSONDecodeError, OSError) as e:
             print(f"  ⚠ Could not process animation registry: {e}")
 
@@ -1261,6 +1363,73 @@ End with:
     print(f"\n{review}")
 
 
+def stage_validate(project_name: str) -> dict:
+    """Stage 5.5: Pre-flight validation — catch errors before deployment."""
+    print("\n═══ STAGE 5.5: PRE-FLIGHT VALIDATION ═══\n")
+
+    project_dir = OUTPUT_DIR / project_name
+    sections_dir = project_dir / "sections"
+    issues = []
+
+    # 1. Check all section files exist and have content
+    section_files = sorted(sections_dir.glob("*.tsx")) if sections_dir.exists() else []
+    if not section_files:
+        issues.append("CRITICAL: No section files found in sections/")
+    else:
+        for sf in section_files:
+            content = sf.read_text(encoding="utf-8")
+            if len(content.strip()) < 50:
+                issues.append(f"CRITICAL: {sf.name} is nearly empty ({len(content)} chars)")
+
+            # 2. Check "use client" directive
+            if '"use client"' not in content and "'use client'" not in content:
+                issues.append(f"WARNING: {sf.name} missing 'use client' directive")
+
+            # 3. Check export default
+            if 'export default' not in content:
+                issues.append(f"CRITICAL: {sf.name} missing export default")
+
+            # 4. Check JSX balance (basic)
+            open_braces = content.count('{')
+            close_braces = content.count('}')
+            if abs(open_braces - close_braces) > 2:
+                issues.append(f"WARNING: {sf.name} has unbalanced braces (open={open_braces}, close={close_braces})")
+
+    # 5. Check scaffold exists
+    scaffold_path = project_dir / "scaffold.md"
+    if not scaffold_path.exists():
+        issues.append("WARNING: scaffold.md not found")
+
+    # 6. Check page.tsx exists
+    page_path = project_dir / "page.tsx"
+    if page_path.exists():
+        page_content = page_path.read_text(encoding="utf-8")
+        # Check imports match actual section files
+        for sf in section_files:
+            component_name = sf.stem.split('-', 1)[-1] if '-' in sf.stem else sf.stem
+            # Just check the filename is referenced somewhere in page.tsx
+            if sf.stem not in page_content and component_name not in page_content:
+                issues.append(f"WARNING: {sf.name} not imported in page.tsx")
+    else:
+        issues.append("WARNING: page.tsx not found (will be created during assembly)")
+
+    # Report
+    if issues:
+        critical = [i for i in issues if i.startswith("CRITICAL")]
+        warnings = [i for i in issues if i.startswith("WARNING")]
+        print(f"  Found {len(critical)} critical issues, {len(warnings)} warnings:\n")
+        for issue in issues:
+            prefix = "  ❌" if issue.startswith("CRITICAL") else "  ⚠"
+            print(f"{prefix} {issue}")
+
+        if critical:
+            print(f"\n  🛑 {len(critical)} critical issues must be fixed before deployment.")
+    else:
+        print("  ✅ All pre-flight checks passed.")
+
+    return {'passed': len([i for i in issues if i.startswith("CRITICAL")]) == 0, 'issues': issues}
+
+
 # --- Main ---
 
 def main():
@@ -1274,8 +1443,16 @@ def main():
                         help="Also deploy to a runnable Next.js project at output/{project}/site/")
     parser.add_argument("--from-url", help="Clone mode: extract from URL, auto-generate preset + brief",
                         default=None, metavar="URL")
+    parser.add_argument("--force", action="store_true",
+                        help="Remove existing output directory before building")
 
     args = parser.parse_args()
+
+    output_dir = OUTPUT_DIR / args.project
+    if args.force and output_dir.exists():
+        import shutil
+        shutil.rmtree(output_dir)
+        print(f"  🗑 Removed existing output: {output_dir}")
 
     # ── Project Collision Detection ────────────────────────────────
     # Prevent accidental overwrites when not using --skip-to (which expects existing project)
@@ -1381,8 +1558,17 @@ def main():
     if args.skip_to in (None, "sections", "assemble", "review"):
         stage_review(sections, section_files, preset, args.project)
 
+    # Stage 5.5: Pre-flight validation (before deploy)
+    deploy_ran = False
     if args.deploy or args.skip_to == "deploy":
-        stage_deploy(sections, section_files, preset, args.project, extraction_dir)
+        validation = stage_validate(args.project)
+        if not validation['passed']:
+            print("\n  ⚠ Pre-flight validation found critical issues.")
+            if not args.force:
+                print("  Use --force to deploy anyway, or fix the issues above.")
+        if validation['passed'] or args.force:
+            stage_deploy(sections, section_files, preset, args.project, extraction_dir)
+            deploy_ran = True
 
     # Print gap report summary if available (v0.9.0)
     if args.from_url:
@@ -1392,7 +1578,7 @@ def main():
     print(f"\n{'═' * 60}")
     print(f"  ✅ {mode_label} complete")
     print(f"  Output: output/{args.project}/")
-    if args.deploy or args.skip_to == "deploy":
+    if deploy_ran:
         print(f"  Site:   output/{args.project}/site/")
     if args.from_url:
         print(f"  Preset: skills/presets/{preset}.md")

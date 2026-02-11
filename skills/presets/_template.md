@@ -62,6 +62,9 @@ hover:
 timing:
 smooth_scroll:              # false (native scroll — Lenis removed)
 section_overrides:          # hero:character-reveal stats:count-up map:marker-pulse
+gsap_plugins:               # auto-detected GSAP plugins from reference site
+  # - SplitText
+  # - Flip
 
 visual_density: 
 image_treatment: 

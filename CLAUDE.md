@@ -1,7 +1,7 @@
 # Web Builder — System Context
 
 **Last Updated:** 2026-02-11
-**System Version:** v0.9.0
+**System Version:** v1.0.0
 
 ---
 
@@ -345,9 +345,10 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 **gsap-v9-test: v0.9.0 validation build against gsap.com. Color intelligence correctly identified 5-accent system, class-signal archetype mapping at 80% confidence, gap report generated. Sections invisible on deploy due to pre-existing GSAP `from()` SSR issue (not a v0.9.0 regression).
 
 ### Active Plans
-- **[GSAP Ecosystem Integration & System Stability](plans/active/gsap-ecosystem-integration-and-stability.md)** — v1.0.0. 5-phase plan: Phase 1 fixes 8 active bugs (from() SSR, parse_scaffold, token truncation, JSX repair, zero-section fallback, color misclassification, font parsing). Phase 2 extends detection to all 20 GSAP plugins. Phase 3 adds knowledge base (30+ animation patterns, 11 new plugin components, plugin section instructions). Phase 4 wires plugin-aware injection into generation. Phase 5 adds build reliability (pre-flight validation, post-deploy verification).
+- None
 
 ### Completed Plans
+- **[GSAP Ecosystem Integration & System Stability](plans/completed/gsap-ecosystem-integration-and-stability.md)** — v1.0.0. 8 bug fixes (from() SSR, parse_scaffold, token truncation, JSX repair, zero-section fallback, color misclassification, font parsing, --force flag). 20 GSAP plugins detectable. 22 new animation patterns documented. 11 new plugin components (SplitText, Flip, DrawSVG, MorphSVG, MotionPath, Draggable, Observer, ScrambleText). Plugin-aware injection + preset generation. Pre-flight validation (Stage 5.5) + post-deploy verification. 66-assertion test harness.
 - **[Pattern Identification & Mapping Pipeline](plans/completed/pattern-identification-mapping-pipeline.md)** — v0.9.0. Color intelligence (hue-aware mapping, gradient parsing, multi-accent systems), archetype intelligence (class-signal matching, confidence-based gaps), pattern identification (animation registry queries, UI component detection), gap aggregation with extension tasks, pipeline integration as Stage 0d. 688 insertions across 10 files, 57-assertion test harness.
 - **[Generated Reference Docs](plans/completed/generated-reference-docs.md)** — v0.7.1. `scripts/generate-docs.js` auto-generates api-reference.md, dependencies.md, data-flow.md from source code. Integrated into close checklist.
 - **[Animation Classification + VengenceUI Integration](plans/completed/animation-classification-vengenceui-integration.md)** — v0.7.0. Registry schema upgrade (intensity + affinity scoring for 36 components), 11 VengenceUI components extracted, `selectAnimation()` affinity algorithm, cn() utility in stage_deploy, deduplication across sections.
@@ -365,70 +366,21 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 
 ### Active Issues
 
-**GSAP `from()` causes invisible elements in Next.js SSR**
-- `gsap.from({ opacity: 0 })` immediately sets elements to the "from" state. In SSR/hydration context, ScrollTrigger `once: true` may never fire, leaving elements permanently invisible.
-- Symptoms: Cards, rows, or other content completely invisible on deployed site despite correct HTML
-- Workaround: Use Framer Motion `whileInView` for all entrance animations. Use GSAP only for interactive effects (hover tilt, continuous pulse) and scroll-linked parallax (`scrub: true`).
-- Hit in: cascaid-health build (2026-02-10) — sections 03-problem, 08-comparison, 09-team
-- Fix: Update section prompt templates to enforce Framer Motion for entrance animations
-- Priority: High — affects any build using GSAP entrance animations
-
-**parse_scaffold() fails on bold markdown formatting**
-- `parse_scaffold()` regex `\d+\.\s+(\w[\w-]*)` requires archetype to start with `\w`, but Claude sometimes generates `**NAV**` with bold markers
-- Symptoms: "Could not parse any sections from scaffold" error, pipeline exits
-- Workaround: Manually strip `**` from scaffold.md, resume with `--skip-to sections`
-- Hit in: nicola-romei build (2026-02-10)
-- Fix: Change regex to `\d+\.\s+\*{0,2}(\w[\w-]*)\*{0,2}` to handle optional bold
-- Priority: High — breaks every build where Claude uses bold formatting
-
-**Zero-section extraction silently bypasses asset injection**
-- When Playwright extraction finds 0 visual `<section>` elements (common on JS-heavy Webflow/WebGL sites), the entire asset injection pipeline is skipped
-- Symptoms: Sections receive no image URLs in prompts → Claude hallucmates fabricated Unsplash URLs that may not load
-- Workaround: Manually insert extracted `assets.images` URLs into section components post-build
-- Hit in: nicola-romei (Webflow + Three.js), potentially any heavily JS-rendered site
-- Fix: Add fallback in asset-injector that distributes `assets.images` heuristically even when section count is 0
-- Priority: High — affects all JS-heavy site clones
-
-**Preset generator misclassifies color temperature on overlay-heavy sites**
-- `url-to-preset.js` → Claude prompt can classify a light site (#f3f3f3) as "dark-neutral" when the site uses dark overlays/modals/tooltips
-- Symptoms: Generated preset has `bg_primary: black` when actual page bg is light
-- Workaround: Manually correct preset palette or fix section colors post-build
-- Hit in: nicola-romei (2026-02-10) — artboard tooltip was dark, page bg was light
-- Fix: Add explicit instruction in url-to-preset.js prompt: prioritize body/wrapper background over overlay backgrounds; cross-check with extracted `renderedDOM[0].styles.backgroundColor`
-- Priority: Medium — requires manual review of every preset for now
-
-**parse_fonts() recurring corruption (2 occurrences)**
-- `parse_fonts()` (orchestrate.py) regex fails on certain preset formatting
-- Symptoms: Preset YAML content leaks into layout.tsx font imports, causing build failure
-- Workaround: Manually overwrite layout.tsx with clean font setup after deploy
-- Hit in: farm-minerals-v2, farm-minerals-v3
-- Priority: Medium — fix the regex or add layout.tsx validation
-
-**`hexToTailwindApprox()` loses all hue information**
-- `url-to-preset.js` maps hex colors to Tailwind names using brightness only — no hue detection
-- Symptoms: Bright green (`#0ae448`) → `gray-200`, vivid blue (`#0077ff`) → `gray-400`. ALL non-gray colors from ANY site lose their hue. Presets describe sites as "monochrome gray" when they have rich color palettes
-- Workaround: Manually edit preset palette after extraction
-- Hit in: gsap-homepage (2026-02-10) — green/blue/purple/pink all mapped to grays
-- Fix: Planned in Phase 1C of pattern-identification-mapping-pipeline.md — HSL-based mapping with hue buckets
-- Priority: High — affects every URL-mode build
-
-**Archetype mapper ignores class names and IDs**
-- `archetype-mapper.js` only examines tag names, ARIA roles, and heading text. Class names (the strongest semantic signal on most sites) are completely ignored
-- Symptoms: Sections with class `brands` mapped to `FEATURES | icon-grid`, class `showcase` mapped to `FOOTER`, class `home-tools` mapped to `FEATURES | icon-grid` — all at 30% confidence
-- Workaround: Manually expand/correct preset section sequence after extraction
-- Hit in: gsap-homepage (2026-02-10) — 4 of 6 sections incorrectly mapped
-- Fix: Planned in Phase 2A of pattern-identification-mapping-pipeline.md — add class/ID heuristic layer
-- Priority: High — wrong archetype mapping cascades into wrong section generation
-
-**Gradient colors not parsed from extraction data**
-- `design-tokens.js` extracts `color` and `backgroundColor` as flat hex values but ignores CSS gradients in `backgroundImage`
-- Symptoms: Gradient-defined accent colors (e.g., `linear-gradient(114deg, rgb(10,228,72)...)` on GSAP scroll section) never appear in design tokens or preset
-- Workaround: None — gradient colors are silently lost
-- Hit in: gsap-homepage (2026-02-10) — green gradient defining the Scroll section was captured by extraction but never tokenized
-- Fix: Planned in Phase 1A of pattern-identification-mapping-pipeline.md — add gradient color extraction to `design-tokens.js`
-- Priority: Medium — affects sites that define accent colors via gradients rather than flat backgrounds
+None — all 8 previously active bugs fixed in v1.0.0.
 
 ### Resolved Issues (Keep for Reference)
+
+**All 8 v0.9.0 active issues** (FIXED v1.0.0)
+- GSAP `from()` SSR invisibility → Hybrid pattern enforced: Framer Motion for entrances, GSAP for interactive/scrub/continuous
+- `parse_scaffold()` bold markdown → Regex updated to `\*{0,2}(\w[\w-]*)\*{0,2}`
+- Zero-section asset injection bypass → Heuristic distribution fallback in `asset-injector.js`
+- Color temperature misclassification → First DOM element priority + dark text cross-check in Claude prompt
+- `parse_fonts()` corruption → YAML leak detection + Inter fallback
+- `hexToTailwindApprox()` hue loss → Replaced with HSL-based `hexToTailwindHue()` in v0.9.0
+- Archetype mapper class blindness → Class-signal matching added in v0.9.0
+- Gradient color extraction → `collectGradientColors()` added in v0.9.0
+- Additionally: NAV token truncation (6144 budget), JSX truncation detection/repair, `--force` flag, pre-flight validation (Stage 5.5), post-deploy verification
+- Resolved: 2026-02-11
 
 **Animation library components broken — 0 of 32 imported** (FIXED v0.7.2)
 - Was: Library components copied by stage_deploy but never validated. 6/9 key components had wrong export names, 4 imported from `motion/react` instead of `framer-motion`, 4 required missing `@/lib/utils.ts`, 1 contained wrong component entirely (hover-lift had ZoomImageUI).
@@ -553,11 +505,12 @@ vercel --yes --prod             # Production deployment
 
 ## System Version
 
-**Current:** v0.9.0 (2026-02-11)
+**Current:** v1.0.0 (2026-02-11)
 
 ### Changelog
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.0.0 | 2026-02-11 | GSAP Ecosystem Integration & System Stability. **Phase 1:** 8 bug fixes — parse_scaffold bold markdown, GSAP from() SSR hybrid rule, NAV/FOOTER 6144 token budget, zero-section asset heuristic fallback, color temp misclassification guard, parse_fonts YAML leak detection, JSX truncation detection+repair, --force CLI flag. **Phase 2:** 20 GSAP plugin detection (window globals + script pattern matching in animation-detector.js), plugin call classification in gsap-extractor.js (SplitText/Flip/DrawSVG/MorphSVG/MotionPath/Draggable/CustomEase/Observer/ScrambleText/matchMedia), plugin pattern matching in pattern-identifier.js. **Phase 3:** 22 new animation patterns in animation-patterns.md, full plugin instructions in section-instructions-gsap.md, 11 new animation components (splittext-chars/words/lines, scramble-text, flip-grid-filter, flip-expand-card, drawsvg-reveal, morphsvg-icon, motionpath-orbit, draggable-carousel, observer-swipe). **Phase 4:** Plugin-aware injection blocks in animation-injector.js, gsap-setup.ts generation in stage_deploy, plugin context in section prompts, plugin-aware preset generation in url-to-preset.js, token budget +2048 for SplitText/Flip sections. **Phase 5:** Pre-flight validation (Stage 5.5), post-deploy verification (validate-build.js), component copy validation with auto-fix for motion/react imports. 66-assertion test harness. |
 | v0.9.0 | 2026-02-11 | Pattern Identification Pipeline: New identification layer (Stage 0d) between extraction and generation. Color intelligence: hue-aware Tailwind mapping (`hexToTailwindHue`), gradient color extraction (`collectGradientColors`), color system classification (`identifyColorSystem`), per-section profiling (`profileSectionColors`). Archetype intelligence: class-signal matching (`CLASS_NAME_SIGNALS`), content-aware variant selection, confidence-based gap flagging. New `pattern-identifier.js`: animation pattern matching via registry search index, UI component detection (logo-marquee, video-embed, card-grid, accordion, tabs), section mapping, gap aggregation with extension tasks. Preset format extended with `accent_secondary`, `accent_tertiary`, `section_accents`. 688 insertions across 10 files. Test harness: 57 assertions. Validated against live gsap.com. |
 | v0.8.0 | 2026-02-10 | Animation Registry: `build-animation-registry.js` analyzes all 1022 components (36 curated + 986 21st-dev), generates 5 artifacts: `animation_registry.json` (1.6MB, full analysis), `animation_taxonomy.json` (controlled vocabulary), `animation_search_index.json` (query-optimised by intent/trigger/section/framework), `animation_capability_matrix.csv`, `analysis_log/` (1022 .md files). Classification: 335 animation, 613 UI, 74 hybrid. Fixed 5 broken source library components. Zero quality gate failures. |
 | v0.7.2 | 2026-02-10 | Animation library import fix: rewrote 6 broken components (word-reveal, count-up, blur-fade, magnetic-button, hover-lift), created @/lib/utils.ts, refactored 8 sections to use library imports instead of inline copies. 8 unique animation components now actively imported. Updated animation-upgrade skill with Phase 0 component inventory and import-first mandate. |

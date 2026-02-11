@@ -365,6 +365,88 @@ function extractGsapCalls(jsContent) {
 }
 
 // ---------------------------------------------------------------------------
+// Internal: Classify GSAP plugin usage from JS bundle content
+// ---------------------------------------------------------------------------
+
+function classifyPluginUsage(bundles) {
+  const pluginUsage = {};
+  const allCode = bundles.map((b) => (typeof b === 'string' ? b : (b.content || ''))).join('\n');
+
+  // SplitText
+  const splitTextMatches = [...allCode.matchAll(/new\s+SplitText\s*\(\s*([^,)]+)\s*,\s*\{[^}]*type\s*:\s*["']([^"']+)["']/g)];
+  if (splitTextMatches.length > 0) {
+    pluginUsage.SplitText = splitTextMatches.map((m) => ({
+      target: m[1].trim().replace(/["']/g, ''),
+      type: m[2],
+    }));
+  }
+
+  // Flip
+  const flipMatches = [...allCode.matchAll(/Flip\.(getState|from|to|fit|isFlipping)\s*\(/g)];
+  if (flipMatches.length > 0) {
+    pluginUsage.Flip = flipMatches.map((m) => ({ method: m[1] }));
+  }
+
+  // DrawSVG
+  const drawSVGMatches = [...allCode.matchAll(/drawSVG\s*:\s*["']?([^"',}]+)/g)];
+  if (drawSVGMatches.length > 0) {
+    pluginUsage.DrawSVG = drawSVGMatches.map((m) => ({ value: m[1].trim() }));
+  }
+
+  // MorphSVG
+  const morphMatches = [...allCode.matchAll(/morphSVG\s*:\s*["']?([^"',}]+)/g)];
+  if (morphMatches.length > 0) {
+    pluginUsage.MorphSVG = morphMatches.map((m) => ({ shape: m[1].trim() }));
+  }
+
+  // MotionPath
+  const motionPathMatches = [...allCode.matchAll(/motionPath\s*:\s*\{([^}]+)\}/g)];
+  if (motionPathMatches.length > 0) {
+    pluginUsage.MotionPath = motionPathMatches.map((m) => ({ config: m[1].trim() }));
+  }
+
+  // Draggable
+  const draggableMatches = [...allCode.matchAll(/Draggable\.create\s*\(\s*([^,)]+)/g)];
+  if (draggableMatches.length > 0) {
+    pluginUsage.Draggable = draggableMatches.map((m) => ({
+      target: m[1].trim().replace(/["']/g, ''),
+    }));
+  }
+
+  // CustomEase
+  const customEaseMatches = [...allCode.matchAll(/CustomEase\.create\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']/g)];
+  if (customEaseMatches.length > 0) {
+    pluginUsage.CustomEase = customEaseMatches.map((m) => ({ name: m[1], curve: m[2] }));
+  }
+
+  // ScrollSmoother
+  const scrollSmootherMatches = [...allCode.matchAll(/ScrollSmoother\.create\s*\(/g)];
+  if (scrollSmootherMatches.length > 0) {
+    pluginUsage.ScrollSmoother = [{ detected: true, count: scrollSmootherMatches.length }];
+  }
+
+  // Observer
+  const observerMatches = [...allCode.matchAll(/Observer\.create\s*\(/g)];
+  if (observerMatches.length > 0) {
+    pluginUsage.Observer = [{ detected: true, count: observerMatches.length }];
+  }
+
+  // ScrambleText (look for scrambleText property)
+  const scrambleMatches = [...allCode.matchAll(/scrambleText\s*:\s*\{([^}]+)\}/g)];
+  if (scrambleMatches.length > 0) {
+    pluginUsage.ScrambleText = scrambleMatches.map((m) => ({ config: m[1].trim() }));
+  }
+
+  // matchMedia
+  const matchMediaMatches = [...allCode.matchAll(/gsap\.matchMedia\s*\(\s*\)/g)];
+  if (matchMediaMatches.length > 0) {
+    pluginUsage.matchMedia = [{ detected: true, count: matchMediaMatches.length }];
+  }
+
+  return pluginUsage;
+}
+
+// ---------------------------------------------------------------------------
 // Exported: Extract GSAP animation data from JS bundle URLs
 // ---------------------------------------------------------------------------
 
@@ -410,10 +492,14 @@ async function extractGsapFromBundles(bundleUrls) {
     deduped.push(call);
   }
 
+  const bundleContents = contents.filter(Boolean);
+  const pluginUsage = classifyPluginUsage(bundleContents);
+
   return {
     calls: deduped,
     bundlesAnalyzed,
     totalCalls: deduped.length,
+    pluginUsage,
   };
 }
 
@@ -451,4 +537,4 @@ function mergeGsapData(staticCalls, runtimeCalls) {
 // ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
-module.exports = { extractGsapFromBundles, mergeGsapData };
+module.exports = { extractGsapFromBundles, mergeGsapData, classifyPluginUsage };

@@ -42,6 +42,8 @@ export default function SectionName() {
 
 ## A. Scroll-Triggered Entrance
 
+> **SSR WARNING**: All entrance animations below should use **Framer Motion `whileInView`**, NOT `gsap.from()`. The GSAP `from()` approach causes invisible elements in Next.js SSR. See `templates/section-instructions-gsap.md` for the correct hybrid pattern. GSAP should only be used for interactive, scroll-linked, continuous, and text-split animations.
+
 ### `fade-up-stagger`
 
 Elements slide up and fade in with stagger timing. The workhorse pattern — use for card grids, feature lists, any multi-element layout.
@@ -682,9 +684,411 @@ The `selectAnimation()` algorithm in `animation-injector.js` uses the `affinity`
 
 ---
 
+## J. GSAP Plugin Patterns
+
+Plugin-based patterns requiring `gsap.registerPlugin(...)`. Use core GSAP + ScrollTrigger for most entrances; reserve these for text splits, layout transitions, SVG drawing, motion paths, and responsive control.
+
+---
+
+### `splittext-chars-stagger`
+
+Character-by-character entrance reveal. Split text into characters and stagger-animate them in with optional 3D rotation.
+
+**Plugin:** SplitText (GSAP)  
+**Registration:** `gsap.registerPlugin(SplitText)`
+
+```tsx
+"use client";
+import { useRef, useEffect } from "react";
+import gsap from "gsap";
+import { SplitText } from "gsap/SplitText";
+
+gsap.registerPlugin(SplitText);
+
+// Inside component:
+useEffect(() => {
+  const split = new SplitText(titleRef.current, { type: "chars" });
+  gsap.from(split.chars, {
+    y: 40,
+    rotateX: -90,
+    stagger: 0.03,
+    duration: 0.8,
+    ease: "back.out(1.7)",
+    scrollTrigger: { trigger: titleRef.current, start: "top 80%" }
+  });
+  return () => split.revert();
+}, []);
+```
+
+**Note:** SplitText is safe for entrance since the characters exist in DOM — set initial CSS `visibility: visible` as needed.
+
+**Section fit:** HERO headlines, CTA titles, page transitions.
+
+---
+
+### `splittext-words-wave`
+
+Word-by-word wave entrance. Split text into words and animate each word in with opacity and vertical motion.
+
+```tsx
+const split = new SplitText(el, { type: "words" });
+gsap.from(split.words, {
+  opacity: 0, y: 20, stagger: 0.05, duration: 0.6, ease: "power2.out"
+});
+return () => split.revert();
+```
+
+**Section fit:** TESTIMONIALS quotes, ABOUT descriptions.
+
+---
+
+### `splittext-lines-reveal`
+
+Line-by-line masked reveal. Split into lines with overflow hidden and animate each line up for a wipe effect.
+
+```tsx
+const split = new SplitText(el, { type: "lines", linesClass: "line-wrapper" });
+gsap.set(split.lines, { overflow: "hidden" });
+gsap.from(split.lines, {
+  y: "100%", stagger: 0.1, duration: 0.8, ease: "power3.out"
+});
+return () => split.revert();
+```
+
+**Section fit:** HERO subtitles, STORY body text.
+
+---
+
+### `scramble-reveal`
+
+Random character scramble resolving to final text. Text appears to unscramble into the target string.
+
+**Plugin:** ScrambleTextPlugin (GSAP)
+
+```tsx
+gsap.to(el, {
+  duration: 1.5,
+  scrambleText: { text: "Final Text", chars: "!@#$%&*", speed: 0.3 },
+  scrollTrigger: { trigger: el, start: "top 80%" }
+});
+```
+
+**Section fit:** HERO taglines, CTA headers, tech-themed sections.
+
+---
+
+### `scramble-hover`
+
+Scramble on hover interaction. Text scrambles and resolves on mouse enter for a tech/glitch feel.
+
+```tsx
+const onEnter = () => gsap.to(el, { scrambleText: { text: el.textContent, speed: 0.5 }, duration: 0.8 });
+```
+
+**Section fit:** NAV links, button labels.
+
+---
+
+### `flip-layout-transition`
+
+Animated layout change for tabs, filters, or view toggles. Capture state before DOM change, apply change, then animate from the previous state.
+
+**Plugin:** Flip (GSAP)  
+**Registration:** `gsap.registerPlugin(Flip)`
+
+```tsx
+import { Flip } from "gsap/Flip";
+gsap.registerPlugin(Flip);
+
+const state = Flip.getState(items);
+// Apply DOM changes (filter, reorder, toggle class)
+container.classList.toggle("grid-view");
+Flip.from(state, { duration: 0.6, ease: "power1.inOut", stagger: 0.05, absolute: true });
+```
+
+**Section fit:** PRODUCT-SHOWCASE filter tabs, GALLERY layout toggles.
+
+---
+
+### `flip-expand-card`
+
+Card expanding to detail view. Use Flip to animate between collapsed and expanded layout.
+
+```tsx
+const state = Flip.getState(card);
+card.classList.toggle("expanded");
+Flip.from(state, { duration: 0.5, ease: "power2.inOut" });
+```
+
+**Section fit:** PORTFOLIO cards, TEAM member details.
+
+---
+
+### `drawsvg-logo-reveal`
+
+SVG stroke drawing animation on scroll. Path draws from start to end for logo or graphic reveals.
+
+**Plugin:** DrawSVGPlugin (GSAP)  
+**Registration:** `gsap.registerPlugin(DrawSVGPlugin)`
+
+```tsx
+import { DrawSVGPlugin } from "gsap/DrawSVGPlugin";
+gsap.registerPlugin(DrawSVGPlugin);
+
+gsap.from(".logo-path", {
+  drawSVG: "0%",
+  duration: 2,
+  ease: "power2.inOut",
+  scrollTrigger: { trigger: ".logo-section", start: "top 70%" }
+});
+```
+
+**Section fit:** HERO logo reveals, ABOUT brand story.
+
+---
+
+### `drawsvg-path-progress`
+
+Progress indicator drawing with scroll. Path draw progress is tied to scroll position (scrub).
+
+```tsx
+gsap.to(".progress-path", {
+  drawSVG: "0% 100%",
+  scrollTrigger: { trigger: ".timeline", scrub: true, start: "top center", end: "bottom center" }
+});
+```
+
+**Section fit:** HOW-IT-WORKS steps, TIMELINE sections.
+
+---
+
+### `morphsvg-shape-shift`
+
+Morphing between two SVG shapes. One path morphs into another; good for loops or state changes.
+
+**Plugin:** MorphSVGPlugin (GSAP)  
+**Registration:** `gsap.registerPlugin(MorphSVGPlugin)`
+
+```tsx
+import { MorphSVGPlugin } from "gsap/MorphSVGPlugin";
+gsap.registerPlugin(MorphSVGPlugin);
+
+gsap.to("#shape1", { morphSVG: "#shape2", duration: 1.5, ease: "power2.inOut", repeat: -1, yoyo: true });
+```
+
+**Section fit:** HERO background shapes, FEATURES decorative elements.
+
+---
+
+### `morphsvg-icon-morph`
+
+Icon morphing on hover or state change. SVG path morphs between two predefined paths (e.g. hamburger ↔ X).
+
+```tsx
+const onToggle = (isActive) => {
+  gsap.to("#icon-path", { morphSVG: isActive ? "#icon-active" : "#icon-default", duration: 0.4 });
+};
+```
+
+**Section fit:** FEATURES interactive icons, NAV hamburger-to-X.
+
+---
+
+### `motionpath-orbit`
+
+Element orbiting along a circular or custom path. Use for satellites, planets, or decorative motion.
+
+**Plugin:** MotionPathPlugin (GSAP)  
+**Registration:** `gsap.registerPlugin(MotionPathPlugin)`
+
+```tsx
+import { MotionPathPlugin } from "gsap/MotionPathPlugin";
+gsap.registerPlugin(MotionPathPlugin);
+
+gsap.to(".satellite", {
+  motionPath: { path: "#orbit-path", align: "#orbit-path", autoRotate: true },
+  duration: 8, repeat: -1, ease: "none"
+});
+```
+
+**Section fit:** HERO background elements, FEATURES tech diagrams.
+
+---
+
+### `motionpath-follow-scroll`
+
+Element following a path driven by scroll. Path progress is scrubbed to scroll position.
+
+```tsx
+gsap.to(".element", {
+  motionPath: { path: "#scroll-path", align: "#scroll-path" },
+  scrollTrigger: { trigger: ".section", scrub: 1 }
+});
+```
+
+**Section fit:** HOW-IT-WORKS journey visualization.
+
+---
+
+### `draggable-carousel`
+
+Touch-friendly draggable carousel with inertia and optional snap to item positions.
+
+**Plugin:** Draggable, InertiaPlugin (GSAP)  
+**Registration:** `gsap.registerPlugin(Draggable, InertiaPlugin)`
+
+```tsx
+import { Draggable } from "gsap/Draggable";
+import { InertiaPlugin } from "gsap/InertiaPlugin";
+gsap.registerPlugin(Draggable, InertiaPlugin);
+
+Draggable.create(".carousel-track", {
+  type: "x", bounds: ".carousel-wrapper",
+  inertia: true, snap: (val) => Math.round(val / cardWidth) * cardWidth
+});
+```
+
+**Section fit:** TESTIMONIALS carousel, PRODUCT-SHOWCASE slider.
+
+---
+
+### `observer-swipe-nav`
+
+Swipe gesture navigation. Left/right touch or pointer moves trigger prev/next actions.
+
+**Plugin:** Observer (GSAP)  
+**Registration:** `gsap.registerPlugin(Observer)`
+
+```tsx
+import { Observer } from "gsap/Observer";
+gsap.registerPlugin(Observer);
+
+Observer.create({
+  target: sectionRef.current,
+  type: "touch,pointer",
+  onLeft: () => goToNext(),
+  onRight: () => goToPrev(),
+  tolerance: 50
+});
+```
+
+**Section fit:** HERO full-page sections, GALLERY mobile swipe.
+
+---
+
+### `scrollsmoother-parallax`
+
+Smooth scrolling with parallax layers. Requires a wrapper structure and uses `data-speed` on elements.
+
+**Plugin:** ScrollSmoother (GSAP)  
+**Registration:** `gsap.registerPlugin(ScrollTrigger, ScrollSmoother)`
+
+```tsx
+import { ScrollSmoother } from "gsap/ScrollSmoother";
+gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
+
+// Requires wrapper structure: #smooth-wrapper > #smooth-content
+ScrollSmoother.create({
+  smooth: 1.5, effects: true, normalizeScroll: true
+});
+// Then use data-speed on elements: <div data-speed="0.5">Parallax</div>
+```
+
+**Note:** Conflicts with Lenis. Use one smooth-scroll solution per project.
+
+**Section fit:** Full-page parallax, HERO or scroll-driven storytelling.
+
+---
+
+### `custom-ease-brand`
+
+Custom branded easing curve. Define a named ease from SVG-style cubic bezier and use it across tweens.
+
+**Plugin:** CustomEase (GSAP)  
+**Registration:** `gsap.registerPlugin(CustomEase)`
+
+```tsx
+import { CustomEase } from "gsap/CustomEase";
+gsap.registerPlugin(CustomEase);
+
+CustomEase.create("brandEase", "M0,0 C0.175,0.885 0.32,1 1,1");
+gsap.to(el, { y: 0, ease: "brandEase", duration: 0.8 });
+```
+
+**Section fit:** Any section where a consistent branded motion curve is required.
+
+---
+
+### `matchmedia-responsive`
+
+Responsive animation breakpoints. Run different animations or disable motion by viewport and `prefers-reduced-motion`.
+
+```tsx
+const mm = gsap.matchMedia();
+mm.add("(min-width: 768px)", () => {
+  // Desktop animations
+  gsap.from(".cards", { x: -100, stagger: 0.1, scrollTrigger: { trigger: ".cards" } });
+});
+mm.add("(max-width: 767px)", () => {
+  // Simpler mobile animations
+  gsap.from(".cards", { opacity: 0, stagger: 0.05 });
+});
+mm.add("(prefers-reduced-motion: reduce)", () => {
+  // Disable all animations
+  gsap.set(".animated", { clearProps: "all" });
+});
+return () => mm.revert();
+```
+
+**Section fit:** All sections — use for responsive and accessibility-aware animation control.
+
+---
+
+### `ease-rough`
+
+Rough or hand-drawn easing. Adds irregular motion for an organic, illustrated feel.
+
+**Plugin:** EasePack (GSAP)  
+**Registration:** `gsap.registerPlugin(EasePack)`
+
+```tsx
+import { EasePack } from "gsap/EasePack";
+gsap.registerPlugin(EasePack);
+gsap.to(el, { rotation: 360, ease: "rough({ strength: 2, points: 50, template: power2.inOut })" });
+```
+
+**Section fit:** Playful or hand-drawn brand sections, decorative motion.
+
+---
+
+### `ease-slow-mo`
+
+Slow-motion middle segment. Motion eases in, slows in the middle, then eases out.
+
+```tsx
+gsap.to(el, { x: 300, ease: "slow(0.5, 0.8, false)", duration: 2 });
+```
+
+**Section fit:** Emphasis on a single motion, dramatic pauses.
+
+---
+
+### `ease-expo-scale`
+
+Exponential scaling ease. Useful for zoom or scale animations with exponential feel.
+
+```tsx
+gsap.to(el, { x: 600, ease: "expoScale(1, 10, power1.inOut)", duration: 1.5 });
+```
+
+**Section fit:** Scale reveals, zoom effects, data visualizations.
+
+---
+
 ## Maintenance Log
 
 | Date | Change | Source |
 |------|--------|--------|
+| 2026-02-11 | Added F. GSAP Plugin Patterns: SplitText, ScrambleText, Flip, DrawSVG, MorphSVG, MotionPath, Draggable, Observer, ScrollSmoother, CustomEase, matchMedia, EasePack | Pattern doc expansion |
 | 2026-02-10 | Added 11 VengenceUI patterns (9 new + 2 replacements), new effect/ and background/ categories, updated archetype map with affinity scores | Animation classification plan v0.7.0 |
 | 2026-02-08 | Initial library created from farm-minerals-site production patterns | farm-minerals-promo rebuild |

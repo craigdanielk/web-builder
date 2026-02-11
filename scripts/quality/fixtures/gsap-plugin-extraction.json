@@ -1,0 +1,54 @@
+{
+  "url": "https://example-gsap-plugins.com",
+  "assets": {
+    "images": [],
+    "backgroundImages": [],
+    "scripts": [
+      { "src": "https://cdn.example.com/gsap.min.js", "content": "" },
+      { "src": "https://cdn.example.com/SplitText.min.js", "content": "" }
+    ]
+  },
+  "renderedDOM": [
+    {
+      "tag": "section",
+      "id": "hero",
+      "className": "hero-section",
+      "styles": { "backgroundColor": "#ffffff" },
+      "textContent": "Welcome to our platform"
+    },
+    {
+      "tag": "section",
+      "id": "features",
+      "className": "features-grid",
+      "styles": { "backgroundColor": "#f8f9fa" },
+      "textContent": "Our Features Product showcase"
+    }
+  ],
+  "animationAnalysis": {
+    "engine": "gsap",
+    "score": 85,
+    "libraries": ["GSAP", "ScrollTrigger", "SplitText", "Flip", "CustomEase"],
+    "gsapPlugins": ["SplitText", "Flip", "CustomEase", "DrawSVG"],
+    "pluginUsage": {
+      "SplitText": [
+        { "target": ".hero-title", "type": "chars" },
+        { "target": ".section-heading", "type": "words" }
+      ],
+      "Flip": [
+        { "method": "from" },
+        { "method": "getState" }
+      ],
+      "DrawSVG": [
+        { "value": "0% 100%" }
+      ],
+      "CustomEase": [
+        { "name": "smoothStep", "curve": "M0,0 C0.4,0 0.2,1 1,1" }
+      ]
+    },
+    "gsapCalls": [
+      { "method": "gsap.to", "target": ".hero-title .char", "vars": { "opacity": 1, "y": 0, "stagger": 0.03 } },
+      { "method": "gsap.from", "target": ".feature-card", "vars": { "opacity": 0, "y": 40 } }
+    ],
+    "sections": []
+  }
+}

@@ -303,6 +303,119 @@ function stripStringsAndComments(code) {
 }
 
 // ---------------------------------------------------------------------------
+// detectAndRepairTruncation
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect truncation (e.g. from token limit) and attempt repair.
+ *
+ * Detection: has export default; JSX open/close tags and self-closing roughly
+ * balanced; braces { } equal; last non-empty line ends with export default or }; or }
+ *
+ * Repair: add missing export default; add missing }; add rough JSX closing tags.
+ *
+ * @param {string} code – Section component source.
+ * @param {string} sectionName – Section identifier for warnings (e.g. "03-about").
+ * @returns {{ truncated: boolean, repaired: boolean, code: string, warnings: string[] }}
+ */
+function detectAndRepairTruncation(code, sectionName) {
+  const warnings = [];
+  let out = code;
+  let repaired = false;
+  const originalLength = (code || "").length;
+
+  if (!code || typeof code !== "string") {
+    return {
+      truncated: true,
+      repaired: false,
+      code: out,
+      warnings: ["Code is empty or not a string."],
+    };
+  }
+
+  const stripped = stripStringsAndComments(code);
+
+  // 1. export default present
+  const hasExport = hasDefaultExport(out);
+
+  // 2. JSX tag balance: opening <Tag vs closing </Tag> and self-closing />
+  const openTags = (stripped.match(/<([A-Z][a-zA-Z0-9]*)\b/g) || []).length;
+  const closeTags = (stripped.match(/<\/([A-Z][a-zA-Z0-9]*)\s*>/g) || []).length;
+  const selfClosing = (stripped.match(/\/>/g) || []).length;
+  const jsxBalanced = openTags <= closeTags + selfClosing + 2; // allow small skew
+
+  // 3. Brace balance
+  const openBraces = (stripped.match(/\{/g) || []).length;
+  const closeBraces = (stripped.match(/\}/g) || []).length;
+  const bracesBalanced = openBraces === closeBraces;
+
+  // 4. Last non-empty line
+  const nonEmptyLines = code.split(/\n/).filter((l) => l.trim().length > 0);
+  const lastLine = nonEmptyLines.length ? nonEmptyLines[nonEmptyLines.length - 1].trim() : "";
+  const endsProperly =
+    /export\s+default\s+.+;?\s*$/.test(lastLine) ||
+    /}\s*;\s*$/.test(lastLine) ||
+    /}\s*$/.test(lastLine);
+
+  const truncated = !hasExport || !jsxBalanced || !bracesBalanced || !endsProperly;
+
+  if (!truncated) {
+    return {
+      truncated: false,
+      repaired: false,
+      code: out,
+      warnings: [],
+    };
+  }
+
+  // --- Repair ---
+
+  // Component name from const SectionXX or function SectionXX
+  const constMatch = out.match(/(?:export\s+)?const\s+([A-Z][a-zA-Z0-9]*)\s*=/);
+  const fnMatch = out.match(/(?:export\s+)?function\s+([A-Z][a-zA-Z0-9]*)\s*[(\s]/);
+  const componentName = fnMatch ? fnMatch[1] : (constMatch ? constMatch[1] : null);
+
+  if (!hasExport && componentName) {
+    out = out.trimEnd();
+    if (!out.endsWith(";")) out += "\n";
+    out += `\nexport default ${componentName};\n`;
+    repaired = true;
+  }
+
+  if (!bracesBalanced && openBraces > closeBraces) {
+    const missing = openBraces - closeBraces;
+    out = out.trimEnd();
+    out += "\n" + "}".repeat(missing);
+    repaired = true;
+  }
+
+  if (!jsxBalanced && openTags > closeTags + selfClosing) {
+    const toClose = openTags - (closeTags + selfClosing);
+    const tagNames = stripped.match(/<([A-Z][a-zA-Z0-9]*)\b/g) || [];
+    const lastOpened = tagNames.slice(-toClose).reverse();
+    out = out.trimEnd();
+    for (const name of lastOpened) {
+      const tagName = name.replace(/^</, "");
+      out += `</${tagName}>`;
+    }
+    repaired = true;
+  }
+
+  if (repaired && Math.abs(out.length - originalLength) > 50) {
+    warnings.push(
+      `Section ${sectionName} was heavily repaired — consider regenerating`
+    );
+  }
+
+  return {
+    truncated: true,
+    repaired,
+    code: out,
+    warnings,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -310,4 +423,5 @@ module.exports = {
   cleanComponent,
   validateComponent,
   processAllSections,
+  detectAndRepairTruncation,
 };

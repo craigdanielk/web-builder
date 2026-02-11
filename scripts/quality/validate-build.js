@@ -6,14 +6,83 @@ const path = require('path');
 const { validateBuild } = require('./lib/visual-validator');
 
 // ---------------------------------------------------------------------------
+// Post-deploy visual verification (Phase 5C)
+// ---------------------------------------------------------------------------
+
+/**
+ * Validates a deployed preview URL: HTTP 200, content length, error indicators,
+ * visible text elements, and hydration errors.
+ * @param {string} previewUrl - Full URL of the deployed page (e.g. Vercel preview)
+ * @returns {Promise<{ passed: boolean, issues: string[] }>}
+ */
+async function validateDeployment(previewUrl) {
+  console.log(`\n  Validating deployment: ${previewUrl}\n`);
+  const issues = [];
+
+  try {
+    // 1. Check HTTP 200 response
+    const response = await fetch(previewUrl, {
+      headers: { 'User-Agent': 'web-builder-validator/1.0' },
+      redirect: 'follow',
+    });
+
+    if (response.status !== 200) {
+      issues.push(`HTTP ${response.status} — expected 200`);
+    } else {
+      console.log(`  ✅ HTTP ${response.status} OK`);
+    }
+
+    // 2. Check response has content
+    const html = await response.text();
+    if (html.length < 500) {
+      issues.push(`Page HTML too short (${html.length} chars) — may be an error page`);
+    } else {
+      console.log(`  ✅ Page has content (${html.length} chars)`);
+    }
+
+    // 3. Check for React/Next.js error indicators
+    if (html.includes('Application error') || html.includes('Internal Server Error')) {
+      issues.push('Page contains error message — application may have crashed');
+    }
+
+    // 4. Check for visible text content (basic check against blank page)
+    const textMatch = html.match(/<(?:h[1-6]|p|span|a|li|td|th|label|button)[^>]*>[^<]+/gi);
+    const textNodeCount = textMatch ? textMatch.length : 0;
+    if (textNodeCount < 5) {
+      issues.push(`Only ${textNodeCount} visible text elements — page may be blank/broken`);
+    } else {
+      console.log(`  ✅ Found ${textNodeCount} text elements`);
+    }
+
+    // 5. Check for console error indicators in SSR HTML
+    if (html.includes('Hydration failed') || html.includes('hydration mismatch')) {
+      issues.push('Hydration error detected in page HTML');
+    }
+  } catch (err) {
+    issues.push(`Fetch failed: ${err.message}`);
+  }
+
+  // Report
+  if (issues.length > 0) {
+    console.log('\n  ⚠ Deployment issues found:');
+    issues.forEach((i) => console.log(`    ❌ ${i}`));
+  } else {
+    console.log('\n  ✅ Deployment validation passed');
+  }
+
+  return { passed: issues.length === 0, issues };
+}
+
+// ---------------------------------------------------------------------------
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 
 function printUsage() {
   console.log(
     `Usage: node validate-build.js <project-dir> [options]
+   Or:  node validate-build.js <preview-url>   (post-deploy validation)
 
-Options:
+Options (project-dir mode):
   --reference-dir <dir>   Directory containing reference screenshots (ordered by name)
   --port <number>         Dev server port (default: 4567)
   --threshold <0-1>       Per-section diff threshold (default: 0.25)
@@ -212,6 +281,20 @@ function buildProgressBar(ratio, length) {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  const argv = process.argv.slice(2);
+  const firstArg = argv[0];
+
+  // Standalone deployment validation: node validate-build.js <preview-url>
+  if (firstArg && (firstArg.startsWith('http://') || firstArg.startsWith('https://'))) {
+    const result = await validateDeployment(firstArg);
+    process.exit(result.passed ? 0 : 1);
+  }
+
+  if (!firstArg || firstArg === '-h' || firstArg === '--help') {
+    printUsage();
+    process.exit(0);
+  }
+
   const opts = parseArgs(process.argv);
 
   const projectDir = path.resolve(opts.projectDir);
@@ -280,6 +363,8 @@ async function main() {
   // Exit code reflects pass/fail
   process.exit(report.passed ? 0 : 1);
 }
+
+module.exports = { validateDeployment };
 
 main().catch((err) => {
   console.error('Unexpected error:', err);

@@ -74,7 +74,7 @@ function hexToTailwindApprox(hex) {
 // Preset generation via Claude
 // ---------------------------------------------------------------------------
 
-async function generatePreset(url, tokens, mappedSections, extractionData, animationAnalysis, animationTokens, colorSystemData) {
+async function generatePreset(url, tokens, mappedSections, extractionData, animationAnalysis, animationTokens, colorSystemData, gsapPlugins = []) {
   const client = new Anthropic();
   const template = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 
@@ -88,6 +88,7 @@ async function generatePreset(url, tokens, mappedSections, extractionData, anima
   const colorList = tokens.backgroundColors.slice(0, 8).map((c) => `${c} (${hexToTailwindApprox(c)})`).join(', ');
   const textColorList = tokens.colors.slice(0, 6).map((c) => `${c} (${hexToTailwindApprox(c)})`).join(', ');
   const radiiList = tokens.borderRadii.slice(0, 5).join(', ') || 'none detected';
+  const pageBackgroundFirstElement = extractionData.renderedDOM?.[0]?.styles?.backgroundColor ?? 'not detected';
 
   // Extract headings for tone analysis
   const headings = (extractionData.textContent || [])
@@ -121,6 +122,7 @@ ${fontList}
 
 ### Background Colors (hex → approximate Tailwind)
 ${colorList || 'none detected'}
+Page background (first DOM element): ${pageBackgroundFirstElement}
 
 ### Text Colors
 ${textColorList || 'none detected'}
@@ -151,6 +153,26 @@ ${ctas.map((c) => '- "' + c + '"').join('\n') || '(none extracted)'}
 - Animation tokens: ${animationTokens.animationNames.slice(0, 10).join(', ') || 'none'}
 - Transition properties: ${animationTokens.transitionProperties.slice(0, 10).join(', ') || 'none'}
 - Easing functions: ${animationTokens.easingFunctions.slice(0, 5).join(', ') || 'default'}
+${gsapPlugins.length > 0 ? `
+### Detected GSAP Plugins
+The reference site uses these GSAP plugins: ${gsapPlugins.join(', ')}
+
+Include a "gsap_plugins" field in the preset YAML listing these plugins:
+\`\`\`yaml
+gsap_plugins:
+${gsapPlugins.map(p => `  - ${p}`).join('\n')}
+\`\`\`
+
+Also add section_overrides that recommend specific plugin usage for sections:
+- SplitText → HERO (character-reveal), CTA (word-reveal)
+- Flip → PRODUCT-SHOWCASE (filter-grid), GALLERY (layout-transition)
+- DrawSVG → HERO (logo-reveal), HOW-IT-WORKS (path-progress)
+- MorphSVG → FEATURES (icon-morph)
+- MotionPath → HERO (orbit), FEATURES (flow-along-path)
+- Draggable → TESTIMONIALS (carousel), PRODUCT-SHOWCASE (slider)
+- Observer → HERO (swipe-nav), GALLERY (swipe)
+- CustomEase → Define brand-specific easing curves
+` : ''}
 
 ## Preset Template
 ${template}
@@ -163,6 +185,19 @@ Rules:
 1. Use the REAL fonts detected. If two fonts found, map to heading_font and body_font. If one font, use it for both.
 2. Map extracted colors to Tailwind utility names (stone-50, amber-700, etc.) — choose the closest COLORED Tailwind name (e.g. green-500 not gray-200 for a green color).
 3. Determine color_temperature from the palette: warm-earth, cool-blue, neutral, dark-neutral, etc.
+
+### Color Temperature Classification Rule
+Determine the site's background color from the FIRST rendered DOM element's backgroundColor (this is typically the body/page wrapper), NOT from overlays, modals, tooltips, or navigation dropdowns.
+
+Cross-check: If more than 60% of text colors in the extraction are dark shades (black, gray-900, gray-800, gray-700), the site is almost certainly light-themed — classify as light even if some dark overlay elements are present.
+
+Common misclassification triggers to IGNORE when determining bg_primary:
+- Dark navigation bars or sticky headers
+- Modal/dialog overlays
+- Tooltip backgrounds
+- Cookie consent banners
+- Mobile menu panels
+
 4. Set border_radius based on extracted radii: sharp (0-4px), medium (6-16px), full (16-32px), pill (32px+).
 5. Set animation_intensity to "${animationAnalysis.intensity.level}" and animation_engine to "${animationAnalysis.engine}" based on the Animation Evidence above. If confidence is below 50%, default to moderate with css engine.
 6. Use the detected section sequence for Default Section Sequence.
@@ -255,7 +290,8 @@ async function main() {
     ...colorSystem,
     sectionColors: sectionColorProfile.sectionColors,
   };
-  const presetContent = await generatePreset(config.url, tokens, mapped, extractionData, animationAnalysis, animationTokens, colorSystemData);
+  const gsapPlugins = animationAnalysis?.gsapPlugins || [];
+  const presetContent = await generatePreset(config.url, tokens, mapped, extractionData, animationAnalysis, animationTokens, colorSystemData, gsapPlugins);
 
   // Save preset with atomic write (temp file + rename to prevent race conditions)
   const outputPath = path.join(config.outputDir, config.presetName + '.md');

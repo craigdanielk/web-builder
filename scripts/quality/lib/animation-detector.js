@@ -266,20 +266,48 @@ async function extractAnimationData(page) {
       scriptPatterns: [],
       gsapCalls: [],
       lottieElements: [],
+      gsapPlugins: [],
     };
 
-    // --- A) Global library detection ---
+    // --- A) GSAP core + all plugins (window globals) ---
+    const GSAP_PLUGINS = [
+      { name: 'GSAP',            test: () => !!window.gsap, via: 'window.gsap' },
+      { name: 'ScrollTrigger',   test: () => !!window.ScrollTrigger, via: 'window.ScrollTrigger' },
+      { name: 'ScrollSmoother',  test: () => !!window.ScrollSmoother, via: 'window.ScrollSmoother' },
+      { name: 'ScrollTo',       test: () => !!(window.gsap && window.gsap.plugins && window.gsap.plugins.scrollTo), via: 'window.gsap.plugins.scrollTo' },
+      { name: 'SplitText',      test: () => !!window.SplitText, via: 'window.SplitText' },
+      { name: 'ScrambleText',   test: () => !!window.ScrambleTextPlugin, via: 'window.ScrambleTextPlugin' },
+      { name: 'TextPlugin',     test: () => !!window.TextPlugin, via: 'window.TextPlugin' },
+      { name: 'DrawSVG',        test: () => !!window.DrawSVGPlugin, via: 'window.DrawSVGPlugin' },
+      { name: 'MorphSVG',       test: () => !!window.MorphSVGPlugin, via: 'window.MorphSVGPlugin' },
+      { name: 'MotionPath',     test: () => !!window.MotionPathPlugin, via: 'window.MotionPathPlugin' },
+      { name: 'Flip',           test: () => !!window.Flip, via: 'window.Flip' },
+      { name: 'Draggable',      test: () => !!window.Draggable, via: 'window.Draggable' },
+      { name: 'Inertia',        test: () => !!window.InertiaPlugin, via: 'window.InertiaPlugin' },
+      { name: 'Observer',       test: () => !!window.Observer, via: 'window.Observer' },
+      { name: 'Physics2D',      test: () => !!window.Physics2DPlugin, via: 'window.Physics2DPlugin' },
+      { name: 'PhysicsProps',   test: () => !!window.PhysicsPropsPlugin, via: 'window.PhysicsPropsPlugin' },
+      { name: 'CustomEase',     test: () => !!window.CustomEase, via: 'window.CustomEase' },
+      { name: 'CustomWiggle',   test: () => !!window.CustomWiggle, via: 'window.CustomWiggle' },
+      { name: 'CustomBounce',   test: () => !!window.CustomBounce, via: 'window.CustomBounce' },
+      { name: 'GSDevTools',     test: () => !!window.GSDevTools, via: 'window.GSDevTools' },
+    ];
+
+    for (const p of GSAP_PLUGINS) {
+      try {
+        if (p.test()) {
+          result.libraries.push({
+            name: p.name,
+            confidence: 0.9,
+            detectedVia: p.via,
+          });
+          result.gsapPlugins.push(p.name);
+        }
+      } catch (_) { /* skip failed checks */ }
+    }
+
+    // --- A2) Other global library detection (non-GSAP) ---
     const libraryChecks = [
-      {
-        name: 'GSAP',
-        test: () => !!window.gsap,
-        via: 'window.gsap',
-      },
-      {
-        name: 'ScrollTrigger',
-        test: () => !!window.ScrollTrigger,
-        via: 'window.ScrollTrigger',
-      },
       {
         name: 'Framer Motion',
         test: () => !!document.querySelector('[data-projection-id]'),
@@ -399,11 +427,38 @@ async function extractAnimationData(page) {
       { library: 'Rive', pattern: /@rive-app/i },
     ];
 
+    const gsapPluginPatterns = [
+      { plugin: 'SplitText',     pattern: /SplitText/i },
+      { plugin: 'MorphSVG',     pattern: /MorphSVG/i },
+      { plugin: 'DrawSVG',      pattern: /DrawSVG/i },
+      { plugin: 'Flip',         pattern: /\bFlip\b/ },
+      { plugin: 'Draggable',    pattern: /\bDraggable\b/ },
+      { plugin: 'MotionPath',   pattern: /MotionPath/i },
+      { plugin: 'CustomEase',   pattern: /CustomEase/i },
+      { plugin: 'ScrollSmoother', pattern: /ScrollSmoother/i },
+      { plugin: 'Observer',     pattern: /\bObserver\b/ },
+      { plugin: 'ScrambleText', pattern: /ScrambleText/i },
+      { plugin: 'Inertia',      pattern: /InertiaPlugin/i },
+      { plugin: 'Physics2D',    pattern: /Physics2DPlugin/i },
+    ];
+
+    const gsapPluginsSeen = new Set(result.gsapPlugins);
+
     for (const script of document.scripts) {
       const src = script.src || '';
+      const content = (script.textContent || script.innerHTML || '');
       for (const sp of scriptPatterns) {
         if (sp.pattern.test(src)) {
-          result.scriptPatterns.push({ library: sp.library, src });
+          result.scriptPatterns.push({ library: sp.library, src: src || 'inline' });
+        }
+      }
+      for (const gp of gsapPluginPatterns) {
+        if (gp.pattern.test(src) || gp.pattern.test(content)) {
+          result.scriptPatterns.push({ library: gp.plugin, src: src || 'inline' });
+          if (!gsapPluginsSeen.has(gp.plugin)) {
+            gsapPluginsSeen.add(gp.plugin);
+            result.gsapPlugins.push(gp.plugin);
+          }
         }
       }
     }
@@ -447,6 +502,7 @@ async function extractAnimationData(page) {
  */
 function analyzeAnimationEvidence(evidence, networkResults, sections, renderedDOM) {
   const libs = evidence.libraries || [];
+  const gsapPlugins = evidence.gsapPlugins || [];
   const keyframes = evidence.cssKeyframes || [];
   const animatedEls = evidence.animatedElementCount || 0;
   const transitionEls = evidence.transitionElementCount || 0;
@@ -613,6 +669,7 @@ function analyzeAnimationEvidence(evidence, networkResults, sections, renderedDO
     perSection,
     gsapCallCount: gsapCalls.length,
     lottieElementCount: lottieElements.length,
+    gsapPlugins,
   };
 }
 

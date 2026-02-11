@@ -310,10 +310,43 @@ function buildAssetContext(categorizedImages, sectionArchetype, sectionIndex) {
   return lines.join('\n');
 }
 
+/** Default number of synthetic sections when extraction finds 0 sections (JS-heavy sites). */
+const ZERO_SECTION_DEFAULT_COUNT = 12;
+
+/**
+ * Assign a heuristic section index (0..maxIndex) for an image when there are no mapped sections.
+ * Hero/banner/main → 0; product/feature/tool → middle; team/about/founder → later;
+ * logo/brand/partner → 0; other → round-robin via state.
+ *
+ * @param {{ alt: string, category: string }} img - Categorized image with alt and category
+ * @param {{ otherCounter: number }} state - Mutable state for round-robin
+ * @param {number} maxIndex - Maximum section index (e.g. ZERO_SECTION_DEFAULT_COUNT - 1)
+ * @returns {number} Section index 0..maxIndex
+ */
+function heuristicSectionIndex(img, state, maxIndex) {
+  const alt = (img.alt || '').toLowerCase();
+  const cat = (img.category || '').toLowerCase();
+  const midStart = 4;
+  const midEnd = 7;
+  const laterStart = 8;
+
+  if (/\b(hero|banner|main)\b/.test(alt) || cat === 'hero') return 0;
+  if (/\b(product|feature|tool)\b/.test(alt) || cat === 'product') {
+    return midStart + (state.midCounter++ % (midEnd - midStart + 1));
+  }
+  if (/\b(team|about|founder)\b/.test(alt) || cat === 'team' || cat === 'about') {
+    return Math.min(laterStart + (state.laterCounter++ % (maxIndex - laterStart + 1)), maxIndex);
+  }
+  if (/\b(logo|brand|partner)\b/.test(alt) || cat === 'logo') return 0;
+  return state.otherCounter++ % (maxIndex + 1);
+}
+
 /**
  * Build asset contexts for all sections.
  *
  * Calls categorizeImages once, then buildAssetContext for each section.
+ * When extraction has 0 mapped sections but assets.images has entries, distributes images
+ * heuristically by alt/category and builds contexts for synthetic section indices.
  *
  * @param {object} extractionData - Full extraction result from extractReference()
  * @param {Array<{ archetype: string, variant: string, content: object }>} sections - Mapped sections
@@ -322,6 +355,29 @@ function buildAssetContext(categorizedImages, sectionArchetype, sectionIndex) {
 function buildAllAssetContexts(extractionData, sections) {
   const categorized = categorizeImages(extractionData);
   const result = {};
+
+  if (sections.length === 0 && categorized.length > 0) {
+    console.warn(`⚠ Zero sections detected — distributing ${categorized.length} images heuristically`);
+    const maxIndex = ZERO_SECTION_DEFAULT_COUNT - 1;
+    const state = { midCounter: 0, laterCounter: 0, otherCounter: 0 };
+    for (const img of categorized) {
+      img.sectionIndex = heuristicSectionIndex(img, state, maxIndex);
+    }
+    const syntheticArchetypes = [
+      'HERO', 'FEATURES', 'FEATURES', 'PRODUCT-SHOWCASE',
+      'GALLERY', 'GALLERY', 'GALLERY', 'ABOUT', 'TEAM', 'TESTIMONIALS', 'CTA', 'FOOTER',
+    ];
+    for (let i = 0; i < ZERO_SECTION_DEFAULT_COUNT; i++) {
+      const filtered = categorized.filter((img) => img.sectionIndex === i);
+      const assetContext = buildAssetContext(filtered, syntheticArchetypes[i], i);
+      const downloadManifest = filtered.map((img) => {
+        const { localPath } = buildLocalPath(img.url);
+        return { url: img.url, localPath, category: img.category };
+      });
+      result[i] = { assetContext, downloadManifest };
+    }
+    return result;
+  }
 
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];

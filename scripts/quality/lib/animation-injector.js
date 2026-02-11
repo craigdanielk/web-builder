@@ -652,6 +652,132 @@ function buildLottieBlock(lottieInfo) {
 }
 
 // ---------------------------------------------------------------------------
+// GSAP plugin context (identification-driven)
+// ---------------------------------------------------------------------------
+
+const PLUGIN_IMPORT_MAP = {
+  SplitText:      { import: 'import { SplitText } from "gsap/SplitText"', register: 'SplitText', usage: 'const split = new SplitText(el, { type: "chars" }); gsap.from(split.chars, { ... }); // cleanup: split.revert()' },
+  Flip:           { import: 'import { Flip } from "gsap/Flip"', register: 'Flip', usage: 'const state = Flip.getState(targets); /* DOM change */ Flip.from(state, { duration: 0.6, ease: "power1.inOut" })' },
+  DrawSVG:        { import: 'import { DrawSVGPlugin } from "gsap/DrawSVGPlugin"', register: 'DrawSVGPlugin', usage: 'gsap.fromTo(path, { drawSVG: "0%" }, { drawSVG: "100%", duration: 2 })' },
+  MorphSVG:       { import: 'import { MorphSVGPlugin } from "gsap/MorphSVGPlugin"', register: 'MorphSVGPlugin', usage: 'gsap.to("#shape1", { morphSVG: "#shape2", duration: 1.5 })' },
+  MotionPath:     { import: 'import { MotionPathPlugin } from "gsap/MotionPathPlugin"', register: 'MotionPathPlugin', usage: 'gsap.to(el, { motionPath: { path: "#path", autoRotate: true }, duration: 5 })' },
+  CustomEase:     { import: 'import { CustomEase } from "gsap/CustomEase"', register: 'CustomEase', usage: 'CustomEase.create("brandEase", "M0,0 C0.175,0.885 0.32,1 1,1"); // then use ease: "brandEase"' },
+  Observer:       { import: 'import { Observer } from "gsap/Observer"', register: 'Observer', usage: 'Observer.create({ target: el, type: "touch,pointer", onLeft: fn, onRight: fn })' },
+  ScrambleText:   { import: 'import { ScrambleTextPlugin } from "gsap/ScrambleTextPlugin"', register: 'ScrambleTextPlugin', usage: 'gsap.to(el, { scrambleText: { text: "Final", chars: "!@#$%", speed: 0.3 }, duration: 1.5 })' },
+  Draggable:      { import: 'import { Draggable } from "gsap/Draggable"', register: 'Draggable', usage: 'Draggable.create(el, { type: "x", bounds: container, inertia: true })' },
+  ScrollSmoother: { import: 'import { ScrollSmoother } from "gsap/ScrollSmoother"', register: 'ScrollSmoother', usage: 'ScrollSmoother.create({ smooth: 1.5, effects: true })' },
+};
+
+/**
+ * Build a prompt block describing detected GSAP plugins and how to use them.
+ * @param {Object} identification - Result from pattern-identifier.js (detectedPlugins, pluginCapabilities)
+ * @returns {string} Context block or empty string
+ */
+function buildPluginContextBlock(identification) {
+  if (!identification?.detectedPlugins?.length) return '';
+
+  const plugins = identification.detectedPlugins;
+  const capabilities = identification.pluginCapabilities || {};
+
+  let block = '═══ GSAP PLUGIN CONTEXT ═══\n';
+  block += `Detected plugins: ${plugins.join(', ')}\n\n`;
+
+  for (const plugin of plugins) {
+    const info = PLUGIN_IMPORT_MAP[plugin];
+    if (!info) continue;
+
+    block += `${plugin}:\n`;
+    block += `  Import: ${info.import}\n`;
+    block += `  Register: gsap.registerPlugin(${info.register})\n`;
+    block += `  Usage: ${info.usage}\n`;
+
+    const caps = capabilities[plugin];
+    if (caps?.recommendedSections?.length) {
+      block += `  Best for: ${caps.recommendedSections.join(', ')} sections\n`;
+    }
+    block += '\n';
+  }
+
+  block += 'IMPORTANT: Wrap registerPlugin in typeof window !== "undefined" for SSR safety.\n';
+  block += 'IMPORTANT: Always cleanup (revert SplitText, kill Draggable/Observer) in useEffect return.\n';
+  block += '═══════════════════════════\n';
+
+  return block;
+}
+
+/**
+ * Get plugin recommendations for a section archetype from identification.
+ * @param {string} archetype - Section archetype (e.g. 'HERO', 'FEATURES')
+ * @param {Object} identification - Result from pattern-identifier.js
+ * @returns {Array<{ plugin: string, intents?: string[], usage?: string }>}
+ */
+function getPluginRecommendationsForSection(archetype, identification) {
+  if (!identification?.pluginCapabilities) return [];
+
+  const recommendations = [];
+  for (const [plugin, caps] of Object.entries(identification.pluginCapabilities)) {
+    if (caps.recommendedSections?.includes(archetype)) {
+      recommendations.push({
+        plugin,
+        intents: caps.intents,
+        usage: caps.usage,
+      });
+    }
+  }
+  return recommendations;
+}
+
+/**
+ * Adjust token budget for plugin-heavy sections and NAV/FOOTER minimum.
+ * @param {number} tokenBudget
+ * @param {string} sectionArchetype
+ * @param {Object|null} identification
+ * @returns {number}
+ */
+function adjustTokenBudgetForPlugins(tokenBudget, sectionArchetype, identification) {
+  let budget = tokenBudget;
+  if (identification) {
+    const recs = getPluginRecommendationsForSection((sectionArchetype || '').toUpperCase(), identification);
+    if (recs.some(function (r) { return r.plugin === 'SplitText' || r.plugin === 'Flip'; })) {
+      budget += 2048;
+    }
+  }
+  const normalized = (sectionArchetype || '').toUpperCase();
+  if (normalized === 'NAV' || normalized === 'FOOTER') {
+    budget = Math.max(budget, 6144);
+  }
+  return budget;
+}
+
+/**
+ * Append plugin context block and section recommendations to result; adjust token budget.
+ * @param {Object} result - { animationContext, tokenBudget, dependencies, componentFiles, selectedPattern }
+ * @param {string} sectionArchetype
+ * @param {Object|null} identification
+ * @returns {Object} result with possibly updated animationContext and tokenBudget
+ */
+function augmentResultWithPlugins(result, sectionArchetype, identification) {
+  result.tokenBudget = adjustTokenBudgetForPlugins(result.tokenBudget, sectionArchetype, identification);
+  if (!identification) return result;
+
+  let ctx = result.animationContext || '';
+  const pluginBlock = buildPluginContextBlock(identification);
+  if (pluginBlock) {
+    ctx += (ctx ? '\n\n' : '') + pluginBlock;
+  }
+  const recs = getPluginRecommendationsForSection((sectionArchetype || '').toUpperCase(), identification);
+  if (recs.length) {
+    ctx += '\n\n## Section plugin recommendations\n';
+    ctx += recs.map(function (r) {
+      const part = '- ' + r.plugin;
+      return (r.intents && r.intents.length) ? part + ' (' + r.intents.join(', ') + ')' : part;
+    }).join('\n');
+  }
+  result.animationContext = ctx;
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -668,9 +794,10 @@ function buildLottieBlock(lottieInfo) {
  * @param {string} sectionArchetype
  * @param {number} sectionIndex
  * @param {string[]} [usedPatterns] - Patterns already selected in earlier sections (for dedup)
+ * @param {Object|null} [identification] - Result from pattern-identifier.js (for plugin context)
  * @returns {{ animationContext: string, tokenBudget: number, dependencies: string[], componentFiles: string[], selectedPattern: string|null }}
  */
-function buildAnimationContext(animationAnalysis, presetContent, sectionArchetype, sectionIndex, usedPatterns) {
+function buildAnimationContext(animationAnalysis, presetContent, sectionArchetype, sectionIndex, usedPatterns, identification) {
   usedPatterns = usedPatterns || [];
   const componentFiles = [];
 
@@ -690,13 +817,13 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
         if (freeSource) {
           var freeDeps = buildDependencies(freeEngine, false, freeCompDef);
           componentFiles.push(freeCompDef.file);
-          return {
+          return augmentResultWithPlugins({
             animationContext: buildComponentContext(freeCompDef, freeSource, {}, freeSelected),
             tokenBudget: 8192,
             dependencies: freeDeps,
             componentFiles: componentFiles,
             selectedPattern: freeSelected,
-          };
+          }, sectionArchetype, identification);
         }
       }
 
@@ -717,13 +844,13 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
           'Use the above pattern as a reference. Adapt the timing values to match',
           'the Motion line in the style header.',
         ];
-        return {
+        return augmentResultWithPlugins({
           animationContext: freeLines.join('\n'),
           tokenBudget: calculateTokenBudget([freeSelected], freeEngine, false, false),
           dependencies: buildDependencies(freeEngine, false, null),
           componentFiles: componentFiles,
           selectedPattern: freeSelected,
-        };
+        }, sectionArchetype, identification);
       }
     }
 
@@ -741,13 +868,13 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
       'Use the above pattern as a reference. Adapt the timing values to match',
       'the Motion line in the style header.',
     ];
-    return {
+    return augmentResultWithPlugins({
       animationContext: fallbackLines.join('\n'),
       tokenBudget: 4096,
       dependencies: ['framer-motion'],
       componentFiles: componentFiles,
       selectedPattern: null,
-    };
+    }, sectionArchetype, identification);
   }
 
   const engine = detectEngine(presetContent);
@@ -771,13 +898,13 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
       'This section should use CSS transitions only (hover states, focus states).',
       'Do NOT add scroll-triggered animations or GSAP/Framer Motion imports.',
     ];
-    return {
+    return augmentResultWithPlugins({
       animationContext: lines.join('\n'),
       tokenBudget: tokenBudget,
       dependencies: [],
       componentFiles: componentFiles,
       selectedPattern: null,
-    };
+    }, sectionArchetype, identification);
   }
 
   // -----------------------------------------------------------------------
@@ -818,13 +945,13 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
         lines.push(buildLottieBlock(lottieInfo));
       }
 
-      return {
+      return augmentResultWithPlugins({
         animationContext: lines.join('\n'),
         tokenBudget: tokenBudget,
         dependencies: dependencies,
         componentFiles: componentFiles,
         selectedPattern: selectedPattern,
-      };
+      }, sectionArchetype, identification);
     }
   }
 
@@ -848,13 +975,13 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
       lines.push(buildLottieBlock(lottieInfo));
     }
 
-    return {
+    return augmentResultWithPlugins({
       animationContext: lines.join('\n'),
       tokenBudget: tokenBudget,
       dependencies: dependencies,
       componentFiles: componentFiles,
       selectedPattern: selectedPattern,
-    };
+    }, sectionArchetype, identification);
   }
 
   // -----------------------------------------------------------------------
@@ -903,13 +1030,13 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
     lines.push('');
   }
 
-  return {
+  return augmentResultWithPlugins({
     animationContext: lines.join('\n'),
     tokenBudget: tokenBudget,
     dependencies: dependencies,
     componentFiles: componentFiles,
     selectedPattern: tier3SelectedPattern,
-  };
+  }, sectionArchetype, identification);
 }
 
 /**
@@ -918,9 +1045,10 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
  * @param {Object|null} animationAnalysis
  * @param {string} presetContent
  * @param {Array<{ archetype: string, variant: string, content: any }>} sections
+ * @param {Object|null} [identification] - Result from pattern-identifier.js (for plugin context)
  * @returns {{ contexts: Object, allComponentFiles: string[], allDependencies: string[] }}
  */
-function buildAllAnimationContexts(animationAnalysis, presetContent, sections) {
+function buildAllAnimationContexts(animationAnalysis, presetContent, sections, identification) {
   const contexts = {};
   const allComponentFiles = new Set();
   const allDependencies = new Set();
@@ -933,7 +1061,7 @@ function buildAllAnimationContexts(animationAnalysis, presetContent, sections) {
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
     const archetype = (section.archetype || '').toUpperCase();
-    const result = buildAnimationContext(animationAnalysis, presetContent, archetype, i, usedPatterns);
+    const result = buildAnimationContext(animationAnalysis, presetContent, archetype, i, usedPatterns, identification);
     contexts[i] = result;
 
     // Track selected patterns for deduplication across sections
@@ -953,4 +1081,10 @@ function buildAllAnimationContexts(animationAnalysis, presetContent, sections) {
   };
 }
 
-module.exports = { buildAnimationContext, buildAllAnimationContexts, loadRegistry };
+module.exports = {
+  buildAnimationContext,
+  buildAllAnimationContexts,
+  buildPluginContextBlock,
+  getPluginRecommendationsForSection,
+  loadRegistry,
+};

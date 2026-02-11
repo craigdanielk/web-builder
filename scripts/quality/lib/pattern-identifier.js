@@ -253,6 +253,79 @@ function matchAnimationPatterns(animationAnalysis, engine) {
 }
 
 // ---------------------------------------------------------------------------
+// C1b: Plugin Pattern Matching
+// ---------------------------------------------------------------------------
+
+/**
+ * Map detected GSAP plugins (from pluginUsage in animation analysis) to semantic
+ * intents and recommended section archetypes. Generates gaps when an intent
+ * has no matching component in the animation registry.
+ * @param {Object} animationAnalysis - From animation-analysis.json (with pluginUsage)
+ * @returns {{ detectedPlugins: string[], pluginCapabilities: Object, gaps: Object[] }}
+ */
+function matchPluginPatterns(animationAnalysis) {
+  const pluginUsage = animationAnalysis?.pluginUsage || {};
+  const detectedPlugins = Object.keys(pluginUsage);
+  const pluginCapabilities = {};
+  const gaps = [];
+
+  const PLUGIN_INTENT_MAP = {
+    SplitText: ['character-reveal', 'word-reveal', 'line-reveal'],
+    ScrambleText: ['text-scramble', 'text-decode'],
+    Flip: ['layout-transition', 'state-change', 'filter-grid'],
+    DrawSVG: ['svg-draw', 'stroke-reveal', 'path-progress'],
+    MorphSVG: ['shape-morph', 'icon-morph'],
+    MotionPath: ['path-follow', 'orbit', 'flow-along-path'],
+    Draggable: ['drag-interaction', 'swipe-carousel'],
+    Observer: ['swipe-gesture', 'scroll-velocity'],
+    ScrollSmoother: ['smooth-scroll'],
+    CustomEase: ['custom-easing'],
+    matchMedia: ['responsive-animation'],
+  };
+
+  const PLUGIN_SECTION_MAP = {
+    SplitText: ['HERO', 'TESTIMONIALS', 'CTA', 'ABOUT'],
+    Flip: ['PRODUCT-SHOWCASE', 'GALLERY', 'PORTFOLIO'],
+    DrawSVG: ['HERO', 'HOW-IT-WORKS', 'FEATURES'],
+    MorphSVG: ['HERO', 'FEATURES'],
+    MotionPath: ['HERO', 'FEATURES', 'HOW-IT-WORKS'],
+    Draggable: ['TESTIMONIALS', 'GALLERY', 'PRODUCT-SHOWCASE'],
+    Observer: ['HERO', 'GALLERY'],
+    CustomEase: [],
+    matchMedia: [],
+  };
+
+  const searchIndex = loadSearchIndex();
+  const byIntent = searchIndex?.by_intent || {};
+
+  for (const plugin of detectedPlugins) {
+    const intents = PLUGIN_INTENT_MAP[plugin] || [];
+    const sections = PLUGIN_SECTION_MAP[plugin] || [];
+
+    pluginCapabilities[plugin] = {
+      intents,
+      recommendedSections: sections,
+      usage: pluginUsage[plugin],
+    };
+
+    for (const intent of intents) {
+      if (!byIntent[intent] || byIntent[intent].length === 0) {
+        gaps.push({
+          type: 'missing_plugin_component',
+          plugin,
+          intent,
+          severity: 'medium',
+          suggestion: `Create animation component for ${plugin} ${intent} pattern`,
+          extension_task: `Create skills/animation-components/*/gsap-${plugin.toLowerCase()}-${intent.replace(/-/g, '_')}.tsx`,
+        });
+      }
+    }
+  }
+
+  return { detectedPlugins, pluginCapabilities, gaps };
+}
+
+// ---------------------------------------------------------------------------
 // C2: UI Component Detection
 // ---------------------------------------------------------------------------
 
@@ -388,6 +461,7 @@ function mapComponentsToSections(animationPatterns, uiComponents) {
  * @param {Object[]} params.colorGaps - From identifyColorSystem gaps
  * @param {Object[]} params.archetypeGaps - From archetype mapper
  * @param {Object[]} params.animationGaps - From matchAnimationPatterns
+ * @param {Object[]} params.pluginGaps - From matchPluginPatterns
  * @param {Object[]} params.uiGaps - From UI component detection
  * @param {string} params.project - Project name
  * @param {string} params.url - Source URL
@@ -400,6 +474,7 @@ function aggregateGapReport({
   colorGaps = [],
   archetypeGaps = [],
   animationGaps = [],
+  pluginGaps = [],
   uiGaps = [],
   project = '',
   url = '',
@@ -439,6 +514,14 @@ function aggregateGapReport({
 
   // Animation gaps
   for (const gap of animationGaps) {
+    allGaps.push({
+      id: `gap-${String(idCounter++).padStart(3, '0')}`,
+      ...gap,
+    });
+  }
+
+  // Plugin gaps (missing plugin component patterns)
+  for (const gap of pluginGaps) {
     allGaps.push({
       id: `gap-${String(idCounter++).padStart(3, '0')}`,
       ...gap,
@@ -527,14 +610,16 @@ function identify(extractionDir, projectName) {
   // Track C: Animation + UI pattern matching
   const engine = animationAnalysis.engine || 'framer-motion';
   const { identifiedPatterns, gaps: animationGaps } = matchAnimationPatterns(animationAnalysis, engine);
+  const pluginResult = matchPluginPatterns(animationAnalysis);
   const uiComponents = matchUIComponents(extractionData, mappedSections);
   const sectionMapping = mapComponentsToSections(identifiedPatterns, uiComponents);
 
-  // Aggregate gap report
+  // Aggregate gap report (include plugin gaps)
   const gapReport = aggregateGapReport({
     colorGaps: [],
     archetypeGaps,
     animationGaps,
+    pluginGaps: pluginResult.gaps,
     uiGaps: [],
     project: projectName,
     url: extractionData.url || '',
@@ -550,6 +635,8 @@ function identify(extractionDir, projectName) {
     highConfidence,
     mappedSections,
     animationPatterns: identifiedPatterns,
+    detectedPlugins: pluginResult.detectedPlugins,
+    pluginCapabilities: pluginResult.pluginCapabilities,
     uiComponents,
     sectionMapping,
     gapReport,
@@ -570,6 +657,7 @@ if (require.main === module) {
 module.exports = {
   identify,
   matchAnimationPatterns,
+  matchPluginPatterns,
   matchUIComponents,
   mapComponentsToSections,
   aggregateGapReport,

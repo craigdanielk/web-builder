@@ -58,13 +58,14 @@ const {
 
 const { mapSectionsToArchetypes } = require('./lib/archetype-mapper');
 
+const patternIdentifier = require('./lib/pattern-identifier');
 const {
   matchAnimationPatterns,
   matchUIComponents,
   mapComponentsToSections,
   aggregateGapReport,
   classifyGSAPCall,
-} = require('./lib/pattern-identifier');
+} = patternIdentifier;
 
 // ============================================================
 // Track A: Color Intelligence
@@ -375,6 +376,34 @@ section('Integration: Full Pipeline');
     (g) => g.id && g.type && g.severity
   );
   assert(allValid, 'Integration: all gaps have id + type + severity');
+}
+
+// ============================================================
+// Phase 2: Plugin Pattern Detection
+// ============================================================
+
+section('Phase 2: Plugin Pattern Detection');
+{
+  const pluginFixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, 'fixtures', 'gsap-plugin-extraction.json'), 'utf-8'));
+
+  const pluginResult = patternIdentifier.matchPluginPatterns
+    ? patternIdentifier.matchPluginPatterns(pluginFixture.animationAnalysis)
+    : null;
+
+  if (pluginResult) {
+    assert(pluginResult.detectedPlugins.includes('SplitText'), 'P1: SplitText detected');
+    assert(pluginResult.detectedPlugins.includes('Flip'), 'P2: Flip detected');
+    assert(pluginResult.detectedPlugins.includes('DrawSVG'), 'P3: DrawSVG detected');
+    assert(pluginResult.detectedPlugins.includes('CustomEase'), 'P4: CustomEase detected');
+    assert(pluginResult.pluginCapabilities.SplitText.intents.includes('character-reveal'), 'P5: SplitText has character-reveal intent');
+    assert(pluginResult.pluginCapabilities.Flip.intents.includes('layout-transition'), 'P6: Flip has layout-transition intent');
+    assert(pluginResult.pluginCapabilities.DrawSVG.intents.includes('svg-draw'), 'P7: DrawSVG has svg-draw intent');
+    assert(pluginResult.pluginCapabilities.SplitText.recommendedSections.includes('HERO'), 'P8: SplitText recommended for HERO');
+    assert(pluginResult.gaps.length > 0, 'P9: gaps generated for missing plugin components');
+  } else {
+    console.log('  ⚠ matchPluginPatterns not yet exported — skipping plugin tests');
+  }
 }
 
 // ============================================================
