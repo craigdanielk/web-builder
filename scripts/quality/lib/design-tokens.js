@@ -18,6 +18,113 @@ function rgbToHex(rgb) {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
+// ---------------------------------------------------------------------------
+// HSL conversion + hue-aware Tailwind mapping (Track A — v0.9.0)
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert hex color to HSL values.
+ * @param {string} hex - Hex color string (e.g. "#0ae448")
+ * @returns {{ h: number, s: number, l: number }} HSL values (h: 0-360, s/l: 0-100)
+ */
+function hexToHSL(hex) {
+  if (!hex || !hex.startsWith('#')) return { h: 0, s: 0, l: 0 };
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  const l = (max + min) / 2;
+
+  if (d === 0) return { h: 0, s: 0, l: Math.round(l * 100) };
+
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+
+  return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+
+/**
+ * Hue-to-Tailwind color family mapping.
+ * Ranges are [start, end) with wrap-around at 360.
+ */
+const HUE_FAMILIES = [
+  [0, 15, 'red'],
+  [15, 35, 'orange'],
+  [35, 50, 'amber'],
+  [50, 65, 'yellow'],
+  [65, 80, 'lime'],
+  [80, 150, 'green'],
+  [150, 170, 'emerald'],
+  [170, 185, 'teal'],
+  [185, 200, 'cyan'],
+  [200, 215, 'sky'],
+  [215, 245, 'blue'],
+  [245, 257, 'indigo'],
+  [257, 280, 'violet'],
+  [280, 300, 'purple'],
+  [300, 330, 'fuchsia'],
+  [330, 345, 'pink'],
+  [345, 361, 'rose'],
+];
+
+/**
+ * Map lightness (0-100) to a Tailwind shade number.
+ * @param {number} l - Lightness value (0-100)
+ * @returns {number} Tailwind shade (50-950)
+ */
+function lightnessToShade(l) {
+  if (l >= 95) return 50;
+  if (l >= 90) return 100;
+  if (l >= 82) return 200;
+  if (l >= 72) return 300;
+  if (l >= 60) return 400;
+  if (l >= 45) return 500;
+  if (l >= 35) return 600;
+  if (l >= 25) return 700;
+  if (l >= 15) return 800;
+  if (l >= 8) return 900;
+  return 950;
+}
+
+/**
+ * Map a hex color to the nearest Tailwind color name using HSL.
+ * Handles achromatic colors (low saturation) as grays.
+ * @param {string} hex - Hex color string
+ * @returns {string} Tailwind color name (e.g. "green-500", "gray-800")
+ */
+function hexToTailwindHue(hex) {
+  if (!hex || !hex.startsWith('#')) return hex;
+  const { h, s, l } = hexToHSL(hex);
+
+  // Near-white / near-black shortcuts
+  if (l >= 97) return 'white';
+  if (l <= 3) return 'black';
+
+  // Achromatic — low saturation maps to gray scale
+  if (s < 10) {
+    const shade = lightnessToShade(l);
+    return `gray-${shade}`;
+  }
+
+  // Find hue family
+  let family = 'gray';
+  for (const [start, end, name] of HUE_FAMILIES) {
+    if (h >= start && h < end) {
+      family = name;
+      break;
+    }
+  }
+
+  const shade = lightnessToShade(l);
+  return `${family}-${shade}`;
+}
+
 function collectTokens(extractionData) {
   const colorsSet = new Set();
   const bgColorsSet = new Set();
@@ -262,4 +369,179 @@ function compareToPreset(tokens, presetPath) {
   };
 }
 
-module.exports = { collectTokens, collectAnimationTokens, compareToPreset, parsePreset, rgbToHex };
+// ---------------------------------------------------------------------------
+// Gradient color extraction (Track A2)
+// ---------------------------------------------------------------------------
+
+function collectGradientColors(extractionData) {
+  const gradients = [];
+  const accentSet = new Set();
+  const bgImages = extractionData.assets?.backgroundImages || [];
+  const colorStopRe = /rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+(?:\s*,\s*[\d.]+)?\s*\)|#[0-9a-fA-F]{3,8}/g;
+  const angleRe = /(\d+(?:\.\d+)?deg)/;
+
+  for (const bgImg of bgImages) {
+    const src = typeof bgImg === 'string' ? bgImg : bgImg?.url || bgImg?.value || '';
+    // Check if this is a gradient string
+    if (!/(linear|radial|conic)-gradient/.test(src)) continue;
+
+    const angleMatch = src.match(angleRe);
+    const angle = angleMatch ? angleMatch[1] : 'none';
+    const stops = [];
+    let colorMatch;
+    colorStopRe.lastIndex = 0;
+    while ((colorMatch = colorStopRe.exec(src)) !== null) {
+      const hex = rgbToHex(colorMatch[0]);
+      if (hex && hex.startsWith('#')) stops.push(hex);
+    }
+    if (stops.length > 0) {
+      gradients.push({ source: src.slice(0, 120), stops, angle });
+      for (const hex of stops) {
+        const hsl = hexToHSL(hex);
+        if (hsl.l > 92 || hsl.l < 8 || hsl.s < 10) continue;
+        accentSet.add(hex);
+      }
+    }
+  }
+  return { gradients, accentColors: [...accentSet] };
+}
+
+// ---------------------------------------------------------------------------
+// Color system identification (Track A3)
+// ---------------------------------------------------------------------------
+
+function identifyColorSystem(tokens, gradientData) {
+  const candidates = [];
+
+  for (const hex of (gradientData?.accentColors || [])) {
+    candidates.push({ hex, source: 'gradient' });
+  }
+  for (const hex of (tokens.backgroundColors || [])) {
+    const hsl = hexToHSL(hex);
+    if (hsl.s >= 15 && hsl.l > 10 && hsl.l < 90) {
+      candidates.push({ hex, source: 'background' });
+    }
+  }
+  for (const hex of (tokens.colors || [])) {
+    const hsl = hexToHSL(hex);
+    if (hsl.s >= 30 && hsl.l > 15 && hsl.l < 85) {
+      candidates.push({ hex, source: 'text' });
+    }
+  }
+
+  if (candidates.length === 0) {
+    return { system: 'neutral', accents: [] };
+  }
+
+  // Cluster by hue with minimum 30 degree angular distance
+  const clusters = [];
+  for (const c of candidates) {
+    const hsl = hexToHSL(c.hex);
+    let matched = false;
+    for (const cluster of clusters) {
+      const dist = Math.min(
+        Math.abs(hsl.h - cluster.hue),
+        360 - Math.abs(hsl.h - cluster.hue)
+      );
+      if (dist < 30) {
+        cluster.members.push(c);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      clusters.push({ hue: hsl.h, members: [c] });
+    }
+  }
+
+  clusters.sort((a, b) => b.members.length - a.members.length);
+
+  const accents = clusters.map((cluster) => {
+    const hexCounts = {};
+    for (const m of cluster.members) {
+      hexCounts[m.hex] = (hexCounts[m.hex] || 0) + 1;
+    }
+    const bestHex = Object.entries(hexCounts).sort((a, b) => b[1] - a[1])[0][0];
+    const sources = [...new Set(cluster.members.map((m) => m.source))];
+    return {
+      hue: cluster.hue,
+      hex: bestHex,
+      tailwind: hexToTailwindHue(bestHex),
+      source: sources.join('+'),
+    };
+  });
+
+  const allFromGradients = accents.every((a) => a.source === 'gradient');
+  let system;
+  if (accents.length === 0) system = 'neutral';
+  else if (accents.length === 1) system = 'single-accent';
+  else if (accents.length === 2) system = 'dual-accent';
+  else if (allFromGradients) system = 'gradient-based';
+  else system = 'multi-accent';
+
+  return { system, accents };
+}
+
+// ---------------------------------------------------------------------------
+// Per-section color profiling (Track A4)
+// ---------------------------------------------------------------------------
+
+function profileSectionColors(extractionData, gradientData) {
+  const sections = extractionData.sections || [];
+  const dom = extractionData.renderedDOM || [];
+  const sectionColors = {};
+
+  for (let i = 0; i < sections.length; i++) {
+    const sec = sections[i];
+    const top = sec.rect?.y || 0;
+    const bottom = top + (sec.rect?.height || 0);
+    const colorCounts = {};
+
+    for (const el of dom) {
+      const elY = el.rect?.y || 0;
+      if (elY < top || elY > bottom) continue;
+      const colors = [
+        el.styles?.backgroundColor,
+        el.styles?.color,
+        el.styles?.borderColor,
+      ].filter(Boolean).map(rgbToHex);
+
+      for (const hex of colors) {
+        if (!hex || !hex.startsWith('#')) continue;
+        const hsl = hexToHSL(hex);
+        if (hsl.s < 15 || hsl.l > 92 || hsl.l < 8) continue;
+        colorCounts[hex] = (colorCounts[hex] || 0) + 1;
+      }
+    }
+
+    let hasGradient = false;
+    if (sec.backgroundColor && typeof sec.backgroundColor === 'string' &&
+        sec.backgroundColor.includes('gradient')) {
+      hasGradient = true;
+    }
+
+    const sorted = Object.entries(colorCounts).sort((a, b) => b[1] - a[1]);
+    const dominant = sorted.length > 0 ? sorted[0][0] : null;
+
+    sectionColors[i] = {
+      accent: dominant ? hexToTailwindHue(dominant) : null,
+      accentHex: dominant || null,
+      gradient: hasGradient,
+      colorCount: sorted.length,
+    };
+  }
+  return { sectionColors };
+}
+
+module.exports = {
+  collectTokens,
+  collectAnimationTokens,
+  compareToPreset,
+  parsePreset,
+  rgbToHex,
+  hexToHSL,
+  hexToTailwindHue,
+  collectGradientColors,
+  identifyColorSystem,
+  profileSectionColors,
+};

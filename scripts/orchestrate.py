@@ -231,6 +231,99 @@ console.log(JSON.stringify(contexts));
     return preset_name, brief_content, section_contexts, extraction_dir
 
 
+# --- Pattern Identification Stage (v0.9.0) ---
+
+def stage_identify(extraction_dir: Path, project_name: str) -> dict | None:
+    """
+    Stage 0d: Run pattern identification on extraction data.
+    Returns identification result dict or None if not available.
+    """
+    print("\n🔍 Stage 0d: Identifying patterns...")
+
+    node = "node"
+    identifier_script = QUALITY_DIR / "lib" / "pattern-identifier.js"
+
+    if not identifier_script.exists():
+        print("  ⚠ pattern-identifier.js not found, skipping identification")
+        return None
+
+    result = subprocess.run(
+        [node, str(identifier_script), str(extraction_dir), project_name],
+        capture_output=True,
+        text=True,
+        cwd=str(QUALITY_DIR),
+        timeout=60,
+    )
+
+    if result.returncode != 0:
+        print(f"  ⚠ Pattern identification failed: {result.stderr[:500] if result.stderr else '(no stderr)'}")
+        return None
+
+    try:
+        identification = json.loads(result.stdout.strip())
+    except json.JSONDecodeError:
+        print("  ⚠ Could not parse identification output, continuing without it")
+        return None
+
+    # Save gap report
+    gap_report = identification.get("gapReport", {})
+    gaps = gap_report.get("gaps", [])
+    gap_path = OUTPUT_DIR / project_name / "gap-report.json"
+    gap_path.parent.mkdir(parents=True, exist_ok=True)
+    gap_path.write_text(json.dumps(gap_report, indent=2), encoding="utf-8")
+
+    # Print summary
+    color_system = identification.get("colorSystem", {})
+    high = sum(1 for g in gaps if g.get("severity") == "high")
+    medium = sum(1 for g in gaps if g.get("severity") == "medium")
+    low = sum(1 for g in gaps if g.get("severity") == "low")
+
+    print(f"  Color system: {color_system.get('system', 'unknown')} ({len(color_system.get('accents', []))} accents)")
+    print(f"  Sections: {identification.get('sectionCount', 0)} total, {identification.get('highConfidence', 0)} high confidence")
+    print(f"  Animation patterns: {len(identification.get('animationPatterns', []))} identified")
+    if gaps:
+        print(f"  ⚠ Gaps: {len(gaps)} ({high} high, {medium} medium, {low} low)")
+    else:
+        print(f"  ✓ No gaps detected")
+
+    print(f"  → Saved: output/{project_name}/gap-report.json")
+
+    return identification
+
+
+def print_gap_summary(project_name: str):
+    """Print gap report summary at end of build (v0.9.0)."""
+    gap_path = OUTPUT_DIR / project_name / "gap-report.json"
+    if not gap_path.exists():
+        return
+
+    try:
+        report = json.loads(gap_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, IOError):
+        return
+
+    gaps = report.get("gaps", [])
+    if not gaps:
+        return
+
+    high = sum(1 for g in gaps if g.get("severity") == "high")
+    medium = sum(1 for g in gaps if g.get("severity") == "medium")
+    low = sum(1 for g in gaps if g.get("severity") == "low")
+
+    print(f"\n{'═' * 50}")
+    print(f"  ⚠ GAP REPORT SUMMARY")
+    print(f"  {len(gaps)} gaps identified for {project_name}")
+    if high:
+        high_descs = [g["description"][:60] for g in gaps if g.get("severity") == "high"]
+        print(f"    HIGH: {high} ({', '.join(high_descs)})")
+    if medium:
+        print(f"    MEDIUM: {medium}")
+    if low:
+        print(f"    LOW: {low}")
+    print(f"  Extension tasks: output/{project_name}/gap-report.json")
+    print(f"{'═' * 50}")
+
+
 # --- Pipeline Stages ---
 
 def stage_scaffold(brief: str, preset: str, project_name: str, no_pause: bool) -> str:
@@ -468,6 +561,7 @@ def stage_sections(
     project_name: str,
     section_contexts: dict | None = None,
     extraction_dir: Path | None = None,
+    identification: dict | None = None,
 ) -> list[Path]:
     """Stage 2: Generate each section component individually with engine-aware injection."""
     print(f"\n🔨 Stage 2: Generating {len(sections)} sections...")
@@ -551,6 +645,45 @@ def stage_sections(
         if asset_block:
             asset_context_block = f"\n{asset_block}\n"
 
+        # Build identification context block (v0.9.0)
+        identification_block = ""
+        if identification:
+            id_parts = []
+
+            # Per-section accent color override
+            section_colors = identification.get("sectionColorProfile", {}).get("sectionColors", {})
+            sec_color = section_colors.get(str(i), {})
+            if sec_color and sec_color.get("accent"):
+                id_parts.append(
+                    f"## Section Accent Color\n"
+                    f"This section's accent color is {sec_color['accent']} (not the default site accent).\n"
+                    f"Use {sec_color['accent']} for highlights, buttons, icons, and accent elements in this section."
+                )
+
+            # Per-section animation patterns
+            section_mapping = identification.get("sectionMapping", {})
+            sec_map = section_mapping.get(str(i), {})
+            if sec_map:
+                anims = sec_map.get("animations", [])
+                for anim in anims[:2]:
+                    if anim.get("bestMatch"):
+                        id_parts.append(
+                            f"## Identified Animation Pattern\n"
+                            f"Pattern: {anim['pattern']} (from reference site analysis)\n"
+                            f"Registry component: {anim['bestMatch']}\n"
+                            f"Use this animation pattern for entrance/interaction in this section."
+                        )
+                ui_comps = sec_map.get("uiComponents", [])
+                if ui_comps:
+                    id_parts.append(
+                        f"## Identified UI Components\n"
+                        f"Detected: {', '.join(ui_comps)}\n"
+                        f"Incorporate these UI patterns into the section layout."
+                    )
+
+            if id_parts:
+                identification_block = "\n" + "\n\n".join(id_parts) + "\n"
+
         prompt = f"""You are a senior frontend developer generating a single website section
 as a React + Tailwind CSS component.
 
@@ -564,7 +697,7 @@ Content Direction: {section['content']}
 
 ## Structural Reference
 {structure_ref}
-{ref_context_block}{animation_context_block}{asset_context_block}
+{ref_context_block}{animation_context_block}{asset_context_block}{identification_block}
 {instructions}
 Component name: Section{num}{section['archetype'].replace('-', '')}"""
 
@@ -1156,6 +1289,7 @@ def main():
 
     section_contexts = None  # Only populated in URL clone mode
     extraction_dir = None    # Only populated in URL clone mode
+    identification = None    # Only populated in URL clone mode (v0.9.0)
 
     # ── URL Clone Mode ──────────────────────────────────────────────
     if args.from_url:
@@ -1170,11 +1304,17 @@ def main():
             args.from_url, args.project
         )
 
+        # Stage 0d: Pattern identification (v0.9.0)
+        if extraction_dir and extraction_dir.exists():
+            identification = stage_identify(extraction_dir, args.project)
+
         print(f"\n{'═' * 60}")
         print(f"  Stage 0 complete — switching to standard pipeline")
         print(f"  Preset:  {preset}")
         print(f"  Brief:   briefs/{args.project}.md")
         print(f"  Context: {len(section_contexts)} section(s)")
+        if identification:
+            print(f"  Patterns: {identification.get('sectionCount', 0)} sections identified")
         print(f"{'═' * 60}")
 
     # ── Standard Mode ───────────────────────────────────────────────
@@ -1230,7 +1370,7 @@ def main():
     print(f"\n  Parsed {len(sections)} sections from scaffold")
 
     if args.skip_to in (None, "sections"):
-        section_files = stage_sections(sections, preset, args.project, section_contexts, extraction_dir)
+        section_files = stage_sections(sections, preset, args.project, section_contexts, extraction_dir, identification)
     else:
         section_dir = OUTPUT_DIR / args.project / "sections"
         section_files = sorted(section_dir.glob("*.tsx"))
@@ -1243,6 +1383,10 @@ def main():
 
     if args.deploy or args.skip_to == "deploy":
         stage_deploy(sections, section_files, preset, args.project, extraction_dir)
+
+    # Print gap report summary if available (v0.9.0)
+    if args.from_url:
+        print_gap_summary(args.project)
 
     mode_label = "URL Clone" if args.from_url else "Pipeline"
     print(f"\n{'═' * 60}")

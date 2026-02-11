@@ -20,7 +20,10 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { extractReference } = require('./lib/extract-reference');
-const { collectTokens, collectAnimationTokens, rgbToHex } = require('./lib/design-tokens');
+const {
+  collectTokens, collectAnimationTokens, rgbToHex,
+  hexToTailwindHue, collectGradientColors, identifyColorSystem, profileSectionColors,
+} = require('./lib/design-tokens');
 const { mapSectionsToArchetypes } = require('./lib/archetype-mapper');
 const { analyzeAnimationEvidence } = require('./lib/animation-detector');
 
@@ -59,33 +62,19 @@ function parseArgs() {
 }
 
 // ---------------------------------------------------------------------------
-// Tailwind color approximation
+// Tailwind color approximation (v0.9.0: now hue-aware via design-tokens.js)
 // ---------------------------------------------------------------------------
 
+// Legacy alias — kept for backward compatibility
 function hexToTailwindApprox(hex) {
-  if (!hex || !hex.startsWith('#')) return hex;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-
-  // Very rough mapping to Tailwind palette names
-  if (brightness > 240) return 'white';
-  if (brightness > 220) return 'gray-50';
-  if (brightness > 200) return 'gray-100';
-  if (brightness > 170) return 'gray-200';
-  if (brightness > 140) return 'gray-300';
-  if (brightness > 100) return 'gray-500';
-  if (brightness > 60) return 'gray-700';
-  if (brightness > 30) return 'gray-900';
-  return 'black';
+  return hexToTailwindHue(hex);
 }
 
 // ---------------------------------------------------------------------------
 // Preset generation via Claude
 // ---------------------------------------------------------------------------
 
-async function generatePreset(url, tokens, mappedSections, extractionData, animationAnalysis, animationTokens) {
+async function generatePreset(url, tokens, mappedSections, extractionData, animationAnalysis, animationTokens, colorSystemData) {
   const client = new Anthropic();
   const template = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 
@@ -111,6 +100,15 @@ async function generatePreset(url, tokens, mappedSections, extractionData, anima
     .slice(0, 8)
     .map((t) => t.text.slice(0, 60));
 
+  // Build color system intelligence block (v0.9.0)
+  const csData = colorSystemData || {};
+  const colorSystemBlock = csData.system
+    ? `### Color System Analysis
+- Type: ${csData.system} (${(csData.accents || []).length} distinct accent families)
+${(csData.accents || []).map((a) => `- Accent: ${a.tailwind} (${a.hex}, source: ${a.source})`).join('\n') || '- No accents detected'}
+${csData.sectionColors ? Object.entries(csData.sectionColors).filter(([, v]) => v.accent).map(([i, v]) => `- Section ${i} accent: ${v.accent}${v.gradient ? ' (from gradient)' : ''}`).join('\n') : ''}`
+    : '';
+
   const prompt = `You are a senior web designer creating a web-builder preset file from extracted design data.
 
 ## Source URL
@@ -126,6 +124,8 @@ ${colorList || 'none detected'}
 
 ### Text Colors
 ${textColorList || 'none detected'}
+
+${colorSystemBlock}
 
 ### Border Radii Found
 ${radiiList}
@@ -161,7 +161,7 @@ Generate a COMPLETE preset file following the template format EXACTLY. Fill in e
 
 Rules:
 1. Use the REAL fonts detected. If two fonts found, map to heading_font and body_font. If one font, use it for both.
-2. Map extracted colors to Tailwind utility names (stone-50, amber-700, etc.) — choose the closest Tailwind color.
+2. Map extracted colors to Tailwind utility names (stone-50, amber-700, etc.) — choose the closest COLORED Tailwind name (e.g. green-500 not gray-200 for a green color).
 3. Determine color_temperature from the palette: warm-earth, cool-blue, neutral, dark-neutral, etc.
 4. Set border_radius based on extracted radii: sharp (0-4px), medium (6-16px), full (16-32px), pill (32px+).
 5. Set animation_intensity to "${animationAnalysis.intensity.level}" and animation_engine to "${animationAnalysis.engine}" based on the Animation Evidence above. If confidence is below 50%, default to moderate with css engine.
@@ -169,6 +169,9 @@ Rules:
 7. Write realistic Content Direction based on the heading tone and CTA language found.
 8. Set the preset name to match the site's industry/type.
 9. Include the source URL in Reference Sites.
+10. If Color System Analysis shows "multi-accent" or "dual-accent", populate accent_secondary (and accent_tertiary if 3+ accents) using the detected accent Tailwind names.
+11. If per-section accent colors are detected, add a section_accents block mapping section class/name to its accent Tailwind color.
+12. Include secondary/tertiary accents in the Compact Style Header using the format: Accents: name:color name:color
 
 Output ONLY the complete preset markdown. No explanation, no code fences around the entire output.`;
 
@@ -213,9 +216,22 @@ async function main() {
 
   // Step 3: Map archetypes
   console.log('  [3/5] Mapping sections to archetypes...');
-  const mapped = mapSectionsToArchetypes(extractionData.sections, extractionData.textContent);
+  const { mappedSections: mapped, gaps: archetypeGaps } = mapSectionsToArchetypes(extractionData.sections, extractionData.textContent);
   for (const m of mapped) {
     console.log('    ' + m.archetype + ' | ' + m.variant + ' (' + m.method + ', ' + (m.confidence * 100).toFixed(0) + '%)');
+  }
+  if (archetypeGaps.length > 0) {
+    console.log('    \u26A0 ' + archetypeGaps.length + ' low-confidence mapping(s) flagged');
+  }
+
+  // Step 2b: Identify color system (v0.9.0)
+  console.log('  [2b/5] Identifying color system...');
+  const gradientData = collectGradientColors(extractionData);
+  const colorSystem = identifyColorSystem(tokens, gradientData);
+  const sectionColorProfile = profileSectionColors(extractionData, gradientData);
+  console.log('    System: ' + colorSystem.system + ' (' + colorSystem.accents.length + ' accent families)');
+  for (const acc of colorSystem.accents.slice(0, 5)) {
+    console.log('      ' + acc.tailwind + ' (' + acc.hex + ', ' + acc.source + ')');
   }
 
   // Step 3b: Analyze animations
@@ -235,7 +251,11 @@ async function main() {
 
   // Step 4: Generate preset via Claude
   console.log('  [4/5] Generating preset via Claude...');
-  const presetContent = await generatePreset(config.url, tokens, mapped, extractionData, animationAnalysis, animationTokens);
+  const colorSystemData = {
+    ...colorSystem,
+    sectionColors: sectionColorProfile.sectionColors,
+  };
+  const presetContent = await generatePreset(config.url, tokens, mapped, extractionData, animationAnalysis, animationTokens, colorSystemData);
 
   // Save preset with atomic write (temp file + rename to prevent race conditions)
   const outputPath = path.join(config.outputDir, config.presetName + '.md');
@@ -259,6 +279,14 @@ async function main() {
   const tmpMappedPath = mappedPath + '.tmp-' + Date.now();
   fs.writeFileSync(tmpMappedPath, JSON.stringify(mapped, null, 2), 'utf-8');
   fs.renameSync(tmpMappedPath, mappedPath);
+
+  // Save archetype gaps if any (atomic write)
+  if (archetypeGaps.length > 0) {
+    const gapsPath = path.join(extractionDir, 'archetype-gaps.json');
+    const tmpGapsPath = gapsPath + '.tmp-' + Date.now();
+    fs.writeFileSync(tmpGapsPath, JSON.stringify(archetypeGaps, null, 2), 'utf-8');
+    fs.renameSync(tmpGapsPath, gapsPath);
+  }
 
   // Save animation analysis (atomic write)
   const animPath = path.join(extractionDir, 'animation-analysis.json');

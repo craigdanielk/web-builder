@@ -13,7 +13,7 @@ skills/                  → Design knowledge (READ ONLY during generation)
   style-schema.md        → Configurable style dimensions and Tailwind mappings
   animation-patterns.md  → 20+ named GSAP/Framer Motion patterns
   image-extraction.md   → Image categorization spec (10 categories)
-  presets/               → Industry-specific default configurations (23 presets)
+  presets/               → Industry-specific default configurations (32 presets)
   components/            → Reusable component docs (cursor-trail, image-patterns)
 templates/               → Prompt templates for each pipeline stage
   scaffold-prompt.md     → Stage 1: page specification from brief + preset
@@ -31,15 +31,18 @@ output/ (gitignored)     → ALL build output
     page.tsx             → Assembled page
     site/                → Rendered Next.js project (--deploy flag)
 scripts/
-  orchestrate.py         → Main pipeline (6 stages + injection wiring, Python + Node.js hybrid)
+  orchestrate.py         → Main pipeline (7 stages + injection wiring, Python + Node.js hybrid)
   quality/               → URL extraction + validation tools
-    url-to-preset.js     → URL → preset markdown
+    url-to-preset.js     → URL → preset markdown (+ color system integration)
     url-to-brief.js      → URL → brief markdown
+    test-pattern-pipeline.js → Pattern identification test harness (57 assertions)
+    fixtures/            → Synthetic test data for pipeline testing
     lib/
       extract-reference.js  → Playwright extraction engine
       animation-detector.js → Animation library detection
-      archetype-mapper.js   → Section → archetype mapping
-      design-tokens.js      → CSS → design token collection
+      archetype-mapper.js   → Section → archetype mapping (+ class signals, gap flagging)
+      design-tokens.js      → CSS → design token collection (+ color intelligence)
+      pattern-identifier.js → Pattern identification, animation/UI matching, gap aggregation
       animation-injector.js → Per-section animation prompt builder
       asset-injector.js     → Per-section asset prompt builder
       asset-downloader.js   → Download + verify extracted assets

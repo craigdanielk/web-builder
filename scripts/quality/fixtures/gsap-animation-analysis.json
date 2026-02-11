@@ -1,0 +1,56 @@
+{
+  "engine": "gsap",
+  "intensity": {
+    "level": "expressive",
+    "score": 85,
+    "confidence": 0.9
+  },
+  "libraries": [
+    { "name": "gsap", "version": "3.12", "confidence": 1.0 },
+    { "name": "ScrollTrigger", "confidence": 1.0 }
+  ],
+  "cssAnimations": {
+    "keyframes": ["marquee", "fadeIn", "slideUp"],
+    "animatedElements": 24,
+    "transitionElements": 48
+  },
+  "scrollAnimations": {
+    "triggerCount": 12,
+    "patterns": ["fade-in", "stagger", "pin"]
+  },
+  "assets": {
+    "lottie": [],
+    "rive": [],
+    "threeD": []
+  },
+  "gsapCalls": [
+    {
+      "method": "timeline.from",
+      "target": ".hero-headline",
+      "section": 0,
+      "vars": { "opacity": 0, "y": 80, "stagger": 0.05 },
+      "scrollTrigger": null
+    },
+    {
+      "method": "from",
+      "target": ".tool-card",
+      "section": 1,
+      "vars": { "opacity": 0, "y": 60, "stagger": 0.15 },
+      "scrollTrigger": { "trigger": ".home-tools", "start": "top 80%" }
+    },
+    {
+      "method": "to",
+      "target": ".brand-logo",
+      "section": 3,
+      "vars": { "x": -200, "repeat": -1, "duration": 20 }
+    },
+    {
+      "method": "from",
+      "target": ".showcase-item",
+      "section": 4,
+      "vars": { "opacity": 0, "scale": 0.9, "stagger": 0.1 },
+      "scrollTrigger": { "trigger": ".showcase", "start": "top 75%", "scrub": true }
+    }
+  ],
+  "sectionOverrides": {}
+}

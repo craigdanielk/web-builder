@@ -56,21 +56,28 @@ const HEADING_KEYWORDS = {
   NAV: [],
   HERO: [],
   ABOUT: ['about', 'our story', 'who we are', 'our mission', 'our history', 'meet us'],
-  FEATURES: ['features', 'what we offer', 'capabilities', 'solutions', 'services', 'what you get', 'why choose'],
-  'HOW-IT-WORKS': ['how it works', 'how we work', 'our process', 'steps', 'getting started', 'simple steps'],
+  FEATURES: ['features', 'what we offer', 'capabilities', 'solutions', 'services', 'what you get', 'why choose',
+    'why', 'benefits', 'advantages', 'animate', 'build'],
+  'HOW-IT-WORKS': ['how it works', 'how we work', 'our process', 'steps', 'getting started', 'simple steps',
+    'get started', 'quick start', 'installation', 'setup', 'minutes'],
   PRICING: ['pricing', 'plans', 'packages', 'subscription', 'choose your plan', 'get started'],
   TESTIMONIALS: ['testimonials', 'what people say', 'reviews', 'customer stories', 'what our', 'hear from'],
   FAQ: ['faq', 'frequently asked', 'questions', 'common questions', 'have questions'],
   TEAM: ['team', 'our people', 'leadership', 'founders', 'who we are'],
   CONTACT: ['contact', 'get in touch', 'reach us', 'talk to us', 'lets talk', "let's connect"],
-  'PRODUCT-SHOWCASE': ['products', 'shop', 'collection', 'our range', 'menu', 'catalog', 'browse'],
+  'PRODUCT-SHOWCASE': ['products', 'shop', 'collection', 'our range', 'menu', 'catalog', 'browse',
+    'tools', 'platform', 'explore', 'discover', 'our stack'],
   PORTFOLIO: ['portfolio', 'our work', 'case studies', 'projects', 'gallery'],
   'BLOG-PREVIEW': ['blog', 'articles', 'news', 'latest', 'insights', 'resources'],
-  CTA: ['get started', 'try it', 'sign up', 'join', 'start your', 'ready to'],
+  CTA: ['get started', 'try it', 'sign up', 'join', 'start your', 'ready to',
+    'free', 'create account', 'begin', 'launch'],
   NEWSLETTER: ['newsletter', 'subscribe', 'stay updated', 'join our list', 'stay in the loop'],
-  STATS: ['numbers', 'impact', 'results', 'by the numbers', 'achievements'],
-  'LOGO-BAR': ['trusted by', 'partners', 'as seen in', 'our clients', 'featured in'],
-  GALLERY: ['gallery', 'photos', 'images', 'moments'],
+  STATS: ['numbers', 'impact', 'results', 'by the numbers', 'achievements',
+    'metrics', 'performance', 'speed', 'data'],
+  'LOGO-BAR': ['trusted by', 'partners', 'as seen in', 'our clients', 'featured in',
+    'brands', 'trusted', 'companies', 'used by', 'powered by', 'built with'],
+  GALLERY: ['gallery', 'photos', 'images', 'moments',
+    'showcase', 'examples', 'community', 'inspiration', 'showreel'],
   COMPARISON: ['compare', 'vs', 'versus', 'difference', 'before and after'],
   VIDEO: ['watch', 'video', 'see it in action', 'demo'],
   'TRUST-BADGES': ['certified', 'guarantee', 'secure', 'trusted'],
@@ -80,8 +87,88 @@ const HEADING_KEYWORDS = {
 };
 
 // ---------------------------------------------------------------------------
+// Class name + ID signals (v0.9.0 — Track B)
+// ---------------------------------------------------------------------------
+
+const CLASS_NAME_SIGNALS = {
+  // Direct matches
+  'hero': 'HERO', 'banner': 'HERO',
+  'nav': 'NAV', 'header': 'NAV', 'navbar': 'NAV', 'navigation': 'NAV',
+  'footer': 'FOOTER',
+  'about': 'ABOUT',
+  'features': 'FEATURES', 'feature': 'FEATURES',
+  'pricing': 'PRICING', 'price': 'PRICING', 'plan': 'PRICING',
+  'testimonial': 'TESTIMONIALS', 'review': 'TESTIMONIALS', 'reviews': 'TESTIMONIALS',
+  'faq': 'FAQ',
+  'team': 'TEAM',
+  'contact': 'CONTACT',
+  'cta': 'CTA',
+  'newsletter': 'NEWSLETTER',
+  'blog': 'BLOG-PREVIEW',
+  'stats': 'STATS', 'counter': 'STATS', 'metric': 'STATS',
+
+  // Product/showcase
+  'product': 'PRODUCT-SHOWCASE', 'shop': 'PRODUCT-SHOWCASE',
+  'catalog': 'PRODUCT-SHOWCASE', 'tools': 'PRODUCT-SHOWCASE',
+  'collection': 'PRODUCT-SHOWCASE',
+
+  // Logo/trust
+  'brand': 'LOGO-BAR', 'brands': 'LOGO-BAR',
+  'logo': 'LOGO-BAR', 'logos': 'LOGO-BAR',
+  'partner': 'LOGO-BAR', 'partners': 'LOGO-BAR',
+  'client': 'LOGO-BAR', 'clients': 'LOGO-BAR',
+  'trust': 'TRUST-BADGES',
+
+  // Gallery/showcase
+  'showcase': 'GALLERY', 'gallery': 'GALLERY',
+  'portfolio': 'PORTFOLIO', 'work': 'PORTFOLIO', 'works': 'PORTFOLIO',
+  'case': 'PORTFOLIO',
+
+  // Interactive/demo (mapped to FEATURES with variant override handled in selectVariant)
+  'demo': 'FEATURES', 'playground': 'FEATURES', 'interactive': 'FEATURES',
+
+  // Process
+  'process': 'HOW-IT-WORKS', 'steps': 'HOW-IT-WORKS', 'how': 'HOW-IT-WORKS',
+
+  // Video
+  'video': 'VIDEO', 'showreel': 'VIDEO',
+
+  // Comparison
+  'compare': 'COMPARISON', 'comparison': 'COMPARISON',
+
+  // Integrations
+  'integrations': 'INTEGRATIONS', 'integration': 'INTEGRATIONS',
+};
+
+// ---------------------------------------------------------------------------
 // Variant selection heuristics
 // ---------------------------------------------------------------------------
+
+/**
+ * Extract class name fragments from a classNames string and/or id.
+ * Splits on spaces, hyphens, and underscores.
+ * @param {string} classNames - Space-separated class names
+ * @param {string} id - Element ID
+ * @returns {string[]} Lowercased fragments
+ */
+function extractClassFragments(classNames, id) {
+  const raw = [classNames || '', id || ''].join(' ');
+  return raw.toLowerCase().split(/[\s\-_]+/).filter(Boolean);
+}
+
+/**
+ * Match a section's classNames/id against CLASS_NAME_SIGNALS.
+ * Returns { archetype, confidence: 0.8 } or null.
+ */
+function matchClassSignals(section) {
+  const fragments = extractClassFragments(section.classNames, section.id);
+  for (const frag of fragments) {
+    if (CLASS_NAME_SIGNALS[frag]) {
+      return { archetype: CLASS_NAME_SIGNALS[frag], confidence: 0.8, method: 'class-signal' };
+    }
+  }
+  return null;
+}
 
 function selectVariant(archetype, section, archetypes) {
   const arch = archetypes.find((a) => a.name === archetype);
@@ -89,6 +176,7 @@ function selectVariant(archetype, section, archetypes) {
 
   const label = (section.label || '').toLowerCase();
   const tag = (section.tag || '').toLowerCase();
+  const classStr = ((section.classNames || '') + ' ' + (section.id || '')).toLowerCase();
   const height = section.rect?.height || 0;
   const width = section.rect?.width || 0;
 
@@ -103,6 +191,10 @@ function selectVariant(archetype, section, archetypes) {
       if (height > 300) return 'mega';
       return 'minimal';
     case 'FEATURES':
+      // Content-aware variant selection (v0.9.0)
+      if (/demo|interactive|playground/.test(classStr)) return 'interactive-demo';
+      if (/alternate|zigzag/.test(classStr)) return 'alternating-rows';
+      if (height > 1500) return 'alternating-rows';
       return 'icon-grid';
     case 'TESTIMONIALS':
       return 'carousel';
@@ -123,6 +215,7 @@ function selectVariant(archetype, section, archetypes) {
     case 'STATS':
       return 'counter-animation';
     case 'LOGO-BAR':
+      if (height < 200) return 'inline';
       return 'scrolling-marquee';
     case 'CONTACT':
       return 'simple-form';
@@ -133,6 +226,7 @@ function selectVariant(archetype, section, archetypes) {
     case 'TEAM':
       return 'grid-with-hover';
     case 'GALLERY':
+      if (/reel|video|showreel/.test(classStr)) return 'showcase-reel';
       return 'lightbox-grid';
     default:
       return arch.variants[0];
@@ -148,12 +242,13 @@ function selectVariant(archetype, section, archetypes) {
  *
  * @param {object[]} sections - Sections from extractReference().sections
  * @param {object[]} textContent - Text content from extractReference().textContent
- * @returns {object[]} Mapped sections with archetype, variant, confidence, and original data
+ * @returns {{ mappedSections: object[], gaps: object[] }} Mapped sections + gap records for low-confidence mappings
  */
 function mapSectionsToArchetypes(sections, textContent) {
   const archetypes = loadArchetypes();
   const archetypeNames = archetypes.map((a) => a.name);
   const mapped = [];
+  const gaps = [];
 
   for (let i = 0; i < sections.length; i++) {
     const sec = sections[i];
@@ -175,7 +270,17 @@ function mapSectionsToArchetypes(sections, textContent) {
       method = 'role';
     }
 
-    // 3. Label/heading keyword matching
+    // 3. Class name / ID signal matching (v0.9.0 — Track B)
+    if (!archetype) {
+      const classMatch = matchClassSignals(sec);
+      if (classMatch) {
+        archetype = classMatch.archetype;
+        confidence = classMatch.confidence;
+        method = classMatch.method;
+      }
+    }
+
+    // 4. Label/heading keyword matching
     if (!archetype && sec.label) {
       const labelLower = sec.label.toLowerCase();
       for (const [arch, keywords] of Object.entries(HEADING_KEYWORDS)) {
@@ -188,9 +293,9 @@ function mapSectionsToArchetypes(sections, textContent) {
       }
     }
 
-    // 4. Check text content within this section's vertical range for keywords
+    // 5. Check text content within this section's vertical range for keywords
     if (!archetype) {
-      const sectionTexts = textContent.filter((t) => {
+      const sectionTexts = (textContent || []).filter((t) => {
         const textY = t.rect?.y || 0;
         return textY >= sec.rect.y && textY <= sec.rect.y + sec.rect.height;
       });
@@ -210,7 +315,7 @@ function mapSectionsToArchetypes(sections, textContent) {
       }
     }
 
-    // 5. Position-based fallback
+    // 6. Position-based fallback
     if (!archetype) {
       if (i === 0) {
         archetype = sec.tag === 'nav' ? 'NAV' : 'HERO';
@@ -242,9 +347,33 @@ function mapSectionsToArchetypes(sections, textContent) {
       method,
       label: sec.label || '',
       tag: sec.tag,
+      classNames: sec.classNames || '',
+      id: sec.id || '',
       rect: sec.rect,
       original: sec,
     });
+
+    // Gap flagging: record any section mapped below 50% confidence (v0.9.0)
+    if (confidence < 0.5) {
+      gaps.push({
+        type: 'low_confidence_mapping',
+        sectionIndex: i,
+        label: sec.label || '',
+        classNames: sec.classNames || '',
+        assignedArchetype: archetype,
+        assignedVariant: variant,
+        confidence,
+        method,
+        rawSignals: {
+          tag: sec.tag,
+          id: sec.id || '',
+          classNames: sec.classNames || '',
+          label: sec.label || '',
+          height: sec.rect?.height,
+        },
+        suggestion: `Section "${sec.label || '(unnamed)'}" (class: ${sec.classNames || 'none'}) mapped to ${archetype} via ${method} at ${(confidence * 100).toFixed(0)}% confidence. Review and add keywords or class signals if a better archetype exists.`,
+      });
+    }
   }
 
   // Deduplicate: if two adjacent sections map to the same archetype,
@@ -263,7 +392,7 @@ function mapSectionsToArchetypes(sections, textContent) {
     }
   }
 
-  return deduped;
+  return { mappedSections: deduped, gaps };
 }
 
 module.exports = { mapSectionsToArchetypes, loadArchetypes };

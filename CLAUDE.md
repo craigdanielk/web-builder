@@ -1,7 +1,7 @@
 # Web Builder — System Context
 
-**Last Updated:** 2026-02-10
-**System Version:** v0.8.0
+**Last Updated:** 2026-02-11
+**System Version:** v0.9.0
 
 ---
 
@@ -28,9 +28,10 @@ User Input (brief + preset OR --from-url URL)
     │
     ▼
 Stage 0: URL Extraction (--from-url only)
-    ├── url-to-preset.js  → skills/presets/{project}.md
-    ├── url-to-brief.js   → briefs/{project}.md
-    └── section-context   → per-section reference data
+    ├── url-to-preset.js     → skills/presets/{project}.md
+    ├── url-to-brief.js      → briefs/{project}.md
+    ├── section-context      → per-section reference data
+    └── pattern-identifier   → color system, archetype gaps, animation/UI patterns, gap report
     │
     ▼
 Stage 1: Scaffold Generation
@@ -127,7 +128,7 @@ web-builder/
 │   │   ├── effect/                      ← Border/glow/decoration effects (2 slots)
 │   │   ├── background/                  ← Full-section background animations (2 slots)
 │   │   └── 21st-dev-library/ (986 .tsx) ← Community components from 21st.dev
-│   ├── presets/ (24 presets + _template)
+│   ├── presets/ (32 presets + _template)
 │   │   ├── _template.md
 │   │   ├── artisan-food.md            ← Coffee, bakery, artisan food
 │   │   ├── beauty-cosmetics.md
@@ -175,19 +176,24 @@ web-builder/
 │
 ├── scripts/
 │   ├── generate-docs.js               ← Generates docs/ from source code
-│   ├── orchestrate.py (1258 lines)    ← Main pipeline — 6 stages + injection wiring + component copy + cn() utility
+│   ├── orchestrate.py (1404 lines)    ← Main pipeline — 7 stages + injection wiring + component copy + cn() utility
 │   └── quality/                       ← URL extraction + validation tools
-│       ├── url-to-preset.js (275)     ← URL → preset markdown
+│       ├── url-to-preset.js (303)     ← URL → preset markdown (+ color system integration)
 │       ├── url-to-brief.js (201)      ← URL → brief markdown
 │       ├── enrich-preset.js (161)     ← Enrich preset with extracted tokens
 │       ├── validate-build.js (287)    ← Post-build quality validation
 │       ├── test-animation-detector.js (196) ← Standalone animation test
+│       ├── test-pattern-pipeline.js (394) ← Pattern identification test harness (57 assertions)
 │       ├── build-animation-registry.js     ← Analyzes 1022 components → registry artifacts
+│       ├── fixtures/                       ← Synthetic test data for pipeline testing
+│       │   ├── gsap-extraction-data.json   ← Simulated extraction output
+│       │   └── gsap-animation-analysis.json ← Simulated animation analysis
 │       └── lib/
 │           ├── extract-reference.js (556)   ← Playwright extraction engine
 │           ├── animation-detector.js (750)  ← Animation detection + GSAP interception + section grouping
-│           ├── archetype-mapper.js (269)    ← Section → archetype mapping
-│           ├── design-tokens.js (265)       ← CSS → design token collection
+│           ├── archetype-mapper.js (398)    ← Section → archetype mapping (+ class signals, gap flagging)
+│           ├── design-tokens.js (547)       ← CSS → design token collection (+ color intelligence)
+│           ├── pattern-identifier.js (577)  ← Pattern identification, animation/UI matching, gap aggregation
 │           ├── animation-injector.js (956)  ← 3-tier animation injection + selectAnimation() affinity algorithm
 │           ├── asset-injector.js (378)     ← Per-section asset prompt builder
 │           ├── asset-downloader.js (257)   ← Download + verify extracted assets
@@ -218,7 +224,8 @@ web-builder/
 │
 ├── plans/
 │   ├── _close-checklist.md                    ← Build close protocol template
-│   ├── active/                                ← (none currently)
+│   ├── active/
+│   │   └── pattern-identification-mapping-pipeline.md ← 6-phase pipeline upgrade
 │   ├── backlog/                               ← Future plans (not yet implemented)
 │   │   ├── template-library-upgrade-plan.md   ← Aurelix pattern library
 │   │   └── url-site-structure-calculator.md   ← Shopify migration calculator
@@ -242,7 +249,9 @@ web-builder/
     ├── 2026-02-10-cascaid-health-animation-enhancement.md
     ├── 2026-02-10-farm-minerals-v4-animation-library-test.md
     ├── 2026-02-10-animation-library-import-fix.md
-    └── 2026-02-10-animation-registry-build.md
+    ├── 2026-02-10-animation-registry-build.md
+    ├── 2026-02-10-gsap-homepage-stress-test-pipeline-diagnosis.md
+    └── 2026-02-11-pattern-identification-pipeline-v9-success.md
 ```
 
 ---
@@ -259,8 +268,20 @@ web-builder/
 | 0a | `url-to-preset.js` | `skills/presets/{project}.md` + `output/extractions/{project}-{uuid}/` |
 | 0b | `url-to-brief.js` | `briefs/{project}.md` |
 | 0c | `section-context.js` | Per-section context dict (passed in memory) |
+| 0d | `pattern-identifier.js` | Identification result (color system, archetype gaps, animation patterns, UI components) + `output/{project}/gap-report.json` |
 
 Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries, text content, image URLs, font URLs, animation library globals, Lottie/Rive/3D network assets, CSS keyframes.
+
+**Stage 0d: Pattern Identification** (`stage_identify`, orchestrate.py)
+
+Runs after extraction, before scaffold generation. Calls `pattern-identifier.js` which:
+1. Loads extraction data + animation analysis from the extraction directory
+2. Runs color intelligence: gradient parsing, color system classification, per-section profiling
+3. Runs archetype intelligence: class-signal matching, confidence-based gap flagging
+4. Runs animation pattern matching against `animation_search_index.json`
+5. Detects UI components (logo-marquee, video-embed, card-grid, etc.) from DOM structure
+6. Aggregates all gaps into a structured report with extension tasks
+7. Returns identification result that flows into section prompts (per-section accent colors, matched animation patterns, detected UI components)
 
 ### Stage 1: Scaffold (`stage_scaffold`, orchestrate.py:236)
 
@@ -315,14 +336,19 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 | nicola-romei | nicola-romei | gsap | Vercel |
 | cascaid-health | health-wellness | gsap+framer | Vercel |
 | turm-kaffee-v3 | artisan-food | framer-motion | Vercel |
+| gsap-homepage | gsap-homepage | gsap | Vercel* |
+| gsap-v9-test | gsap-v9-test | gsap | Vercel** |
 
 *farm-minerals-anim: Built before v0.5.0 injection pipeline — preset says gsap but sections use framer-motion. Rebuild with injection pipeline to fix.
 *nicola-romei: Required manual post-build fixes — preset misclassified color (dark vs light #f3f3f3), 0 sections detected in Webflow site broke asset injection, scaffold parser failed on bold markdown. See retro for details.
+*gsap-homepage: Stress test build — functional but visually incomplete. Monochrome orange (missing multi-accent), generic animations, blank gallery cards. Used as diagnostic to identify 6 systemic pipeline gaps. See retro for details.
+**gsap-v9-test: v0.9.0 validation build against gsap.com. Color intelligence correctly identified 5-accent system, class-signal archetype mapping at 80% confidence, gap report generated. Sections invisible on deploy due to pre-existing GSAP `from()` SSR issue (not a v0.9.0 regression).
 
 ### Active Plans
-- None
+- **[GSAP Ecosystem Integration & System Stability](plans/active/gsap-ecosystem-integration-and-stability.md)** — v1.0.0. 5-phase plan: Phase 1 fixes 8 active bugs (from() SSR, parse_scaffold, token truncation, JSX repair, zero-section fallback, color misclassification, font parsing). Phase 2 extends detection to all 20 GSAP plugins. Phase 3 adds knowledge base (30+ animation patterns, 11 new plugin components, plugin section instructions). Phase 4 wires plugin-aware injection into generation. Phase 5 adds build reliability (pre-flight validation, post-deploy verification).
 
 ### Completed Plans
+- **[Pattern Identification & Mapping Pipeline](plans/completed/pattern-identification-mapping-pipeline.md)** — v0.9.0. Color intelligence (hue-aware mapping, gradient parsing, multi-accent systems), archetype intelligence (class-signal matching, confidence-based gaps), pattern identification (animation registry queries, UI component detection), gap aggregation with extension tasks, pipeline integration as Stage 0d. 688 insertions across 10 files, 57-assertion test harness.
 - **[Generated Reference Docs](plans/completed/generated-reference-docs.md)** — v0.7.1. `scripts/generate-docs.js` auto-generates api-reference.md, dependencies.md, data-flow.md from source code. Integrated into close checklist.
 - **[Animation Classification + VengenceUI Integration](plans/completed/animation-classification-vengenceui-integration.md)** — v0.7.0. Registry schema upgrade (intensity + affinity scoring for 36 components), 11 VengenceUI components extracted, `selectAnimation()` affinity algorithm, cn() utility in stage_deploy, deduplication across sections.
 - **[Data Injection Pipeline](plans/completed/data-injection-pipeline.md)** — v0.5.0. Animation injector + asset injector + engine-branched prompts + dynamic token budgets + dependency fix.
@@ -377,6 +403,30 @@ Extraction captures: 500 DOM elements with 24 CSS properties, section boundaries
 - Workaround: Manually overwrite layout.tsx with clean font setup after deploy
 - Hit in: farm-minerals-v2, farm-minerals-v3
 - Priority: Medium — fix the regex or add layout.tsx validation
+
+**`hexToTailwindApprox()` loses all hue information**
+- `url-to-preset.js` maps hex colors to Tailwind names using brightness only — no hue detection
+- Symptoms: Bright green (`#0ae448`) → `gray-200`, vivid blue (`#0077ff`) → `gray-400`. ALL non-gray colors from ANY site lose their hue. Presets describe sites as "monochrome gray" when they have rich color palettes
+- Workaround: Manually edit preset palette after extraction
+- Hit in: gsap-homepage (2026-02-10) — green/blue/purple/pink all mapped to grays
+- Fix: Planned in Phase 1C of pattern-identification-mapping-pipeline.md — HSL-based mapping with hue buckets
+- Priority: High — affects every URL-mode build
+
+**Archetype mapper ignores class names and IDs**
+- `archetype-mapper.js` only examines tag names, ARIA roles, and heading text. Class names (the strongest semantic signal on most sites) are completely ignored
+- Symptoms: Sections with class `brands` mapped to `FEATURES | icon-grid`, class `showcase` mapped to `FOOTER`, class `home-tools` mapped to `FEATURES | icon-grid` — all at 30% confidence
+- Workaround: Manually expand/correct preset section sequence after extraction
+- Hit in: gsap-homepage (2026-02-10) — 4 of 6 sections incorrectly mapped
+- Fix: Planned in Phase 2A of pattern-identification-mapping-pipeline.md — add class/ID heuristic layer
+- Priority: High — wrong archetype mapping cascades into wrong section generation
+
+**Gradient colors not parsed from extraction data**
+- `design-tokens.js` extracts `color` and `backgroundColor` as flat hex values but ignores CSS gradients in `backgroundImage`
+- Symptoms: Gradient-defined accent colors (e.g., `linear-gradient(114deg, rgb(10,228,72)...)` on GSAP scroll section) never appear in design tokens or preset
+- Workaround: None — gradient colors are silently lost
+- Hit in: gsap-homepage (2026-02-10) — green gradient defining the Scroll section was captured by extraction but never tokenized
+- Fix: Planned in Phase 1A of pattern-identification-mapping-pipeline.md — add gradient color extraction to `design-tokens.js`
+- Priority: Medium — affects sites that define accent colors via gradients rather than flat backgrounds
 
 ### Resolved Issues (Keep for Reference)
 
@@ -494,16 +544,21 @@ vercel --yes --prod             # Production deployment
 | Rebuild animation registry | `node scripts/quality/build-animation-registry.js` → regenerates all 5 artifacts in `skills/animation-components/registry/` |
 | Add image category | `asset-injector.js:21-47` (URL/ALT category signals) + `asset-injector.js:53-68` (section map) |
 | Add extraction CSS properties | `scripts/quality/lib/extract-reference.js:73-76` |
+| Add class-signal archetype mapping | `archetype-mapper.js` (`CLASS_NAME_SIGNALS` map) |
+| Add color hue family | `design-tokens.js` (`HUE_FAMILIES` array) |
+| Add UI component detector | `pattern-identifier.js` (`matchUIComponents()` function) |
+| Run pattern pipeline tests | `node scripts/quality/test-pattern-pipeline.js` |
 
 ---
 
 ## System Version
 
-**Current:** v0.8.0 (2026-02-10)
+**Current:** v0.9.0 (2026-02-11)
 
 ### Changelog
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.9.0 | 2026-02-11 | Pattern Identification Pipeline: New identification layer (Stage 0d) between extraction and generation. Color intelligence: hue-aware Tailwind mapping (`hexToTailwindHue`), gradient color extraction (`collectGradientColors`), color system classification (`identifyColorSystem`), per-section profiling (`profileSectionColors`). Archetype intelligence: class-signal matching (`CLASS_NAME_SIGNALS`), content-aware variant selection, confidence-based gap flagging. New `pattern-identifier.js`: animation pattern matching via registry search index, UI component detection (logo-marquee, video-embed, card-grid, accordion, tabs), section mapping, gap aggregation with extension tasks. Preset format extended with `accent_secondary`, `accent_tertiary`, `section_accents`. 688 insertions across 10 files. Test harness: 57 assertions. Validated against live gsap.com. |
 | v0.8.0 | 2026-02-10 | Animation Registry: `build-animation-registry.js` analyzes all 1022 components (36 curated + 986 21st-dev), generates 5 artifacts: `animation_registry.json` (1.6MB, full analysis), `animation_taxonomy.json` (controlled vocabulary), `animation_search_index.json` (query-optimised by intent/trigger/section/framework), `animation_capability_matrix.csv`, `analysis_log/` (1022 .md files). Classification: 335 animation, 613 UI, 74 hybrid. Fixed 5 broken source library components. Zero quality gate failures. |
 | v0.7.2 | 2026-02-10 | Animation library import fix: rewrote 6 broken components (word-reveal, count-up, blur-fade, magnetic-button, hover-lift), created @/lib/utils.ts, refactored 8 sections to use library imports instead of inline copies. 8 unique animation components now actively imported. Updated animation-upgrade skill with Phase 0 component inventory and import-first mandate. |
 | v0.7.1 | 2026-02-10 | Generated reference docs: `scripts/generate-docs.js` produces `docs/api-reference.md` (488 lines, all exported functions with signatures + caller graph), `docs/dependencies.md` (NPM packages + config constants), `docs/data-flow.md` (module I/O + require graph). Integrated into close checklist. |

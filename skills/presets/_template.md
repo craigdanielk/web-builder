@@ -30,7 +30,12 @@ palette:
   text_muted: 
   accent: 
   accent_hover: 
+  accent_secondary:            # optional — second brand color
+  accent_tertiary:             # optional — third brand color
   border: 
+
+section_accents:               # optional — per-section color overrides
+  # section_class: tailwind-color
 
 typography:
   pairing: 

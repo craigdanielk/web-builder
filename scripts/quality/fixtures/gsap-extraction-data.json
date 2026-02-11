@@ -1,0 +1,80 @@
+{
+  "url": "https://gsap.com/",
+  "renderedDOM": [
+    {
+      "tag": "div", "rect": { "y": 0, "x": 0, "width": 1440, "height": 80 },
+      "styles": { "backgroundColor": "rgba(0, 0, 0, 0)", "color": "rgb(255, 255, 255)", "fontFamily": "'Inter', sans-serif", "fontSize": "14px", "fontWeight": "500" },
+      "classNames": "nav-inner", "role": "navigation"
+    },
+    {
+      "tag": "h1", "rect": { "y": 120, "x": 100, "width": 1240, "height": 100 },
+      "styles": { "backgroundColor": "rgb(10, 10, 10)", "color": "rgb(255, 255, 255)", "fontFamily": "'Inter', sans-serif", "fontSize": "72px", "fontWeight": "700" },
+      "classNames": "hero-headline"
+    },
+    {
+      "tag": "div", "rect": { "y": 900, "x": 0, "width": 1440, "height": 400 },
+      "styles": { "backgroundColor": "rgb(10, 228, 72)", "color": "rgb(255, 255, 255)", "fontFamily": "'Inter', sans-serif", "fontSize": "24px", "fontWeight": "600" },
+      "classNames": "tool-card scroll-card"
+    },
+    {
+      "tag": "div", "rect": { "y": 1350, "x": 0, "width": 1440, "height": 400 },
+      "styles": { "backgroundColor": "rgb(139, 92, 246)", "color": "rgb(255, 255, 255)", "fontFamily": "'Inter', sans-serif", "fontSize": "24px", "fontWeight": "600" },
+      "classNames": "tool-card svg-card"
+    },
+    {
+      "tag": "div", "rect": { "y": 1800, "x": 0, "width": 1440, "height": 400 },
+      "styles": { "backgroundColor": "rgb(236, 72, 153)", "color": "rgb(255, 255, 255)", "fontFamily": "'Inter', sans-serif", "fontSize": "24px", "fontWeight": "600" },
+      "classNames": "tool-card text-card"
+    },
+    {
+      "tag": "div", "rect": { "y": 2250, "x": 0, "width": 1440, "height": 400 },
+      "styles": { "backgroundColor": "rgb(59, 130, 246)", "color": "rgb(255, 255, 255)", "fontFamily": "'Inter', sans-serif", "fontSize": "24px", "fontWeight": "600" },
+      "classNames": "tool-card ui-card"
+    },
+    {
+      "tag": "img", "rect": { "y": 2800, "x": 100, "width": 120, "height": 40 }, "classNames": "brand-logo", "styles": {} },
+    { "tag": "img", "rect": { "y": 2800, "x": 250, "width": 120, "height": 40 }, "classNames": "brand-logo", "styles": {} },
+    { "tag": "img", "rect": { "y": 2800, "x": 400, "width": 120, "height": 40 }, "classNames": "brand-logo", "styles": {} },
+    { "tag": "img", "rect": { "y": 2800, "x": 550, "width": 120, "height": 40 }, "classNames": "brand-logo", "styles": {} },
+    { "tag": "img", "rect": { "y": 2800, "x": 700, "width": 120, "height": 40 }, "classNames": "brand-logo", "styles": {} },
+    {
+      "tag": "div", "rect": { "y": 3200, "x": 0, "width": 1440, "height": 600 },
+      "styles": { "backgroundColor": "rgb(20, 20, 20)", "color": "rgb(200, 200, 200)", "fontFamily": "'Inter', sans-serif" },
+      "classNames": "showcase-grid"
+    }
+  ],
+  "textContent": [
+    { "text": "Animate Anything", "isHeading": true, "tag": "h1", "rect": { "y": 130 }, "fontFamily": "Inter", "fontSize": "72px", "color": "#ffffff" },
+    { "text": "Scroll", "isHeading": true, "tag": "h2", "rect": { "y": 920 }, "fontFamily": "Inter", "fontSize": "48px", "color": "#ffffff" },
+    { "text": "SVG", "isHeading": true, "tag": "h2", "rect": { "y": 1370 }, "fontFamily": "Inter", "fontSize": "48px", "color": "#ffffff" },
+    { "text": "Text", "isHeading": true, "tag": "h2", "rect": { "y": 1820 }, "fontFamily": "Inter", "fontSize": "48px", "color": "#ffffff" },
+    { "text": "UI", "isHeading": true, "tag": "h2", "rect": { "y": 2270 }, "fontFamily": "Inter", "fontSize": "48px", "color": "#ffffff" },
+    { "text": "Brands using GSAP\u00ae", "isHeading": true, "tag": "h2", "rect": { "y": 2720 }, "fontFamily": "Inter", "fontSize": "32px", "color": "#ffffff" },
+    { "text": "Showcase", "isHeading": true, "tag": "h2", "rect": { "y": 3120 }, "fontFamily": "Inter", "fontSize": "48px", "color": "#ffffff" },
+    { "text": "Get Started", "isInteractive": true, "tag": "button", "rect": { "y": 300 }, "text": "Get Started" }
+  ],
+  "sections": [
+    { "tag": "nav", "label": "", "classNames": "nav", "id": "nav", "rect": { "y": 0, "height": 80 }, "role": "navigation" },
+    { "tag": "section", "label": "Animate Anything", "classNames": "hero", "id": "hero", "rect": { "y": 80, "height": 800 } },
+    { "tag": "section", "label": "GSAP Tools", "classNames": "home-tools", "id": "tools", "rect": { "y": 880, "height": 1800 } },
+    { "tag": "section", "label": "Brands using GSAP\u00ae", "classNames": "brands", "id": "brands", "rect": { "y": 2680, "height": 400 } },
+    { "tag": "section", "label": "Showcase", "classNames": "showcase", "id": "showcase", "rect": { "y": 3080, "height": 800 } },
+    { "tag": "footer", "label": "", "classNames": "footer", "id": "footer", "rect": { "y": 3880, "height": 300 } }
+  ],
+  "assets": {
+    "fonts": ["Inter"],
+    "backgroundImages": [
+      "linear-gradient(114.41deg, rgb(10, 228, 72) 0%, rgb(171, 255, 132) 100%)",
+      "linear-gradient(114.41deg, rgb(139, 92, 246) 0%, rgb(196, 167, 255) 100%)",
+      "linear-gradient(114.41deg, rgb(236, 72, 153) 0%, rgb(255, 167, 210) 100%)",
+      "linear-gradient(114.41deg, rgb(59, 130, 246) 0%, rgb(147, 197, 253) 100%)"
+    ],
+    "images": []
+  },
+  "animations": {
+    "evidence": {
+      "globals": { "gsap": true, "ScrollTrigger": true },
+      "networkResults": {}
+    }
+  }
+}

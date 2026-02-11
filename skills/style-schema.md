@@ -28,15 +28,37 @@ the specific palette from it.
 
 **Token structure for any temperature:**
 ```
---color-bg-primary:      Main background
---color-bg-secondary:    Alternate section background
---color-bg-accent:       Highlighted areas
---color-text-primary:    Body text
---color-text-heading:    Heading text
---color-text-muted:      Secondary/caption text
---color-accent:          CTA buttons, links, highlights
---color-accent-hover:    Hover state of accent
---color-border:          Subtle borders and dividers
+--color-bg-primary:          Main background
+--color-bg-secondary:        Alternate section background
+--color-bg-accent:           Highlighted areas
+--color-text-primary:        Body text
+--color-text-heading:        Heading text
+--color-text-muted:          Secondary/caption text
+--color-accent:              CTA buttons, links, highlights
+--color-accent-hover:        Hover state of accent
+--color-accent-secondary:    Optional second brand color
+--color-accent-tertiary:     Optional third brand color
+--color-border:              Subtle borders and dividers
+```
+
+#### Multi-Accent Systems
+
+When a site uses distinct accent colors per section or product category,
+the preset defines secondary/tertiary accents and optional `section_accents`.
+
+```
+section_accents:
+  scroll: green-500        # Scroll tool section uses green accent
+  svg: purple-500          # SVG tool section uses purple accent
+  text: pink-500           # Text tool section uses pink accent
+```
+
+Section accents are applied via the section generation prompt, not `globals.css`.
+The compact style header includes an `Accents:` line when multi-accent is detected:
+
+```
+Palette: dark-neutral (black/stone-950/amber-50/orange-500)
+  Accents: scroll:green-500 svg:purple-500 text:pink-500
 ```
 
 **Tailwind mapping example (warm):**

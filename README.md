@@ -98,7 +98,7 @@ web-builder/
 │   ├── image-extraction.md         ← Image categorization spec (10 categories)
 │   ├── presets/                    ← Industry-specific configurations
 │   │   ├── _template.md            ← Empty preset template
-│   │   └── ... (23 presets)        ← See skills/presets/ for full list
+│   │   └── ... (32 presets)        ← See skills/presets/ for full list
 │   └── components/                 ← Reusable component documentation
 │       ├── cursor-trail.md         ← Mouse-following trail effect
 │       └── image-patterns.md       ← CSS backgroundImage rendering patterns
@@ -131,18 +131,21 @@ web-builder/
 │           └── src/components/sections/
 │
 ├── scripts/                        ← Orchestration and utility scripts
-│   ├── orchestrate.py (1161 lines) ← Main pipeline — 6 stages + injection wiring
+│   ├── orchestrate.py (1404 lines) ← Main pipeline — 7 stages + injection wiring
 │   └── quality/                    ← URL extraction + validation tools
-│       ├── url-to-preset.js        ← URL → preset markdown
+│       ├── url-to-preset.js        ← URL → preset markdown (+ color system integration)
 │       ├── url-to-brief.js         ← URL → brief markdown
 │       ├── enrich-preset.js        ← Enrich preset with design token extraction
 │       ├── validate-build.js       ← Post-build quality validation
 │       ├── test-animation-detector.js ← Standalone animation detection test
+│       ├── test-pattern-pipeline.js ← Pattern identification test harness (57 assertions)
+│       ├── fixtures/               ← Synthetic test data for pipeline testing
 │       └── lib/
 │           ├── extract-reference.js   ← Playwright extraction engine
 │           ├── animation-detector.js  ← Animation library detection
-│           ├── archetype-mapper.js    ← Section → archetype mapping
-│           ├── design-tokens.js       ← CSS → design token collection
+│           ├── archetype-mapper.js    ← Section → archetype mapping (+ class signals, gaps)
+│           ├── design-tokens.js       ← CSS → design token collection (+ color intelligence)
+│           ├── pattern-identifier.js  ← Pattern identification, animation/UI matching, gap aggregation
 │           ├── animation-injector.js  ← Per-section animation prompt builder
 │           ├── asset-injector.js      ← Per-section asset prompt builder
 │           ├── asset-downloader.js    ← Download + verify extracted assets
@@ -283,7 +286,7 @@ A preset contains:
 
 See `skills/presets/artisan-food.md` for a fully populated example.
 
-### Available Presets (23)
+### Available Presets (32)
 
 | Preset | Industries Covered |
 |--------|--------------------|
