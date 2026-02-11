@@ -9,10 +9,12 @@
 
 | Key | Value |
 |-----|-------|
+| System Vision | **See `VISION.md`** — full Aurelix platform plan (Shopify migration + new build) |
+| Commerce Contract | `skills/commerce-contract.ts` — Shopify Storefront API types + section prop contracts |
 | Runtime | Python 3 + Node.js (hybrid pipeline) |
 | Generated stack | Next.js 16.1.6 / React 19 / Tailwind CSS 4 / TypeScript 5 |
 | Animation engines | GSAP 3.14 + Framer Motion 12 (both can coexist) |
-| Pipeline entry | `scripts/orchestrate.py` (1211 lines) |
+| Pipeline entry | `scripts/orchestrate.py` (1404 lines) |
 | API | Anthropic Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) |
 | Deployment | Vercel CLI (`vercel --yes`) |
 | API key | `ANTHROPIC_API_KEY` in `.env` (gitignored) |
@@ -338,6 +340,7 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 | turm-kaffee-v3 | artisan-food | framer-motion | Vercel |
 | gsap-homepage | gsap-homepage | gsap | Vercel* |
 | gsap-v9-test | gsap-v9-test | gsap | Vercel** |
+| gsap-v10 | gsap-v10 | gsap | Vercel |
 
 *farm-minerals-anim: Built before v0.5.0 injection pipeline — preset says gsap but sections use framer-motion. Rebuild with injection pipeline to fix.
 *nicola-romei: Required manual post-build fixes — preset misclassified color (dark vs light #f3f3f3), 0 sections detected in Webflow site broke asset injection, scaffold parser failed on bold markdown. See retro for details.
