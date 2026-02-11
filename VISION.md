@@ -1,7 +1,3 @@
-Let me pull together the full plan from our project knowledge and recent conversations.Now I have a comprehensive picture. Let me compile the full plan document.I have everything I need. Here's the full plan for your Cursor agent:
-
----
-
 # AURELIX: COMPLETE SYSTEM PLAN & NORTH STAR
 
 ## WHAT AURELIX IS
@@ -36,6 +32,18 @@ Aurelix is **three composable modules** that chain together through clean file-b
 ```
 
 **Critical design principle:** Each module has a single responsibility and communicates through file-based interfaces (JSON specs, markdown briefs). No module needs internal knowledge of another module's implementation. The Calculator does not know about section archetypes. The Web Builder does not know about Shopify collections. The Shopify Integration Layer does not know about Tailwind classes.
+
+### Repository Architecture (5 Independent Repos)
+
+```
+aurelix-mvp/              → Web Builder (Node.js + Python orchestrator) — THIS REPO
+aurelix-calculator/       → Calculator (Python) — crawls sites, outputs architecture.json + brief.md
+site-mapper repo          → Calculates required pages, templates, navigation, collections
+url-mapper repo           → Maps source URLs → Shopify URLs, multi-market, imports redirects
+bulk-graphql-importer repo → Imports 50k products into Shopify in ~120 minutes
+```
+
+**Integration pattern:** Each tool exposes a CLI interface. The pipeline orchestrator calls them sequentially via subprocess. Artifacts pass between them as files on disk (JSON, CSV, markdown) in a shared `output/{project}/` directory. This is the permanent architecture, not a temporary arrangement.
 
 ---
 
@@ -158,31 +166,68 @@ Analyze a source website or structured data export and output a deterministic ar
 ### Purpose
 Take a brief and industry preset, generate a production-quality Next.js website through a multi-pass pipeline, and deploy it to Vercel.
 
-### Current State: PRODUCTION-READY ✅
+### Current State: PRODUCTION-READY for static sites; commerce-ready pending page template work (in progress) ✅
 - 23 industry presets covering major verticals
 - 25 section archetypes with 95+ variants
 - 7-dimension style schema (color, type, space, radius, motion, density, imagery)
 - Compact style header mechanism prevents visual drift across sections
 - Dual animation engine: GSAP + ScrollTrigger or Framer Motion
 - URL clone mode: Playwright extraction → auto-generated preset + brief → build
-- Python SDK orchestration script (1161 lines, 6 stages + injection wiring)
+- Python SDK orchestration script (1404 lines, 7 stages + injection wiring)
 - Multi-agent support (Architect, Builder, Reviewer, Fixer roles)
 - Automated Vercel deployment
 - Cost: ~$0.55-1.15 per page in API calls
 - Fully isolated builds — 100 agents can build in parallel
+- Commerce prop contract defined (`skills/commerce-contract.ts`) — Shopify Storefront API types
 
 ### Interface Contract
-- **Input 1:** `briefs/{project}.md` (Calculator generates this)
+- **Input 1:** `briefs/{project}.md` (Calculator generates this, or human-written)
 - **Input 2:** Preset selection (`skills/presets/{preset}.md`)
+- **Input 3:** `output/{project}/architecture.json` (optional — Calculator generates this for Shopify migrations)
 - **Output:** Deployed Next.js site at `output/{project}/site/`
 
-The site is a **standalone frontend** — it does NOT contain Shopify API connections, cart logic, or checkout flow. Those are added by Module 3.
+The Web Builder reads `architecture.json` for: page template count (how many templates to generate), collection structure (for navigation and collection page template design), market configuration (locale-aware routing if needed), and page list (which landing pages to generate). The brief.md is the primary interface; architecture.json provides the structural data the brief references.
+
+The site is a **standalone frontend** — it does NOT contain Shopify API connections, cart logic, or checkout flow. Those are added by Module 3. Commerce sections are generated as **prop-driven components** that accept typed Shopify data (see `skills/commerce-contract.ts`), ready for Module 3 to wire real data without modifying the generated code.
 
 ### What Does NOT Need Building in Web Builder
 Do not add: Shopify Storefront API client code, cart/checkout logic, product data fetching, collection page routing, Supabase integration, media upload pipelines. These belong in Module 3.
 
+### Parallel Paths: Visual-Only vs. Full Shopify Migration
+
+The Web Builder operates in two modes:
+
+**Visual-only mode** (`--from-url`): Remains as a standalone path for non-Shopify builds. Extracts visual DNA via Playwright, generates preset + brief, builds and deploys a static site. No Calculator needed.
+
+**Shopify migration mode** (brief-driven): The Calculator runs first, generates brief.md + architecture.json, then the Web Builder runs in standard brief-driven mode. The Calculator wraps the existing extraction pipeline — it calls it for brand identity extraction (colors, fonts, imagery) while adding page structure analysis on top.
+
+### Multi-Page Generation
+
+The Web Builder generates a **template set** per store (5-8 page templates), not individual pages per product:
+
+| Page Type | Generation | Route | Data Model |
+|-----------|-----------|-------|------------|
+| Homepage | Static, self-contained | `/` | Hardcoded content |
+| About | Static, self-contained | `/about` | Hardcoded content |
+| Contact | Static, self-contained | `/contact` | Hardcoded content |
+| Landing pages | Static, individually generated | `/pages/[handle]` | Hardcoded per-page |
+| Legal pages | Static, self-contained | `/pages/[handle]` | Hardcoded content |
+| Collection page | Prop-driven visual shell | `/collections/[handle]` | `collection`, `products[]` from Storefront API |
+| Product page | Prop-driven visual shell | `/products/[handle]` | `product`, `variants[]`, `relatedProducts` from Storefront API |
+| Cart | Module 3 pre-built component | Cart drawer or `/cart` | Storefront Cart API |
+
+Static pages are generated fully by the Web Builder. Commerce pages (collection, product) are generated as visual shells with prop-driven sections — Module 3 owns the data layer. Cart is entirely Module 3's responsibility (pre-built component inheriting design tokens via Tailwind/CSS variables).
+
+### Commerce Section Contract
+
+Commerce sections accept typed props matching Shopify's Storefront API. Defined in `skills/commerce-contract.ts`:
+
+- **Static sections** (Hero, About, CTA, FAQ, etc.) — self-contained, hardcoded content
+- **Prop-driven sections** (ProductGrid, ProductDetail, CollectionHero) — accept typed Shopify data via props
+- **Hybrid sections** (Nav, Footer, FeaturedProducts) — work standalone with fallback content, enhanced with real data when available
+
 ### Current Work: Page Preset Template Builds
-This is where **you** (the cursor agent) are right now. Building out the page-level preset templates that the Web Builder uses to generate sections.
+Building page-level preset templates that define section sequences for each page type, with sections correctly marked as static or prop-driven.
 
 ---
 
@@ -192,6 +237,24 @@ This is where **you** (the cursor agent) are right now. Building out the page-le
 Take the Calculator's architecture spec and the Web Builder's deployed Vercel project, and wire them together into a live headless Shopify storefront.
 
 ### Current State: NOT YET BUILT (architecture fully specified)
+
+### Static → Dynamic Integration (Option D: Hybrid)
+
+The Web Builder generates two kinds of output that Module 3 handles differently:
+
+- **Static pages** (homepage, about, contact, legal, landing): Generated fully by the Web Builder. Module 3 injects a lightweight data fetching layer only for minor dynamic elements (e.g., featured products widget on homepage).
+- **Commerce pages** (product detail, collection grid): Use pre-built page templates from Module 3 that contain Storefront API wiring. The Web Builder provides the visual shell — style tokens, color palette, typography, animation preferences, component styling. Module 3 owns the data layer and commerce logic entirely.
+- **Cart**: Pre-built by Module 3 (based on Vercel's Next.js Commerce reference). Inherits design tokens via Tailwind/CSS variables from the Web Builder's output.
+
+### Dev Store Strategy
+
+- **Reusable test stores:** For pipeline development and validation (wipe and rebuild repeatedly)
+- **Fresh dev stores:** Per client project for actual deliverables (clean slate, transfer to client via Shopify Partner Dashboard)
+- The pipeline supports both via an `--existing-store` flag for test stores and default fresh store creation for production use
+
+### Supabase Scope
+
+Stays contained to Module 3 for MVP. Filesystem-based artifact passing (`output/{project}/`) between modules. Supabase stores project state, deployment history, and media URL mappings within Module 3 only. Post-MVP, if multi-agent coordination or resumable cross-module workflows are needed, Supabase becomes the coordination layer.
 
 ### Infrastructure Decisions (LOCKED — do not revisit)
 - **Frontend:** Next.js deployed to Vercel
@@ -245,7 +308,7 @@ media_mappings (id, project_id, source_url, shopify_cdn_url, asset_type, upload_
 
 ## ADDITIONAL TOOLS TO INTEGRATE (BUILT INDEPENDENTLY)
 
-These are **existing tools** that need to be wired into the pipeline:
+These are **existing tools** in separate GitHub repos that need to be wired into the pipeline via CLI subprocess calls. Each tool exposes a CLI interface; the orchestrator calls them sequentially. Artifacts pass as files in `output/{project}/`.
 
 ### Tool 1: Site-Mapping & Architecture Structure System
 For migrations, this calculates:
@@ -255,7 +318,7 @@ For migrations, this calculates:
 - Site navigation mapping
 - Collections for the Shopify store
 
-**Integration point:** Feeds INTO the Calculator (Module 1) or replaces parts of its site architecture logic.
+**Integration point:** Feeds INTO the Calculator (Module 1), providing the structural analysis that the Calculator incorporates into `architecture.json`. Called by the Calculator as a subprocess step.
 
 ### Tool 2: URL Mapping System
 - Maps from existing store URLs to new Shopify store URLs
@@ -263,14 +326,14 @@ For migrations, this calculates:
 - Imports redirect mappings directly into the store
 - Produces the `redirects` section of `architecture.json`
 
-**Integration point:** Feeds into Module 3's `create-redirects.ts` and the Calculator's redirect output.
+**Integration point:** Called by the Calculator during architecture generation (to produce redirect mappings) and by Module 3's `create-redirects.ts` (to import redirects into Shopify).
 
 ### Tool 3: Bulk GraphQL Product Importer
 - Can import 50,000 products into Shopify in approximately 120 minutes
 - Uses bulk GraphQL operations for maximum throughput
 - Handles rate limiting and error recovery
 
-**Integration point:** Replaces or augments `import-products.ts` in Module 3's Shopify Admin API Orchestration.
+**Integration point:** Called by Module 3 as a subprocess, replacing the built-in `import-products.ts` for large catalogs. For stores with <1,000 products, Module 3's native Admin API import may be sufficient.
 
 ### Remaining Puzzle Pieces
 - **CDN Media Asset Mapping:** For migration stores, mapping source CDN image URLs to Shopify CDN destinations. Covered by `media-manifest.json` architecture — implementation needed in `upload-media.ts` using Shopify's `fileCreate` (accepts source URL, Shopify downloads and processes).
@@ -368,9 +431,20 @@ No payment code, no PCI compliance burden, no payment gateway configuration.
 
 ## IMPLEMENTATION SEQUENCE
 
-Build in this order. Each phase is independently valuable.
+Build in this order. Parallel tracks where noted. Each phase is independently valuable.
 
-### Phase 1: Calculator Generalization (Weeks 1-2)
+### Phase 0: Commerce Contract + Page Templates (NOW — Web Builder)
+- Define commerce prop contract (`skills/commerce-contract.ts`) ✅ DONE
+- Build page template structures into presets (homepage, collection, product, landing, about, contact, legal)
+- Mark sections as static / prop-driven / hybrid
+- Validate section generation produces prop-driven commerce components
+- Update section generation prompt for commerce-aware output
+
+**Deliverable:** Web Builder generates a complete template set (5-8 page types) with commerce sections accepting typed Shopify props
+
+### Phase 1: Parallel Tracks (Weeks 1-2)
+
+**Track A: Calculator Generalization**
 - Generalize URL crawler beyond Turm/Magento
 - Implement platform detection (Magento, Shopify, WooCommerce, generic)
 - Build page classifier (product, category, content, legal, contact)
@@ -380,6 +454,15 @@ Build in this order. Each phase is independently valuable.
 - Test on 10-20 diverse sites
 
 **Deliverable:** Given any e-commerce URL → outputs architecture.json + brief.md + media-manifest.json
+
+**Track B: Module 2→3 Handoff Spike (1-2 days)**
+- Take one existing Web Builder output (e.g., turm-kaffee-v3)
+- Manually wire it to a Shopify dev store via Storefront API
+- Validate the Option D hybrid approach: static pages as-is, commerce pages with injected data layer
+- Document: what works, what breaks, what the Web Builder output needs to change
+- De-risk weeks of downstream integration work
+
+**Deliverable:** Validated proof that Web Builder output can receive Shopify data injection
 
 ### Phase 2: Shopify Admin API Orchestration (Weeks 2-3)
 - Build collection creator (with smart rules)
@@ -431,7 +514,7 @@ Items explicitly removed or deferred:
 | Figma extraction pipeline | DEFERRED | Web Builder achieves sufficient quality with Playwright + style header |
 | Custom Liquid theme generation | REMOVED | Headless approach eliminates need for Shopify themes |
 | UWR (Universal Web Representation) | REMOVED | Over-engineered; direct structured extraction is simpler |
-| Multi-page clone in Web Builder | DEFERRED post-MVP | Single-page generation is the current unit of work |
+| Per-product static page generation | DEFERRED | 1 template per page type, Next.js dynamic routes handle N instances |
 | CMS integration (Sanity/Strapi) | DEFERRED post-MVP | Shopify is the CMS for commerce content |
 | A/B testing framework | DEFERRED post-MVP | Build core pipeline first |
 | White-label / SaaS pricing | DEFERRED post-MVP | Validate with 10-20 builds first |
@@ -483,17 +566,25 @@ The system is production-ready when:
 
 ## WHERE YOU (CURSOR AGENT) FIT RIGHT NOW
 
-You are working on **Module 2: Web Builder** — specifically the page preset template builds. This is the correct current focus. The system plan above shows you the full picture so you can:
+You are working on **Module 2: Web Builder** — specifically Phase 0: the page preset template builds with commerce-aware section generation. This is the correct current focus.
 
-1. **Understand the interfaces** — your output (deployed Next.js site) feeds into Module 3
-2. **Keep scope clean** — don't add Shopify logic, cart code, or product fetching to the Web Builder
-3. **See what's coming** — the three additional tools (site-mapping, URL mapping, bulk GraphQL) will integrate into Modules 1 and 3
-4. **Know the north star** — source URL → live headless storefront in under 2 hours
+### Completed
+- Commerce prop contract defined (`skills/commerce-contract.ts`) — Shopify Storefront API types, section data mode classification, page template metadata
 
-Continue with the page preset template builds. Once those are solid, we'll wire the modules together and close the pipeline with Vercel and Shopify dev stores for testing.
+### In Progress
+- Page template structures in presets (homepage, collection, product, landing, about, contact, legal)
+- Section generation prompt updates for prop-driven commerce sections
+
+### Context for Decision-Making
+1. **Understand the interfaces** — your output (deployed Next.js site with prop-driven commerce sections) feeds into Module 3
+2. **Keep scope clean** — don't add Shopify API client code, cart logic, or product data fetching. Generate components that ACCEPT data via props. Module 3 provides the data.
+3. **Commerce contract** — `skills/commerce-contract.ts` defines the prop shapes. Commerce sections must import and use these types.
+4. **Static vs. prop-driven** — check `SECTION_DATA_MODES` in the commerce contract before generating any section. Static sections: generate as today. Prop-driven: accept typed props, render from props, include empty-state handling.
+5. **See what's coming** — the three additional tools (site-mapping, URL mapping, bulk GraphQL) integrate into Modules 1 and 3, not the Web Builder
+6. **Know the north star** — source URL → live headless storefront in under 2 hours
 
 ---
 
-*Document compiled: 2026-02-11*
-*Source of truth: AURELIX × WEB BUILDER System Integration Specification (2026-02-10)*
-*Status: Active — implementation Phase 1 ready*
+*Document created: 2026-02-11*
+*Last updated: 2026-02-11*
+*Status: Active — Phase 0 in progress*
