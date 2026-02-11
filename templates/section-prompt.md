@@ -72,6 +72,31 @@ Requirements:
      * All other sections → fade-up-stagger (default)
    - Always return ctx.revert() in useEffect cleanup
 
+9. **Archetype + Variant Overrides:**
+
+   **When archetype is PRODUCT-SHOWCASE and variant is `demo-cards`:**
+   - CRITICAL: Each card in this showcase MUST have a visually DISTINCT treatment
+   - Each card gets a UNIQUE gradient direction and color combination from the palette
+     (e.g., card 1: top-left to bottom-right green→black, card 2: radial blue→dark, etc.)
+   - Each card gets a UNIQUE micro-animation that represents its label/category:
+     * "3D Product Rotation" → subtle CSS perspective rotate on hover (`card-3d-rotate`)
+     * "Morph Path Animation" → background SVG blob that morphs shape (`card-morph-blob`)
+     * "Motion Path Sequences" → small dot orbiting the card border (`card-orbit-dot`)
+     * "Flip Layout Transitions" → card flip animation on hover (`card-flip-preview`)
+     * "DrawSVG Sequences" → SVG stroke drawing around the card on scroll (`card-stroke-draw`)
+     * "Text Animations" → title text scrambles/reveals on hover (`card-text-scramble`)
+     * "Gradient Effects" → unique gradient hue shift on hover (`card-gradient-shift`)
+     * "Particle Effects" → particles burst from card on hover (`card-particle-burst`)
+   - Each card's hover state must be different from other cards
+   - Use the detected GSAP plugins for these effects where available
+   - When no GSAP plugins are detected, use CSS-only fallbacks:
+     * perspective + rotateY/rotateX for 3D
+     * clip-path transitions for reveals
+     * background-position shifts for gradients
+     * transform: scale + box-shadow for lifts
+   - DO NOT give all cards the same gradient, same hover effect, or same layout
+   - The entire point of this section is showing VARIETY
+
 Output ONLY the component code. No explanation, no markdown wrapping.
 Export the component as default.
 

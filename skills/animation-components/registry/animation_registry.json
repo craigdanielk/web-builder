@@ -1,9 +1,9 @@
 {
   "version": "1.0.0",
-  "generated": "2026-02-11T01:17:49.017Z",
-  "total_components": 1033,
+  "generated": "2026-02-11T02:00:26.159Z",
+  "total_components": 1034,
   "breakdown": {
-    "animation": 346,
+    "animation": 347,
     "ui": 613,
     "hybrid": 74
   },
@@ -833,6 +833,74 @@
       "named_exports": [
         "WordReveal"
       ],
+      "keyframe_names": [],
+      "example_usage_refs": []
+    },
+    {
+      "animation_id": "scroll__gsap_pinned_horizontal",
+      "source_file": "scroll/gsap-pinned-horizontal.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "scroll",
+      "trigger_types": [
+        "scroll_linked",
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "section"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "reveal",
+        "slide",
+        "pin"
+      ],
+      "interaction_intents": [
+        "scroll"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "medium",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 178,
+      "has_default_export": true,
+      "named_exports": [],
       "keyframe_names": [],
       "example_usage_refs": []
     },

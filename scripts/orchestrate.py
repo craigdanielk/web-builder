@@ -383,6 +383,9 @@ preset's section sequence as your starting point, then adapt it:
 2. REMOVE sections that aren't relevant to this specific client
 3. REORDER if the client's priorities suggest a different flow
 4. SELECT the best variant for each section based on the brief's specifics
+5. If the site is a premium/creative brand, consider using the PINNED-SCROLL
+   archetype for immersive content showcases. Variants: horizontal-panels,
+   animated-scene, product-journey, timeline-scroll.
 
 Output format — a numbered section list:
 
@@ -692,6 +695,28 @@ def stage_sections(
             if id_parts:
                 identification_block = "\n" + "\n\n".join(id_parts) + "\n"
 
+        # Pinned scroll context block (v1.1.0)
+        pinned_scroll_block = ""
+        if section["archetype"] == "PINNED-SCROLL":
+            pinned_scroll_block = """
+═══ PINNED HORIZONTAL SCROLL RULES ═══
+This section MUST use GSAP ScrollTrigger with pin: true and scrub: true.
+Structure: section (100vh) → overflow-hidden container → flex track with will-change-transform → panels.
+Each panel should be min-w-[100vw] or content-sized blocks.
+
+CRITICAL: Use `containerAnimation` for ANY nested animations inside the pinned scroll.
+Without containerAnimation, nested ScrollTriggers respond to vertical page scroll, not horizontal position.
+
+MUST include:
+- gsap.matchMedia() for mobile fallback (< 768px → vertical stack)
+- invalidateOnRefresh: true for responsive recalculation
+- Progress indicator (bar, dots, or panel counter)
+- prefers-reduced-motion handler
+
+See section-instructions-gsap.md for the full PINNED-SCROLL pattern.
+═══════════════════════════════════════
+"""
+
         # GSAP plugin context for section prompt (when identification has detectedPlugins)
         plugin_block = ""
         if identification and identification.get("detectedPlugins"):
@@ -711,9 +736,13 @@ Content Direction: {section['content']}
 
 ## Structural Reference
 {structure_ref}
-{ref_context_block}{animation_context_block}{asset_context_block}{identification_block}{plugin_block}
+{ref_context_block}{animation_context_block}{asset_context_block}{identification_block}{pinned_scroll_block}{plugin_block}
 {instructions}
 Component name: Section{num}{section['archetype'].replace('-', '')}"""
+
+        # PINNED-SCROLL sections are complex — minimum 8192 tokens
+        if section["archetype"] == "PINNED-SCROLL":
+            token_budget = max(token_budget, 8192)
 
         code = call_claude(prompt, "section", max_tokens_override=token_budget)
 

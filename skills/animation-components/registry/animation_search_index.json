@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "generated": "2026-02-11T01:17:49.023Z",
-  "total_entries": 1033,
+  "generated": "2026-02-11T02:00:26.163Z",
+  "total_entries": 1034,
   "by_intent": {
     "reveal": [
       "entrance__blur_fade",
@@ -9,6 +9,7 @@
       "entrance__fade_up_single",
       "entrance__scale_up",
       "entrance__word_reveal",
+      "scroll__gsap_pinned_horizontal",
       "scroll__pin_and_reveal",
       "text__split_text_stagger",
       "text__splittext_chars",
@@ -142,6 +143,7 @@
       "entrance__slide_in_left",
       "entrance__slide_in_right",
       "entrance__staggered_timeline",
+      "scroll__gsap_pinned_horizontal",
       "interactive__cursor_trail",
       "interactive__draggable_carousel",
       "interactive__magnetic_button",
@@ -1528,6 +1530,19 @@
       "yashvw25__neon_flow",
       "youcefbnm__reveal_on_hover"
     ],
+    "pin": [
+      "scroll__gsap_pinned_horizontal",
+      "scroll__pin_and_reveal",
+      "aceternity__3d_pin",
+      "arihantcodes__spinner",
+      "kedhareswer_12110626__glass_cards",
+      "kedhareswer_12110626__snow_ball_loading_spinner",
+      "m_kumailalirajpoot__core_spin_loader",
+      "minhxthanh__weave_spinner",
+      "osmosupply__looping_words_with_gsap",
+      "ruixen_ui__scroll_faqaccordion",
+      "theritikk__luma_spin"
+    ],
     "parallax": [
       "scroll__horizontal_scroll",
       "scroll__parallax_layers",
@@ -1568,18 +1583,6 @@
     "horizontal_scroll": [
       "scroll__horizontal_scroll",
       "uniquesonu__horizontal_scroll_carousel"
-    ],
-    "pin": [
-      "scroll__pin_and_reveal",
-      "aceternity__3d_pin",
-      "arihantcodes__spinner",
-      "kedhareswer_12110626__glass_cards",
-      "kedhareswer_12110626__snow_ball_loading_spinner",
-      "m_kumailalirajpoot__core_spin_loader",
-      "minhxthanh__weave_spinner",
-      "osmosupply__looping_words_with_gsap",
-      "ruixen_ui__scroll_faqaccordion",
-      "theritikk__luma_spin"
     ],
     "emphasis": [
       "scroll__scroll_progress",
@@ -2323,6 +2326,7 @@
       "entrance__slide_in_right",
       "entrance__staggered_grid",
       "entrance__staggered_timeline",
+      "scroll__gsap_pinned_horizontal",
       "scroll__parallax_layers",
       "interactive__accordion_expand",
       "interactive__cursor_trail",
@@ -3686,6 +3690,7 @@
     ],
     "scroll_linked": [
       "entrance__staggered_grid",
+      "scroll__gsap_pinned_horizontal",
       "scroll__horizontal_scroll",
       "scroll__parallax_section",
       "scroll__scroll_progress",
@@ -4218,6 +4223,7 @@
       "entrance__page_loader",
       "entrance__staggered_grid",
       "entrance__staggered_timeline",
+      "scroll__gsap_pinned_horizontal",
       "interactive__cursor_trail",
       "interactive__spotlight_follow",
       "66hex__chrome_grid",
@@ -5879,6 +5885,7 @@
     ],
     "scroll": [
       "entrance__staggered_grid",
+      "scroll__gsap_pinned_horizontal",
       "scroll__horizontal_scroll",
       "scroll__parallax_section",
       "scroll__scroll_progress",
@@ -6860,6 +6867,7 @@
       "entrance__slide_in_right",
       "entrance__staggered_grid",
       "entrance__word_reveal",
+      "scroll__gsap_pinned_horizontal",
       "scroll__horizontal_scroll",
       "scroll__parallax_layers",
       "scroll__parallax_section",
@@ -7234,6 +7242,7 @@
       "entrance__staggered_grid",
       "entrance__staggered_timeline",
       "entrance__word_reveal",
+      "scroll__gsap_pinned_horizontal",
       "scroll__horizontal_scroll",
       "scroll__parallax_layers",
       "scroll__parallax_section",
@@ -8565,6 +8574,7 @@
       "entrance__drawsvg_reveal",
       "entrance__page_loader",
       "entrance__staggered_grid",
+      "scroll__gsap_pinned_horizontal",
       "interactive__draggable_carousel",
       "interactive__flip_expand_card",
       "interactive__flip_grid_filter",
@@ -10014,6 +10024,7 @@
       "theutkarshmail__honeycomb_loader"
     ],
     "scroll": [
+      "scroll__gsap_pinned_horizontal",
       "scroll__horizontal_scroll",
       "scroll__parallax_layers",
       "scroll__parallax_section",

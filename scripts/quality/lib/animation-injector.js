@@ -668,6 +668,97 @@ const PLUGIN_IMPORT_MAP = {
   ScrollSmoother: { import: 'import { ScrollSmoother } from "gsap/ScrollSmoother"', register: 'ScrollSmoother', usage: 'ScrollSmoother.create({ smooth: 1.5, effects: true })' },
 };
 
+// ---------------------------------------------------------------------------
+// Card Micro-Animation Map (for PRODUCT-SHOWCASE demo-cards variant)
+// Maps detected GSAP plugin names → card-scoped visual effects
+// ---------------------------------------------------------------------------
+
+const CARD_ANIMATION_MAP = {
+  DrawSVG:        { effect: 'card-stroke-draw',    description: 'SVG path draws around card border on scroll', gradient: 'from-emerald-500/20 to-transparent', angle: '135deg' },
+  MorphSVG:       { effect: 'card-morph-blob',     description: 'Background blob morphs between organic shapes on hover', gradient: 'from-purple-500/20 to-transparent', angle: '225deg' },
+  MotionPath:     { effect: 'card-orbit-dot',      description: 'Small element orbits along card border path', gradient: 'from-blue-500/20 to-transparent', angle: '45deg' },
+  Flip:           { effect: 'card-flip-preview',   description: 'Card flips to reveal alternate content on hover', gradient: 'from-amber-500/20 to-transparent', angle: '315deg' },
+  SplitText:      { effect: 'card-text-scramble',  description: 'Title text reveals character by character on hover', gradient: 'from-rose-500/20 to-transparent', angle: '180deg' },
+  ScrambleText:   { effect: 'card-text-scramble',  description: 'Title text scrambles through random characters on hover', gradient: 'from-cyan-500/20 to-transparent', angle: '90deg' },
+  ScrollTrigger:  { effect: 'card-3d-rotate',      description: 'Perspective rotation following mouse position', gradient: 'from-orange-500/20 to-transparent', angle: '270deg' },
+  Draggable:      { effect: 'card-3d-rotate',      description: 'Card is slightly draggable with inertia snap-back', gradient: 'from-teal-500/20 to-transparent', angle: '160deg' },
+  CustomEase:     { effect: 'card-gradient-shift',  description: 'Custom-eased gradient color shift on hover', gradient: 'from-indigo-500/20 to-transparent', angle: '200deg' },
+};
+
+// CSS-only fallback effects when no GSAP plugins are detected
+const CARD_CSS_FALLBACKS = [
+  { effect: 'card-3d-rotate',      description: 'CSS perspective rotate on hover (transform: rotateY/rotateX)', gradient: 'from-slate-500/20 to-transparent', angle: '135deg' },
+  { effect: 'card-gradient-shift',  description: 'CSS background-position shift on hover', gradient: 'from-zinc-500/20 to-transparent', angle: '225deg' },
+  { effect: 'card-flip-preview',   description: 'CSS transform rotateY flip on hover (preserve-3d)', gradient: 'from-stone-500/20 to-transparent', angle: '45deg' },
+  { effect: 'card-particle-burst', description: 'DOM particle burst on hover (GSAP fromTo on dot divs)', gradient: 'from-neutral-500/20 to-transparent', angle: '315deg' },
+  { effect: 'card-3d-rotate',      description: 'CSS scale + shadow lift on hover', gradient: 'from-gray-500/20 to-transparent', angle: '180deg' },
+  { effect: 'card-gradient-shift',  description: 'CSS hue-rotate filter shift on hover', gradient: 'from-warmGray-500/20 to-transparent', angle: '90deg' },
+];
+
+/**
+ * Build a per-card animation assignment block for PRODUCT-SHOWCASE demo-cards.
+ * Maps detected plugins to unique card effects. Falls back to CSS-only effects
+ * when no plugins are detected.
+ *
+ * @param {Object|null} identification - Result from pattern-identifier.js
+ * @returns {string} Prompt block describing per-card animation assignments, or empty string
+ */
+function buildCardAnimationBlock(identification) {
+  const lines = [];
+  lines.push('## Card Micro-Animation Assignments');
+  lines.push('');
+  lines.push('CRITICAL: Each card MUST use a DIFFERENT effect and gradient from this list.');
+  lines.push('DO NOT give all cards the same treatment. The point is visual VARIETY.');
+  lines.push('');
+
+  const detectedPlugins = identification?.detectedPlugins || [];
+
+  if (detectedPlugins.length >= 3) {
+    // Use plugin-mapped effects
+    lines.push('Detected GSAP plugins — assign one per card:');
+    lines.push('');
+    let cardNum = 1;
+    for (const plugin of detectedPlugins) {
+      const mapping = CARD_ANIMATION_MAP[plugin];
+      if (mapping) {
+        lines.push(`Card ${cardNum}: **${plugin}** → \`${mapping.effect}\``);
+        lines.push(`  Effect: ${mapping.description}`);
+        lines.push(`  Gradient: linear-gradient(${mapping.angle}, ${mapping.gradient})`);
+        lines.push('');
+        cardNum++;
+      }
+    }
+    // Fill remaining cards with CSS fallbacks if needed
+    if (cardNum <= 6) {
+      lines.push('Additional cards (CSS effects):');
+      lines.push('');
+      for (let i = 0; cardNum <= 8 && i < CARD_CSS_FALLBACKS.length; i++) {
+        const fb = CARD_CSS_FALLBACKS[i];
+        lines.push(`Card ${cardNum}: \`${fb.effect}\``);
+        lines.push(`  Effect: ${fb.description}`);
+        lines.push(`  Gradient: linear-gradient(${fb.angle}, ${fb.gradient})`);
+        lines.push('');
+        cardNum++;
+      }
+    }
+  } else {
+    // No plugins — use all CSS fallbacks
+    lines.push('No GSAP plugins detected — use CSS-only card effects:');
+    lines.push('');
+    for (let i = 0; i < CARD_CSS_FALLBACKS.length; i++) {
+      const fb = CARD_CSS_FALLBACKS[i];
+      lines.push(`Card ${i + 1}: \`${fb.effect}\``);
+      lines.push(`  Effect: ${fb.description}`);
+      lines.push(`  Gradient: linear-gradient(${fb.angle}, ${fb.gradient})`);
+      lines.push('');
+    }
+  }
+
+  lines.push('Refer to animation-patterns.md section "K. Card Micro-Animation Effects" for code snippets.');
+
+  return lines.join('\n');
+}
+
 /**
  * Build a prompt block describing detected GSAP plugins and how to use them.
  * @param {Object} identification - Result from pattern-identifier.js (detectedPlugins, pluginCapabilities)
@@ -795,9 +886,10 @@ function augmentResultWithPlugins(result, sectionArchetype, identification) {
  * @param {number} sectionIndex
  * @param {string[]} [usedPatterns] - Patterns already selected in earlier sections (for dedup)
  * @param {Object|null} [identification] - Result from pattern-identifier.js (for plugin context)
+ * @param {string} [sectionVariant] - Section variant (e.g. 'demo-cards', 'grid', 'single-hero')
  * @returns {{ animationContext: string, tokenBudget: number, dependencies: string[], componentFiles: string[], selectedPattern: string|null }}
  */
-function buildAnimationContext(animationAnalysis, presetContent, sectionArchetype, sectionIndex, usedPatterns, identification) {
+function buildAnimationContext(animationAnalysis, presetContent, sectionArchetype, sectionIndex, usedPatterns, identification, sectionVariant) {
   usedPatterns = usedPatterns || [];
   const componentFiles = [];
 

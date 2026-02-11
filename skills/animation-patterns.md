@@ -530,6 +530,7 @@ Quick reference for which patterns to use with which section archetypes:
 | **ABOUT/PROBLEM** | `fade-up-single` | `word-reveal` on heading |
 | **HOW-IT-WORKS** | `fade-up-stagger` | `staggered-timeline` for sequential steps |
 | **PRODUCT-SHOWCASE** | `fade-up-stagger` | — |
+| **PINNED-SCROLL** | `gsap-pinned-horizontal` | + `containerAnimation` nested scenes |
 | **TESTIMONIALS** | `fade-up-stagger` | — |
 | **CTA** | `fade-up-single` | `staggered-timeline` for heading → button |
 | **MAP/TRIALS** | `fade-up-single` | `marker-pulse` on SVG points |
@@ -1085,10 +1086,266 @@ gsap.to(el, { x: 600, ease: "expoScale(1, 10, power1.inOut)", duration: 1.5 });
 
 ---
 
+### `pinned-horizontal-scene`
+
+Pinned section with horizontal scroll and nested animated elements. The signature premium website pattern (GSAP homepage, Apple product pages).
+
+**Plugin:** ScrollTrigger (pin + scrub + containerAnimation)
+
+```tsx
+"use client";
+import { useRef, useEffect } from "react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+if (typeof window !== "undefined") {
+  gsap.registerPlugin(ScrollTrigger);
+}
+
+// Inside component useEffect:
+const section = sectionRef.current;
+const track = trackRef.current;
+const scrollWidth = track.scrollWidth - window.innerWidth;
+
+// Main horizontal scroll tween
+const scrollTween = gsap.to(track, {
+  x: -scrollWidth,
+  ease: "none",
+  scrollTrigger: {
+    trigger: section,
+    pin: true,
+    scrub: 1,
+    end: () => `+=${scrollWidth}`,
+    invalidateOnRefresh: true,
+  },
+});
+
+// Nested element animation WITHIN the horizontal scroll
+gsap.fromTo(".floating-shape",
+  { scale: 0, rotation: -180 },
+  {
+    scale: 1,
+    rotation: 0,
+    scrollTrigger: {
+      trigger: ".floating-shape",
+      containerAnimation: scrollTween, // KEY: ties to horizontal scroll
+      start: "left center",
+      end: "right center",
+      scrub: true,
+    },
+  }
+);
+
+// Color/background transitions between panels
+gsap.to(section, {
+  backgroundColor: "#1a1a2e",
+  scrollTrigger: {
+    trigger: ".panel-2",
+    containerAnimation: scrollTween,
+    start: "left center",
+    toggleActions: "play none none reverse",
+  },
+});
+```
+
+**Critical:** The `containerAnimation` parameter makes nested ScrollTriggers respond to horizontal scroll position instead of vertical page scroll. Without it, nested animations fire based on the page's vertical scroll, which breaks the effect.
+
+**Section fit:** PINNED-SCROLL (all variants), HERO (product-journey variant)
+
+---
+
+## K. Card Micro-Animation Effects
+
+Small, card-scoped animation effects for PRODUCT-SHOWCASE `demo-cards` variant. Each effect is 5-8 lines and designed to differentiate individual cards within a grid. These are inline patterns — not standalone components.
+
+---
+
+### `card-stroke-draw`
+
+SVG path drawing around card border on scroll entry. Creates an animated border reveal.
+
+**Maps to:** DrawSVG plugin
+
+```tsx
+// Add an SVG rect overlay matching the card dimensions
+<svg className="absolute inset-0 w-full h-full pointer-events-none">
+  <rect className="card-border" x="1" y="1" width="calc(100%-2)" height="calc(100%-2)"
+    rx="12" fill="none" stroke="currentColor" strokeWidth="2" />
+</svg>
+
+// In useEffect:
+gsap.fromTo(".card-border", { drawSVG: "0%" }, {
+  drawSVG: "100%", duration: 1.5, ease: "power2.inOut",
+  scrollTrigger: { trigger: cardRef, start: "top 80%", once: true }
+});
+```
+
+**Section fit:** PRODUCT-SHOWCASE demo-cards (DrawSVG card).
+
+---
+
+### `card-morph-blob`
+
+Background blob that morphs between organic shapes on hover. Creates a living, breathing card background.
+
+**Maps to:** MorphSVG plugin
+
+```tsx
+// Background SVG blob with two shape targets
+<svg viewBox="0 0 200 200" className="absolute -z-10 opacity-20">
+  <path id="blob1" d="M40,-50C..." fill="currentColor" />
+  <path id="blob2" d="M30,-40C..." style={{ visibility: "hidden" }} />
+</svg>
+
+// On mouseenter:
+gsap.to("#blob1", { morphSVG: "#blob2", duration: 1.2, ease: "elastic.out(1, 0.5)" });
+// On mouseleave: reverse
+gsap.to("#blob1", { morphSVG: "#blob1", duration: 0.8, ease: "power2.inOut" });
+```
+
+**Section fit:** PRODUCT-SHOWCASE demo-cards (MorphSVG card).
+
+---
+
+### `card-orbit-dot`
+
+Small dot orbiting along the card border path. Creates a subtle motion indicator.
+
+**Maps to:** MotionPath plugin
+
+```tsx
+// Small dot element + SVG border path
+<div className="orbit-dot w-2 h-2 rounded-full bg-accent absolute" />
+<svg className="absolute inset-0"><rect id="orbit-path" ... /></svg>
+
+// In useEffect:
+gsap.to(".orbit-dot", {
+  motionPath: { path: "#orbit-path", autoRotate: false },
+  duration: 4, repeat: -1, ease: "none"
+});
+```
+
+**Section fit:** PRODUCT-SHOWCASE demo-cards (MotionPath card).
+
+---
+
+### `card-flip-preview`
+
+Card flips to reveal alternate content on hover. Uses CSS perspective + GSAP Flip or simple rotateY.
+
+**Maps to:** Flip plugin (or CSS fallback)
+
+```tsx
+// Card has front + back faces
+<div className="relative" style={{ perspective: "1000px" }}>
+  <div ref={cardInner} className="transition-transform duration-500"
+    style={{ transformStyle: "preserve-3d" }}>
+    <div className="backface-hidden">{/* front */}</div>
+    <div className="backface-hidden rotate-y-180 absolute inset-0">{/* back */}</div>
+  </div>
+</div>
+
+// On hover via GSAP:
+gsap.to(cardInner, { rotateY: 180, duration: 0.6, ease: "power2.inOut" });
+```
+
+**Section fit:** PRODUCT-SHOWCASE demo-cards (Flip card).
+
+---
+
+### `card-text-scramble`
+
+Title text scrambles through random characters on hover, then resolves to the real text.
+
+**Maps to:** ScrambleText plugin
+
+```tsx
+// On mouseenter:
+gsap.to(titleRef, {
+  duration: 1.2,
+  scrambleText: { text: "Original Title", chars: "!<>-_\\/[]{}=+*^?#", speed: 0.4 },
+  ease: "none"
+});
+```
+
+**Section fit:** PRODUCT-SHOWCASE demo-cards (ScrambleText card).
+
+---
+
+### `card-3d-rotate`
+
+Subtle 3D perspective rotation following mouse position on the card. Gives a "tilting card" feel.
+
+**Maps to:** GSAP + transforms (no plugin required)
+
+```tsx
+// On mousemove within card:
+const rect = card.getBoundingClientRect();
+const x = (e.clientX - rect.left) / rect.width - 0.5;
+const y = (e.clientY - rect.top) / rect.height - 0.5;
+gsap.to(card, {
+  rotateY: x * 15, rotateX: -y * 15,
+  duration: 0.3, ease: "power2.out",
+  transformPerspective: 800
+});
+// On mouseleave: reset to 0
+gsap.to(card, { rotateY: 0, rotateX: 0, duration: 0.5, ease: "elastic.out(1, 0.5)" });
+```
+
+**Section fit:** PRODUCT-SHOWCASE demo-cards (3D card), any interactive card.
+
+---
+
+### `card-gradient-shift`
+
+Unique gradient that shifts hue/position on hover using GSAP + CSS custom properties.
+
+**Maps to:** GSAP + CustomEase (or CSS fallback)
+
+```tsx
+// Each card gets a unique --gradient-angle and --accent CSS var
+<div style={{ background: "linear-gradient(var(--gradient-angle), var(--accent), transparent)" }}>
+
+// On hover:
+gsap.to(card, {
+  "--gradient-angle": "+=60deg",
+  duration: 0.8, ease: "power2.inOut"
+});
+```
+
+**Section fit:** PRODUCT-SHOWCASE demo-cards (gradient card), CTA hover areas.
+
+---
+
+### `card-particle-burst`
+
+Particles burst outward from card center on hover. Lightweight DOM-based particle effect.
+
+**Maps to:** GSAP (no plugin required)
+
+```tsx
+// Create 8-12 small dot divs absolutely positioned at card center
+// On mouseenter:
+particles.forEach((dot, i) => {
+  const angle = (i / particles.length) * Math.PI * 2;
+  gsap.fromTo(dot,
+    { x: 0, y: 0, opacity: 1, scale: 1 },
+    { x: Math.cos(angle) * 60, y: Math.sin(angle) * 60,
+      opacity: 0, scale: 0, duration: 0.6,
+      ease: "power2.out", delay: i * 0.02 }
+  );
+});
+```
+
+**Section fit:** PRODUCT-SHOWCASE demo-cards (particle card), playful CTA areas.
+
+---
+
 ## Maintenance Log
 
 | Date | Change | Source |
 |------|--------|--------|
+| 2026-02-11 | Added `pinned-horizontal-scene` pattern, PINNED-SCROLL to archetype map | Track A v1.1.0 |
 | 2026-02-11 | Added F. GSAP Plugin Patterns: SplitText, ScrambleText, Flip, DrawSVG, MorphSVG, MotionPath, Draggable, Observer, ScrollSmoother, CustomEase, matchMedia, EasePack | Pattern doc expansion |
 | 2026-02-10 | Added 11 VengenceUI patterns (9 new + 2 replacements), new effect/ and background/ categories, updated archetype map with affinity scores | Animation classification plan v0.7.0 |
 | 2026-02-08 | Initial library created from farm-minerals-site production patterns | farm-minerals-promo rebuild |

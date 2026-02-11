@@ -11,6 +11,7 @@ entrance__slide_in_right,animation,framer-motion,entrance,false,false,true,true,
 entrance__staggered_grid,animation,gsap,entrance,false,true,false,false,false,false,true,true,false,false,false,false,true,low,medium,low,true,true,false,false,176,true,"stagger","GALLERY"
 entrance__staggered_timeline,animation,framer-motion,entrance,false,false,false,false,false,false,true,true,true,false,false,false,true,low,low,low,true,true,false,false,170,false,"flip;slide;rotate;blur;bounce;spring;stagger","HOW-IT-WORKS"
 entrance__word_reveal,animation,framer-motion,entrance,true,false,false,false,false,false,false,true,true,false,false,false,true,medium,low,low,true,true,false,false,60,true,"reveal",""
+scroll__gsap_pinned_horizontal,animation,gsap,scroll,false,true,false,false,false,false,true,false,true,false,false,false,false,medium,medium,low,true,true,true,false,178,true,"reveal;slide;pin",""
 scroll__horizontal_scroll,animation,framer-motion,scroll,false,true,false,false,false,false,false,false,true,false,false,false,true,low,medium,low,true,true,false,false,105,true,"parallax;progress;horizontal_scroll",""
 scroll__parallax_layers,animation,framer-motion,scroll,false,false,false,false,false,false,true,true,true,false,true,false,true,medium,low,low,true,true,false,false,64,false,"parallax",""
 scroll__parallax_section,animation,framer-motion,scroll,false,true,false,false,false,false,false,false,true,false,false,false,true,low,medium,low,true,true,false,false,58,false,"parallax;progress",""

@@ -29,6 +29,7 @@ const {
 } = require('./design-tokens');
 
 const { mapSectionsToArchetypes } = require('./archetype-mapper');
+const { detectPinnedHorizontalScroll } = require('./animation-detector');
 
 // ---------------------------------------------------------------------------
 // Registry loading (cached)
@@ -614,6 +615,14 @@ function identify(extractionDir, projectName) {
   const uiComponents = matchUIComponents(extractionData, mappedSections);
   const sectionMapping = mapComponentsToSections(identifiedPatterns, uiComponents);
 
+  // Pinned horizontal scroll detection (from runtime GSAP calls + static bundle analysis)
+  const gsapCalls = animationAnalysis?.gsapCalls || animationAnalysis?.extractedCalls || [];
+  const pinnedScrollResult = detectPinnedHorizontalScroll(gsapCalls);
+
+  // Also check static bundle evidence from gsap-extractor
+  const staticPinnedEvidence = animationAnalysis?.pluginUsage?._pinnedHorizontalScroll;
+  const pinnedScrollDetected = pinnedScrollResult.detected || !!staticPinnedEvidence;
+
   // Aggregate gap report (include plugin gaps)
   const gapReport = aggregateGapReport({
     colorGaps: [],
@@ -637,6 +646,8 @@ function identify(extractionDir, projectName) {
     animationPatterns: identifiedPatterns,
     detectedPlugins: pluginResult.detectedPlugins,
     pluginCapabilities: pluginResult.pluginCapabilities,
+    pinnedScrollDetected,
+    pinnedScrollEvidence: pinnedScrollResult.evidence,
     uiComponents,
     sectionMapping,
     gapReport,

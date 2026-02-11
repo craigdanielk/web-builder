@@ -443,6 +443,18 @@ function classifyPluginUsage(bundles) {
     pluginUsage.matchMedia = [{ detected: true, count: matchMediaMatches.length }];
   }
 
+  // Pinned horizontal scroll detection (pin: true + scrub in ScrollTrigger configs)
+  const pinScrubMatches = [...allCode.matchAll(/pin\s*:\s*true[\s\S]{0,200}?scrub\s*:/g)];
+  const scrubPinMatches = [...allCode.matchAll(/scrub\s*:[\s\S]{0,200}?pin\s*:\s*true/g)];
+  const pinnedScrollCount = pinScrubMatches.length + scrubPinMatches.length;
+  if (pinnedScrollCount > 0) {
+    pluginUsage._pinnedHorizontalScroll = [{
+      detected: true,
+      count: pinnedScrollCount,
+      evidence: 'pin:true + scrub detected in JS bundles',
+    }];
+  }
+
   return pluginUsage;
 }
 

@@ -349,4 +349,78 @@ Only import plugins that the section actually uses. Do not import all plugins in
 
 ---
 
+## Pinned Horizontal Scroll Sections (PINNED-SCROLL archetype)
+
+When generating a **PINNED-SCROLL** section, follow these rules:
+
+### Structure
+```tsx
+<section ref={sectionRef} className="relative">
+  <div className="h-screen flex items-center overflow-hidden">
+    <div ref={trackRef} className="flex will-change-transform">
+      {/* Each panel is min-w-[100vw] or content-sized */}
+      <div className="min-w-[100vw] h-screen flex items-center justify-center px-20">
+        Panel 1 content
+      </div>
+      <div className="min-w-[100vw] h-screen flex items-center justify-center px-20">
+        Panel 2 content
+      </div>
+    </div>
+  </div>
+</section>
+```
+
+### ScrollTrigger Setup
+```tsx
+useEffect(() => {
+  gsap.registerPlugin(ScrollTrigger);
+  const ctx = gsap.context(() => {
+    const track = trackRef.current;
+    const scrollWidth = track.scrollWidth - window.innerWidth;
+
+    // Main horizontal scroll
+    const scrollTween = gsap.to(track, {
+      x: -scrollWidth,
+      ease: "none",
+      scrollTrigger: {
+        trigger: sectionRef.current,
+        pin: true,
+        scrub: 1,
+        end: () => `+=${scrollWidth}`,
+        invalidateOnRefresh: true,
+      },
+    });
+
+    // Nested animations WITHIN the horizontal scroll
+    gsap.fromTo(".element-in-panel",
+      { opacity: 0, y: 50 },
+      {
+        opacity: 1, y: 0,
+        scrollTrigger: {
+          trigger: ".element-in-panel",
+          containerAnimation: scrollTween,
+          start: "left 80%",
+          end: "left 30%",
+          scrub: true,
+        },
+      }
+    );
+  }, sectionRef);
+  return () => ctx.revert();
+}, []);
+```
+
+### Rules for PINNED-SCROLL
+1. **ALWAYS use `containerAnimation`** for nested animations inside the pinned section. Without it, nested ScrollTriggers respond to vertical page scroll, not the horizontal scroll position.
+2. **ALWAYS add `gsap.matchMedia()`** for mobile fallback — convert to vertical stack on screens < 768px.
+3. **ALWAYS add `invalidateOnRefresh: true`** for responsive recalculation on resize.
+4. **NEVER use `gsap.from()` with `opacity: 0`** for elements inside the pinned scroll. Use `gsap.fromTo()` instead to avoid SSR invisibility.
+5. **Set `will-change-transform`** on the horizontal track for GPU acceleration.
+6. For `animated-scene` variant: inner elements like floating shapes, SVGs, and decorative elements each get their own `containerAnimation`-based ScrollTrigger.
+7. For `horizontal-panels` variant: each panel is `min-w-[100vw]` and self-contained.
+8. For `product-journey` variant: use parallax layers with different `start`/`end` values within the `containerAnimation` for depth.
+9. Include a visual progress indicator (progress bar, dot trail, or panel counter).
+
+---
+
 Output ONLY the component code. No explanation, no markdown code fences.

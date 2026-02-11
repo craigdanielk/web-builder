@@ -251,10 +251,11 @@ are intentional — they get filled the first time you generate that section typ
 - `grid` — Product card grid with image, name, price
 - `hover-cards` — Cards with hover-reveal additional info
 - `category-grid` — Grouped by category with headers
+- `demo-cards` — Each card demonstrates a different animation technique with a unique visual indicator. Cards share grid layout but differ in: gradient direction/colors, micro-animation (SVG stroke draw, morphing blob, orbiting dot, flip transition, text scramble, 3D rotate), and hover effect. Used when showcasing animation capabilities, plugin features, or diverse product differentiators.
 
-**Animation:** `fade-up-stagger` on product cards. CSS `hover:scale-105 hover:shadow-lg` on cards. `staggered-timeline` for `single-hero` variant (image → title → description → CTA).
-**Structure:** [populate on first use]
-**Notes:** []
+**Animation:** `fade-up-stagger` on product cards. CSS `hover:scale-105 hover:shadow-lg` on cards. `staggered-timeline` for `single-hero` variant (image → title → description → CTA). For `demo-cards` variant: each card gets a UNIQUE micro-animation mapped from `CARD_ANIMATION_MAP` in animation-injector.js — e.g. DrawSVG → card-stroke-draw, MorphSVG → card-morph-blob, MotionPath → card-orbit-dot. Fallback to CSS-only effects when plugins unavailable.
+**Structure:** Section wrapper → heading + subheading → responsive grid (2-col md, 3-col lg) → cards. For `demo-cards`: each card = icon/visual indicator + title + description + unique hover micro-animation. No two cards share the same gradient or animation treatment.
+**Notes:** The `demo-cards` variant MUST produce visually distinct cards — identical cards defeat the purpose. Card micro-animations should be small (5-8 lines each) to avoid token budget issues. When GSAP plugins are detected, map them 1:1 to card effects; when not detected, use CSS transitions + transforms.
 
 ### PORTFOLIO
 **Purpose:** Work samples, case studies
@@ -308,6 +309,28 @@ are intentional — they get filled the first time you generate that section typ
 
 ---
 
+## Scroll & Immersive
+
+### PINNED-SCROLL
+**Purpose:** Full-viewport section that pins in place while content scrolls horizontally. The signature pattern of premium marketing sites — vertical scroll input translates to horizontal movement with animated elements.
+**Variants:**
+- `horizontal-panels` — Discrete content panels scrolling horizontally (case studies, features)
+- `animated-scene` — Continuous animated landscape with elements entering/exiting (GSAP homepage style)
+- `product-journey` — Product images/specs flowing left-to-right with parallax layers (Apple style)
+- `timeline-scroll` — Chronological content scrolling horizontally with year/milestone markers
+
+**Animation:** `gsap-pinned-horizontal` component with `ScrollTrigger({ pin: true, scrub: true })`. Inner elements use `gsap.fromTo()` with the same ScrollTrigger for coordinated entrance/exit timing. Can compose with `motionpath-orbit`, `drawsvg-reveal`, and `morphsvg-shape-shift` for rich scenes.
+**Structure:** Section wrapper (100vh, relative) → overflow-hidden container (100vh, flex, items-center) → horizontal track (flex, will-change-transform) → panels/scenes. Each panel is `min-w-[100vw]` or a content-sized block.
+**Notes:**
+- Uses `gsap-pinned-horizontal.tsx` component from `skills/animation-components/scroll/`
+- The scroll distance (how long the section stays pinned) equals the total horizontal content width minus viewport
+- For `animated-scene` variant, inner elements need their own ScrollTrigger with `containerAnimation` param to animate within the horizontal scroll
+- Always include a visual scroll progress indicator (dot trail, progress bar, or panel counter)
+- Mobile fallback: convert to vertical stack via `gsap.matchMedia()` — the component handles this automatically
+- Minimum token budget: 8192 (these sections are complex)
+
+---
+
 ## Functional
 
 ### CONTACT
@@ -346,11 +369,12 @@ are intentional — they get filled the first time you generate that section typ
 
 ---
 
-## Section Count: 25 archetypes, 95+ variants
+## Section Count: 26 archetypes, 99+ variants
 
 ## Maintenance Log
 
 | Date | Change | Project Source |
 |------|--------|---------------|
 | 2026-02-08 | Initial skeleton created | — |
+| 2026-02-11 | Added PINNED-SCROLL archetype (4 variants) for pinned horizontal scroll | Track A v1.1.0 |
 | 2026-02-08 | Added Animation field to all 25 archetypes with pattern recommendations | farm-minerals-promo rebuild |

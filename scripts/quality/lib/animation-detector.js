@@ -797,6 +797,47 @@ function groupAnimationsBySection(gsapCalls, lottieElements, cssKeyframes, secti
   return perSection;
 }
 
+/**
+ * Detect pinned horizontal scroll pattern from GSAP calls.
+ * Looks for ScrollTrigger configs with both `pin: true` and `scrub` enabled,
+ * combined with horizontal translate (`x` property) — the signature of
+ * pinned horizontal scroll sections.
+ *
+ * @param {Array} gsapCalls - Merged GSAP calls (runtime + static)
+ * @returns {{ detected: boolean, evidence: Object[] }}
+ */
+function detectPinnedHorizontalScroll(gsapCalls) {
+  const evidence = [];
+
+  for (const call of (gsapCalls || [])) {
+    const st = call.scrollTrigger || call.vars?.scrollTrigger;
+    if (!st) continue;
+
+    const isPinned = st.pin === true || st.pin === 'true';
+    const hasScrub = st.scrub === true || (typeof st.scrub === 'number' && st.scrub > 0);
+    const hasHorizontalTranslate =
+      call.vars?.x !== undefined ||
+      call.vars?.xPercent !== undefined ||
+      (call.method === 'to' && (call.params?.x !== undefined || call.params?.xPercent !== undefined));
+
+    if (isPinned && hasScrub) {
+      evidence.push({
+        target: call.targetSelector || call.target || null,
+        pin: true,
+        scrub: st.scrub,
+        hasHorizontalTranslate,
+        method: call.method,
+        source: call.source || 'unknown',
+      });
+    }
+  }
+
+  return {
+    detected: evidence.length > 0,
+    evidence,
+  };
+}
+
 module.exports = {
   getPreNavigationScript,
   setupNetworkInterception,
@@ -804,4 +845,5 @@ module.exports = {
   extractAnimationData,
   analyzeAnimationEvidence,
   groupAnimationsBySection,
+  detectPinnedHorizontalScroll,
 };
