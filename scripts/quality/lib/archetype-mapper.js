@@ -293,7 +293,38 @@ function mapSectionsToArchetypes(sections, textContent) {
       }
     }
 
-    // 5. Check text content within this section's vertical range for keywords
+    // 5. Check embedded per-section content headings (v2.0.2 — DOM-scoped)
+    // Preferred over rect-based text filtering because content is guaranteed
+    // to belong to this section (extracted via DOM containment).
+    if (!archetype && sec.content?.headings?.length > 0) {
+      for (const heading of sec.content.headings) {
+        const hLower = heading.toLowerCase();
+        for (const [arch, keywords] of Object.entries(HEADING_KEYWORDS)) {
+          if (keywords.some((kw) => hLower.includes(kw))) {
+            archetype = arch;
+            confidence = 0.75;
+            method = 'embedded-heading-keyword';
+            break;
+          }
+        }
+        if (archetype) break;
+      }
+    }
+
+    // 5b. Also check embedded body text for strong keyword signals
+    if (!archetype && sec.content?.body_text?.length > 0) {
+      const allBodyLower = sec.content.body_text.join(' ').toLowerCase();
+      for (const [arch, keywords] of Object.entries(HEADING_KEYWORDS)) {
+        if (keywords.some((kw) => allBodyLower.includes(kw))) {
+          archetype = arch;
+          confidence = 0.6;
+          method = 'embedded-body-keyword';
+          break;
+        }
+      }
+    }
+
+    // 5c. Fallback: rect-based text matching (for legacy extraction data without embedded content)
     if (!archetype) {
       const sectionTexts = (textContent || []).filter((t) => {
         const textY = t.rect?.y || 0;
@@ -315,12 +346,26 @@ function mapSectionsToArchetypes(sections, textContent) {
       }
     }
 
-    // 6. Position-based fallback
+    // 6. Position-based and structural heuristics
     if (!archetype) {
+      // v2.0.2: Use structural signals from embedded content
+      const hasImages = (sec.content?.image_count || 0) > 0 || (sec.images || []).length > 0;
+      const headingCount = (sec.content?.headings || []).length;
+      const bodyCount = (sec.content?.body_text || []).length;
+      const ctaCount = (sec.content?.ctas || []).length;
+      const height = sec.rect?.height || 0;
+
       if (i === 0) {
-        archetype = sec.tag === 'nav' ? 'NAV' : 'HERO';
-        confidence = 0.5;
-        method = 'position-first';
+        // First section: almost always HERO or NAV
+        if (sec.tag === 'nav') {
+          archetype = 'NAV';
+          confidence = 0.9;
+          method = 'position-first-nav';
+        } else {
+          archetype = 'HERO';
+          confidence = height > 400 ? 0.8 : 0.6;
+          method = 'position-first-hero';
+        }
       } else if (i === sections.length - 1) {
         archetype = 'FOOTER';
         confidence = 0.5;
@@ -329,6 +374,21 @@ function mapSectionsToArchetypes(sections, textContent) {
         archetype = 'HERO';
         confidence = 0.6;
         method = 'position-after-nav';
+      } else if (hasImages && headingCount <= 3 && height > 600) {
+        // Large section with images → likely product showcase or about
+        archetype = 'PRODUCT-SHOWCASE';
+        confidence = 0.45;
+        method = 'structural-images';
+      } else if (headingCount >= 3 && bodyCount >= 3) {
+        // Multiple headings + body text → features or how-it-works
+        archetype = 'FEATURES';
+        confidence = 0.45;
+        method = 'structural-multi-heading';
+      } else if (bodyCount < 3 && headingCount === 1 && ctaCount > 0) {
+        // Single heading + CTA → CTA section
+        archetype = 'CTA';
+        confidence = 0.45;
+        method = 'structural-cta';
       } else {
         archetype = 'FEATURES';
         confidence = 0.3;

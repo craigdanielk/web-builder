@@ -12,7 +12,7 @@
  *    inject summarized extracted signature (from animation-summarizer).
  * 3. Pattern Snippet: Fall back to reference code snippets (original behavior).
  *
- * Consumes: animation-analysis.json, registry.json, component .tsx files
+ * Consumes: animation-analysis.json, component-registry.json, component .tsx files
  * Produces: animation context strings with token budgets, dependency lists,
  *           and component file paths for stage_deploy() to copy.
  */
@@ -25,7 +25,7 @@ const { summarizeSection } = require('./animation-summarizer');
 // Registry management
 // ---------------------------------------------------------------------------
 
-const REGISTRY_PATH = path.resolve(__dirname, '../../../skills/animation-components/registry.json');
+const REGISTRY_PATH = path.resolve(__dirname, '../../../skills/animation-components/component-registry.json');
 const COMPONENTS_DIR = path.resolve(__dirname, '../../../skills/animation-components');
 
 let _registryCache = null;
@@ -43,7 +43,7 @@ function loadRegistry() {
     return _registryCache;
   } catch (err) {
     console.warn(`[animation-injector] Could not load registry: ${err.message}`);
-    _registryCache = { components: {} };
+    _registryCache = { component_count: 0, components: {} };
     return _registryCache;
   }
 }
@@ -64,7 +64,7 @@ function lookupComponent(patternName) {
 
 /**
  * Read a component's source file from the library.
- * @param {string} relativePath - Relative path within skills/animation-components/
+ * @param {string} relativePath - Relative path within skills/animation-components/ (e.g. source_file from registry)
  * @returns {string|null} Component source code, or null if file not found
  */
 function readComponentSource(relativePath) {
@@ -491,22 +491,52 @@ function getIntensity(animationAnalysis) {
  * @param {string|null} overridePattern
  * @returns {{ isLottie: boolean, filename: string|null }}
  */
-function checkLottie(animationAnalysis, archetype, overridePattern) {
+function checkLottie(animationAnalysis, archetype, overridePattern, sectionIndex, sectionLabel) {
   if (overridePattern && overridePattern.startsWith('lottie')) {
     return { isLottie: true, filename: null };
   }
 
-  if (animationAnalysis && animationAnalysis.assets && animationAnalysis.assets.lottie) {
-    const normalized = (archetype || '').toLowerCase();
-    const match = animationAnalysis.assets.lottie.find(function (l) {
-      const name = (l.name || l.url || '').toLowerCase();
-      return name.includes(normalized);
+  const lottieAssets = (animationAnalysis && animationAnalysis.assets && animationAnalysis.assets.lottie)
+    ? animationAnalysis.assets.lottie
+    : (animationAnalysis && animationAnalysis.lottieFiles)
+      ? animationAnalysis.lottieFiles
+      : [];
+
+  if (lottieAssets.length === 0) {
+    return { isLottie: false, filename: null };
+  }
+
+  // Strategy 1: Fuzzy match by archetype name
+  const normalized = (archetype || '').toLowerCase();
+  var match = lottieAssets.find(function (l) {
+    const name = (l.name || l.url || '').toLowerCase();
+    return name.includes(normalized);
+  });
+
+  // Strategy 2: Fuzzy match by section label words (3+ char words only)
+  if (!match && sectionLabel) {
+    const words = sectionLabel.toLowerCase().split(/\s+/).filter(function (w) {
+      return w.length >= 3 && !['the', 'and', 'for', 'with', 'that', 'this'].includes(w);
     });
-    if (match) {
-      const url = match.url || '';
-      const filename = url.split('/').pop().replace('.json', '');
-      return { isLottie: true, filename: filename || null };
+    match = lottieAssets.find(function (l) {
+      const name = (l.name || l.url || '').toLowerCase();
+      return words.some(function (w) { return name.includes(w); });
+    });
+  }
+
+  // Strategy 3: Position-based assignment (distribute Lottie assets sequentially)
+  if (!match && typeof sectionIndex === 'number') {
+    // Skip NAV (index 0) and FOOTER (last) for Lottie assignment
+    const contentIndex = Math.max(0, sectionIndex - 1); // offset for NAV
+    if (contentIndex < lottieAssets.length) {
+      match = lottieAssets[contentIndex];
     }
+  }
+
+  if (match) {
+    const url = match.url || '';
+    const filename = url.split('/').pop().replace('.json', '');
+    return { isLottie: true, filename: filename || null, url: url };
   }
 
   return { isLottie: false, filename: null };
@@ -592,13 +622,13 @@ function buildComponentContext(componentDef, source, propOverrides, patternName)
   lines.push('```');
   lines.push('');
 
-  // Import instruction
-  const componentName = patternName
+  // Import instruction (use registry so named vs default and export name are correct)
+  const componentName = componentDef.export_name || patternName
     .split('-')
     .map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); })
     .join('');
   lines.push('### Usage');
-  lines.push(`Import: \`import ${componentName} from "@/components/animations/${patternName}";\``);
+  lines.push('Import: `' + (componentDef.import_statement || ('import ' + componentName + ' from "@/components/animations/' + patternName + '"')) + '";');
   lines.push('');
 
   // Props with overrides
@@ -695,6 +725,45 @@ const CARD_CSS_FALLBACKS = [
   { effect: 'card-gradient-shift',  description: 'CSS hue-rotate filter shift on hover', gradient: 'from-warmGray-500/20 to-transparent', angle: '90deg' },
 ];
 
+// ---------------------------------------------------------------------------
+// Card-Level Embedded Animation Demos (v1.2.0)
+// Maps detected GSAP plugins to actual animation library components that can
+// be rendered INSIDE product showcase cards as live mini-demos.
+// ---------------------------------------------------------------------------
+
+const CARD_EMBEDDED_DEMOS = {
+  'ScrollTrigger': { component: 'ScrollProgress',    file: 'scroll/scroll-progress.tsx',       name: 'scroll-progress' },
+  'SplitText':     { component: 'WordReveal',         file: 'text/word-reveal.tsx',             name: 'word-reveal' },
+  'Flip':          { component: 'FlipExpandCard',     file: 'interactive/flip-expand-card.tsx',  name: 'flip-expand-card' },
+  'MotionPath':    { component: 'MotionPathOrbit',    file: 'continuous/motionpath-orbit.tsx',   name: 'motionpath-orbit' },
+  'Draggable':     { component: 'DraggableCarousel',  file: 'interactive/draggable-carousel.tsx', name: 'draggable-carousel' },
+  'Observer':      { component: 'ObserverSwipe',      file: 'interactive/observer-swipe.tsx',    name: 'observer-swipe' },
+  'DrawSVG':       { component: 'DrawSVGReveal',      file: 'entrance/drawsvg-reveal.tsx',       name: 'drawsvg-reveal' },
+  'MorphSVG':      { component: 'MorphSVGIcon',       file: 'interactive/morphsvg-icon.tsx',     name: 'morphsvg-icon' },
+  'ScrambleText':  { component: 'ScrambleText',       file: 'text/scramble-text.tsx',            name: 'scramble-text' },
+  'TextPlugin':    { component: 'WordReveal',         file: 'text/word-reveal.tsx',              name: 'word-reveal' },
+  'MotionPathHelper': { component: 'MotionPathOrbit', file: 'continuous/motionpath-orbit.tsx',   name: 'motionpath-orbit' },
+  'CustomEase':    { component: 'GradientShift',      file: 'continuous/gradient-shift.tsx',     name: 'gradient-shift' },
+  'CustomBounce':  { component: 'Floating',           file: 'continuous/floating.tsx',           name: 'floating' },
+  'CustomWiggle':  { component: 'Floating',           file: 'continuous/floating.tsx',           name: 'floating' },
+  'EasePack':      { component: 'GradientShift',      file: 'continuous/gradient-shift.tsx',     name: 'gradient-shift' },
+  'Inertia':       { component: 'DraggableCarousel',  file: 'interactive/draggable-carousel.tsx', name: 'draggable-carousel' },
+  'InertiaPlugin': { component: 'DraggableCarousel',  file: 'interactive/draggable-carousel.tsx', name: 'draggable-carousel' },
+  'PixiPlugin':    { component: 'AuroraBackground',   file: 'background/aurora-background.tsx',  name: 'aurora-background' },
+  'Physics2D':     { component: 'Floating',           file: 'continuous/floating.tsx',           name: 'floating' },
+  'PhysicsPropsPlugin': { component: 'Floating',      file: 'continuous/floating.tsx',           name: 'floating' },
+};
+
+// Fallback components when a plugin has no specific demo
+const DEMO_FALLBACK_SEQUENCE = [
+  { component: 'BlurFade',        file: 'entrance/blur-fade.tsx',          name: 'blur-fade' },
+  { component: 'GlowBorder',      file: 'effect/glow-border.tsx',         name: 'glow-border' },
+  { component: 'BorderBeam',      file: 'effect/border-beam.tsx',         name: 'border-beam' },
+  { component: 'AuroraBackground', file: 'background/aurora-background.tsx', name: 'aurora-background' },
+  { component: 'PerspectiveGrid', file: 'background/perspective-grid.tsx', name: 'perspective-grid' },
+  { component: 'StaggeredGrid',   file: 'entrance/staggered-grid.tsx',    name: 'staggered-grid' },
+];
+
 /**
  * Build a per-card animation assignment block for PRODUCT-SHOWCASE demo-cards.
  * Maps detected plugins to unique card effects. Falls back to CSS-only effects
@@ -757,6 +826,69 @@ function buildCardAnimationBlock(identification) {
   lines.push('Refer to animation-patterns.md section "K. Card Micro-Animation Effects" for code snippets.');
 
   return lines.join('\n');
+}
+
+/**
+ * Build prompt context for embedding live animation demos inside product showcase cards.
+ * Each detected plugin gets its own library component rendered as a mini-demo.
+ *
+ * @param {string[]} detectedPlugins - Array of plugin names detected from the source site
+ * @returns {{ block: string, componentFiles: string[] }}
+ */
+function buildCardEmbeddedDemos(detectedPlugins) {
+  if (!detectedPlugins || detectedPlugins.length === 0) {
+    return { block: '', componentFiles: [] };
+  }
+
+  const lines = [];
+  const componentFiles = [];
+  const usedComponents = new Set();
+  let fallbackIndex = 0;
+
+  lines.push('═══ CARD EMBEDDED ANIMATION DEMOS ═══');
+  lines.push('Each product card MUST render a DIFFERENT live animation component inside it.');
+  lines.push('Import from @/components/animations/{name} and render as the card\'s visual content.');
+  lines.push('These replace static icons, emoji, or identical gradient backgrounds.');
+  lines.push('');
+
+  detectedPlugins.forEach(function (plugin, index) {
+    var demo = CARD_EMBEDDED_DEMOS[plugin];
+
+    // If the mapped component was already used, try a fallback
+    if (demo && usedComponents.has(demo.name)) {
+      demo = null; // fall through to fallback
+    }
+
+    if (!demo) {
+      // Use fallback sequence, skipping already-used components
+      while (fallbackIndex < DEMO_FALLBACK_SEQUENCE.length && usedComponents.has(DEMO_FALLBACK_SEQUENCE[fallbackIndex].name)) {
+        fallbackIndex++;
+      }
+      demo = DEMO_FALLBACK_SEQUENCE[fallbackIndex % DEMO_FALLBACK_SEQUENCE.length] || DEMO_FALLBACK_SEQUENCE[0];
+      fallbackIndex++;
+    }
+
+    usedComponents.add(demo.name);
+    var demoComp = lookupComponent(demo.name);
+    var displayName = demoComp ? demoComp.export_name : demo.component;
+    var importLine = demoComp ? demoComp.import_statement : ('import { ' + demo.component + ' } from "@/components/animations/' + demo.name + '"');
+    var filePath = demoComp ? demoComp.source_file : demo.file;
+    lines.push('Card ' + (index + 1) + ' (' + plugin + '):');
+    lines.push('  Component: ' + displayName);
+    lines.push('  Import: ' + importLine);
+    lines.push('  File: ' + filePath);
+    lines.push('  Render inside the card as a live animation preview');
+    lines.push('');
+    componentFiles.push(filePath);
+  });
+
+  lines.push('CRITICAL: Each card MUST show a DIFFERENT running animation. Never use identical visuals.');
+  lines.push('═════════════════════════════════════');
+
+  return {
+    block: lines.join('\n'),
+    componentFiles: componentFiles,
+  };
 }
 
 /**
@@ -919,10 +1051,10 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
     if (freeSelected) {
       var freeCompDef = lookupComponent(freeSelected);
       if (freeCompDef) {
-        var freeSource = readComponentSource(freeCompDef.file);
+        var freeSource = readComponentSource(freeCompDef.source_file || freeCompDef.file);
         if (freeSource) {
           var freeDeps = buildDependencies(freeEngine, false, freeCompDef);
-          componentFiles.push(freeCompDef.file);
+          componentFiles.push(freeCompDef.source_file || freeCompDef.file);
           return augmentResultWithPlugins({
             animationContext: buildComponentContext(freeCompDef, freeSource, {}, freeSelected),
             tokenBudget: 8192,
@@ -988,7 +1120,7 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
   const patterns = resolvePatterns(sectionArchetype, overrides);
   const intensity = getIntensity(animationAnalysis);
   const overridePattern = overrides[(sectionArchetype || '').toUpperCase()] || null;
-  const lottieInfo = checkLottie(animationAnalysis, sectionArchetype, overridePattern);
+  const lottieInfo = checkLottie(animationAnalysis, sectionArchetype, overridePattern, sectionIndex, null);
   const perSection = animationAnalysis.perSection || {};
   const sectionData = perSection[sectionIndex] || null;
 
@@ -1034,14 +1166,14 @@ function buildAnimationContext(animationAnalysis, presetContent, sectionArchetyp
   const componentDef = selectedPattern ? lookupComponent(selectedPattern) : null;
 
   if (componentDef) {
-    const source = readComponentSource(componentDef.file);
+    const source = readComponentSource(componentDef.source_file || componentDef.file);
     if (source) {
       // We have a real component — inject it
       const propOverrides = extractPropOverrides(sectionData, componentDef);
       const dependencies = buildDependencies(engine, lottieInfo.isLottie, componentDef);
       const tokenBudget = calculateTokenBudget(patterns, engine, lottieInfo.isLottie, true);
 
-      componentFiles.push(componentDef.file);
+      componentFiles.push(componentDef.source_file || componentDef.file);
 
       const lines = [buildComponentContext(componentDef, source, propOverrides, selectedPattern)];
 
@@ -1193,7 +1325,10 @@ module.exports = {
   buildAllAnimationContexts,
   buildPluginContextBlock,
   buildCardAnimationBlock,
+  buildCardEmbeddedDemos,
   getPluginRecommendationsForSection,
   loadRegistry,
   CARD_ANIMATION_MAP,
+  CARD_EMBEDDED_DEMOS,
+  DEMO_FALLBACK_SEQUENCE,
 };

@@ -13,7 +13,7 @@ skills/                  → Design knowledge (READ ONLY during generation)
   style-schema.md        → Configurable style dimensions and Tailwind mappings
   animation-patterns.md  → 20+ named GSAP/Framer Motion patterns
   image-extraction.md   → Image categorization spec (10 categories)
-  presets/               → Industry-specific default configurations (32 presets)
+  presets/               → Industry-specific default configurations (35 presets)
   components/            → Reusable component docs (cursor-trail, image-patterns)
 templates/               → Prompt templates for each pipeline stage
   scaffold-prompt.md     → Stage 1: page specification from brief + preset

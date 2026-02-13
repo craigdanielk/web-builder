@@ -9,8 +9,29 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
+
+const COMPONENT_REGISTRY_PATH = path.resolve(__dirname, '../../../skills/animation-components/component-registry.json');
+let _componentRegistryCache = null;
+
+function loadComponentRegistry() {
+  if (_componentRegistryCache) return _componentRegistryCache;
+  try {
+    const raw = fs.readFileSync(COMPONENT_REGISTRY_PATH, 'utf8');
+    _componentRegistryCache = JSON.parse(raw);
+    return _componentRegistryCache;
+  } catch (err) {
+    _componentRegistryCache = { components: {} };
+    return _componentRegistryCache;
+  }
+}
+
+function getRegistryComponent(name) {
+  const reg = loadComponentRegistry();
+  return reg.components[name] || null;
+}
 
 // ── Category Keywords ────────────────────────────────────────────────────────
 
@@ -66,6 +87,43 @@ const SECTION_CATEGORY_MAP = {
   NAV: { primary: ['logo'], fallback: [] },
   FOOTER: { primary: ['logo'], fallback: [] },
 };
+
+// ---------------------------------------------------------------------------
+// Visual Content Fallback Chain (v1.2.0)
+// When no extracted images are available for a section, map to animation
+// library components that can serve as decorative visual content.
+// ---------------------------------------------------------------------------
+
+const SECTION_VISUAL_FALLBACK_MAP = {
+  'HERO':              ['aurora-background', 'perspective-grid'],
+  'FEATURES':          ['gradient-shift', 'floating'],
+  'PRODUCT-SHOWCASE':  ['staggered-grid', 'perspective-grid'],
+  'GALLERY':           ['parallax-layers', 'aurora-background'],
+  'ABOUT':             ['blur-fade', 'floating'],
+  'STATS':             ['count-up', 'gradient-shift'],
+  'CTA':               ['aurora-background', 'glow-border'],
+  'TESTIMONIALS':      ['floating', 'blur-fade'],
+  'PINNED-SCROLL':     ['perspective-grid', 'aurora-background'],
+  'HOW-IT-WORKS':      ['staggered-grid', 'gradient-shift'],
+  'COMPARISON':        ['gradient-shift', 'border-beam'],
+  'FAQ':               ['floating', 'gradient-shift'],
+};
+
+// For card grids: rotate through these so each card gets a different visual
+const CARD_VISUAL_COMPONENTS = [
+  { name: 'aurora-background',  file: 'background/aurora-background.tsx',   import: 'AuroraBackground' },
+  { name: 'perspective-grid',   file: 'background/perspective-grid.tsx',    import: 'PerspectiveGrid' },
+  { name: 'gradient-shift',     file: 'continuous/gradient-shift.tsx',      import: 'GradientBackground' },
+  { name: 'floating',           file: 'continuous/floating.tsx',            import: 'Floating' },
+  { name: 'staggered-grid',     file: 'entrance/staggered-grid.tsx',       import: 'StaggeredGrid' },
+  { name: 'glow-border',        file: 'effect/glow-border.tsx',            import: 'GlowBorder' },
+  { name: 'border-beam',        file: 'effect/border-beam.tsx',            import: 'BorderBeam' },
+  { name: 'blur-fade',          file: 'entrance/blur-fade.tsx',            import: 'BlurFade' },
+];
+
+// Map component name to its CARD_VISUAL_COMPONENTS entry
+const VISUAL_COMPONENT_LOOKUP = {};
+CARD_VISUAL_COMPONENTS.forEach(function(c) { VISUAL_COMPONENT_LOOKUP[c.name] = c; });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -310,6 +368,65 @@ function buildAssetContext(categorizedImages, sectionArchetype, sectionIndex) {
   return lines.join('\n');
 }
 
+/**
+ * Get visual content fallback when no extracted images are available.
+ * Returns a prompt block describing which animation library component to use
+ * as decorative visual content for the section.
+ *
+ * @param {string} archetype - Section archetype (e.g., 'FEATURES', 'HERO')
+ * @param {number} sectionIndex - Index of section in page (for rotation)
+ * @param {boolean} isCardGrid - Whether this section contains a card grid
+ * @param {number} cardCount - Number of cards (if isCardGrid)
+ * @returns {{ block: string, componentFiles: string[] }}
+ */
+function getVisualFallback(archetype, sectionIndex, isCardGrid, cardCount) {
+  const lines = [];
+  const componentFiles = [];
+  const normalizedArchetype = (archetype || '').toUpperCase();
+
+  if (isCardGrid && cardCount > 1) {
+    // Card grid: each card gets a different decorative component
+    lines.push('## Visual Content Fallback (no extracted images available)');
+    lines.push('');
+    lines.push('CRITICAL: Since no images are available, use animation library components as decorative card visuals.');
+    lines.push('Each card MUST use a DIFFERENT component — never identical visuals across cards.');
+    lines.push('');
+    for (var i = 0; i < cardCount; i++) {
+      var comp = CARD_VISUAL_COMPONENTS[i % CARD_VISUAL_COMPONENTS.length];
+      var regComp = getRegistryComponent(comp.name);
+      var importLine = regComp ? regComp.import_statement : ('import ' + comp.import + ' from `@/components/animations/' + comp.name + '`');
+      var filePath = regComp ? regComp.source_file : comp.file;
+      lines.push('Card ' + (i + 1) + ': ' + importLine);
+      lines.push('  Render inside the card as a decorative background/visual element');
+      lines.push('  File: ' + filePath);
+      lines.push('');
+      componentFiles.push(filePath);
+    }
+  } else {
+    // Single section: use archetype-mapped component
+    var candidates = SECTION_VISUAL_FALLBACK_MAP[normalizedArchetype] || ['gradient-shift'];
+    var selected = candidates[sectionIndex % candidates.length];
+    var comp = VISUAL_COMPONENT_LOOKUP[selected] || CARD_VISUAL_COMPONENTS[0];
+    var regComp = getRegistryComponent(comp.name);
+    var importLine = regComp ? regComp.import_statement : ('import ' + comp.import + ' from `@/components/animations/' + comp.name + '`');
+    var filePath = regComp ? regComp.source_file : comp.file;
+
+    lines.push('## Visual Content Fallback (no extracted images available)');
+    lines.push('');
+    lines.push('Since no images are available for this section, use this animation library component as decorative visual content:');
+    lines.push('Component: ' + importLine);
+    lines.push('File: ' + filePath);
+    lines.push('');
+    lines.push('Use it as a background or decorative element. Do NOT use identical CSS gradients.');
+    componentFiles.push(filePath);
+  }
+
+  return {
+    block: lines.join('\n'),
+    componentFiles: componentFiles,
+  };
+}
+
 /** Default number of synthetic sections when extraction finds 0 sections (JS-heavy sites). */
 const ZERO_SECTION_DEFAULT_COUNT = 12;
 
@@ -431,4 +548,7 @@ module.exports = {
   buildAssetContext,
   buildAllAssetContexts,
   getDownloadManifest,
+  getVisualFallback,
+  SECTION_VISUAL_FALLBACK_MAP,
+  CARD_VISUAL_COMPONENTS,
 };

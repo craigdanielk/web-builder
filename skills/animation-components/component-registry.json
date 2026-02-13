@@ -1,0 +1,795 @@
+{
+  "version": "2.0.0",
+  "generated_at": "2026-02-11T13:05:11.987Z",
+  "component_count": 48,
+  "components": {
+    "blur-fade": {
+      "source_file": "entrance/blur-fade.tsx",
+      "export_name": "BlurReveal",
+      "export_type": "default",
+      "import_statement": "import BlurReveal from '@/components/animations/blur-fade'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 40
+    },
+    "character-reveal": {
+      "source_file": "entrance/character-reveal.tsx",
+      "export_name": "TextRevealEffect",
+      "export_type": "default",
+      "import_statement": "import TextRevealEffect from '@/components/animations/character-reveal'",
+      "dependencies": [
+        "gsap",
+        "@gsap"
+      ],
+      "engine": "gsap",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 138
+    },
+    "drawsvg-reveal": {
+      "source_file": "entrance/drawsvg-reveal.tsx",
+      "export_name": "DrawSVGReveal",
+      "export_type": "default",
+      "import_statement": "import DrawSVGReveal from '@/components/animations/drawsvg-reveal'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 79
+    },
+    "fade-up-single": {
+      "source_file": "entrance/fade-up-single.tsx",
+      "export_name": "FadeText",
+      "export_type": "named",
+      "import_statement": "import { FadeText } from '@/components/animations/fade-up-single'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 62
+    },
+    "fade-up-stagger": {
+      "source_file": "entrance/fade-up-stagger.tsx",
+      "export_name": "AnimatedGroup",
+      "export_type": "named",
+      "import_statement": "import { AnimatedGroup } from '@/components/animations/fade-up-stagger'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 170
+    },
+    "page-loader": {
+      "source_file": "entrance/page-loader.tsx",
+      "export_name": "PageLoader",
+      "export_type": "default",
+      "import_statement": "import PageLoader from '@/components/animations/page-loader'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 179
+    },
+    "scale-up": {
+      "source_file": "entrance/scale-up.tsx",
+      "export_name": "BlurReveal",
+      "export_type": "named",
+      "import_statement": "import { BlurReveal } from '@/components/animations/scale-up'",
+      "dependencies": [
+        "motion"
+      ],
+      "engine": "framer-motion",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 37
+    },
+    "slide-in-left": {
+      "source_file": "entrance/slide-in-left.tsx",
+      "export_name": "SlideTabs",
+      "export_type": "named",
+      "import_statement": "import { SlideTabs } from '@/components/animations/slide-in-left'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 97
+    },
+    "slide-in-right": {
+      "source_file": "entrance/slide-in-right.tsx",
+      "export_name": "SlideTabs",
+      "export_type": "named",
+      "import_statement": "import { SlideTabs } from '@/components/animations/slide-in-right'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 97
+    },
+    "staggered-grid": {
+      "source_file": "entrance/staggered-grid.tsx",
+      "export_name": "StaggeredGrid",
+      "export_type": "default",
+      "import_statement": "import StaggeredGrid from '@/components/animations/staggered-grid'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 176
+    },
+    "staggered-timeline": {
+      "source_file": "entrance/staggered-timeline.tsx",
+      "export_name": "AnimatedGroup",
+      "export_type": "named",
+      "import_statement": "import { AnimatedGroup } from '@/components/animations/staggered-timeline'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 170
+    },
+    "word-reveal": {
+      "source_file": "entrance/word-reveal.tsx",
+      "export_name": "WordReveal",
+      "export_type": "default",
+      "import_statement": "import WordReveal from '@/components/animations/word-reveal'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "entrance",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 60
+    },
+    "gsap-pinned-horizontal": {
+      "source_file": "scroll/gsap-pinned-horizontal.tsx",
+      "export_name": "PinnedHorizontalScroll",
+      "export_type": "default",
+      "import_statement": "import PinnedHorizontalScroll from '@/components/animations/gsap-pinned-horizontal'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "scroll",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 178
+    },
+    "horizontal-scroll": {
+      "source_file": "scroll/horizontal-scroll.tsx",
+      "export_name": "Example",
+      "export_type": "default",
+      "import_statement": "import Example from '@/components/animations/horizontal-scroll'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "scroll",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 105
+    },
+    "parallax-layers": {
+      "source_file": "scroll/parallax-layers.tsx",
+      "export_name": "FloatingPathsBackground",
+      "export_type": "named",
+      "import_statement": "import { FloatingPathsBackground } from '@/components/animations/parallax-layers'",
+      "dependencies": [
+        "motion"
+      ],
+      "engine": "framer-motion",
+      "category": "scroll",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 64
+    },
+    "parallax-section": {
+      "source_file": "scroll/parallax-section.tsx",
+      "export_name": "ZoomParallax",
+      "export_type": "named",
+      "import_statement": "import { ZoomParallax } from '@/components/animations/parallax-section'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "scroll",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 58
+    },
+    "pin-and-reveal": {
+      "source_file": "scroll/pin-and-reveal.tsx",
+      "export_name": "StickyFeatureSection",
+      "export_type": "named",
+      "import_statement": "import { StickyFeatureSection } from '@/components/animations/pin-and-reveal'",
+      "dependencies": [],
+      "category": "scroll",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 139
+    },
+    "scroll-progress": {
+      "source_file": "scroll/scroll-progress.tsx",
+      "export_name": "Component",
+      "export_type": "named",
+      "import_statement": "import { Component } from '@/components/animations/scroll-progress'",
+      "dependencies": [
+        "lucide-react",
+        "motion"
+      ],
+      "engine": "framer-motion",
+      "category": "scroll",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 91
+    },
+    "accordion-expand": {
+      "source_file": "interactive/accordion-expand.tsx",
+      "export_name": "FAQs",
+      "export_type": "default",
+      "import_statement": "import FAQs from '@/components/animations/accordion-expand'",
+      "dependencies": [],
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 47
+    },
+    "cursor-trail": {
+      "source_file": "interactive/cursor-trail.tsx",
+      "export_name": "CursorTrail",
+      "export_type": "default",
+      "import_statement": "import CursorTrail from '@/components/animations/cursor-trail'",
+      "dependencies": [],
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 264
+    },
+    "draggable-carousel": {
+      "source_file": "interactive/draggable-carousel.tsx",
+      "export_name": "DraggableCarousel",
+      "export_type": "default",
+      "import_statement": "import DraggableCarousel from '@/components/animations/draggable-carousel'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 71
+    },
+    "flip-expand-card": {
+      "source_file": "interactive/flip-expand-card.tsx",
+      "export_name": "FlipExpandCard",
+      "export_type": "default",
+      "import_statement": "import FlipExpandCard from '@/components/animations/flip-expand-card'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 56
+    },
+    "flip-grid-filter": {
+      "source_file": "interactive/flip-grid-filter.tsx",
+      "export_name": "FlipGridFilter",
+      "export_type": "default",
+      "import_statement": "import FlipGridFilter from '@/components/animations/flip-grid-filter'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 65
+    },
+    "hover-glow": {
+      "source_file": "interactive/hover-glow.tsx",
+      "export_name": "TubesBackground",
+      "export_type": "default",
+      "import_statement": "import TubesBackground from '@/components/animations/hover-glow'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 117
+    },
+    "hover-lift": {
+      "source_file": "interactive/hover-lift.tsx",
+      "export_name": "HoverLift",
+      "export_type": "default",
+      "import_statement": "import HoverLift from '@/components/animations/hover-lift'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 45
+    },
+    "magnetic-button": {
+      "source_file": "interactive/magnetic-button.tsx",
+      "export_name": "MagneticButton",
+      "export_type": "default",
+      "import_statement": "import MagneticButton from '@/components/animations/magnetic-button'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 89
+    },
+    "morphsvg-icon": {
+      "source_file": "interactive/morphsvg-icon.tsx",
+      "export_name": "MorphSVGIcon",
+      "export_type": "default",
+      "import_statement": "import MorphSVGIcon from '@/components/animations/morphsvg-icon'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 71
+    },
+    "observer-swipe": {
+      "source_file": "interactive/observer-swipe.tsx",
+      "export_name": "ObserverSwipe",
+      "export_type": "default",
+      "import_statement": "import ObserverSwipe from '@/components/animations/observer-swipe'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 52
+    },
+    "spotlight-follow": {
+      "source_file": "interactive/spotlight-follow.tsx",
+      "export_name": "SpotlightFollow",
+      "export_type": "default",
+      "import_statement": "import SpotlightFollow from '@/components/animations/spotlight-follow'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 181
+    },
+    "tilt-card": {
+      "source_file": "interactive/tilt-card.tsx",
+      "export_name": "InteractiveTiltCard",
+      "export_type": "named",
+      "import_statement": "import { InteractiveTiltCard } from '@/components/animations/tilt-card'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 55
+    },
+    "count-up": {
+      "source_file": "continuous/count-up.tsx",
+      "export_name": "CountUp",
+      "export_type": "default",
+      "import_statement": "import CountUp from '@/components/animations/count-up'",
+      "dependencies": [],
+      "category": "continuous",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 70
+    },
+    "floating": {
+      "source_file": "continuous/floating.tsx",
+      "export_name": "CircularMenu",
+      "export_type": "default",
+      "import_statement": "import CircularMenu from '@/components/animations/floating'",
+      "dependencies": [
+        "framer-motion",
+        "lucide-react"
+      ],
+      "engine": "framer-motion",
+      "category": "continuous",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 67
+    },
+    "gradient-shift": {
+      "source_file": "continuous/gradient-shift.tsx",
+      "export_name": "GradientBackground",
+      "export_type": "named",
+      "import_statement": "import { GradientBackground } from '@/components/animations/gradient-shift'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "continuous",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 74
+    },
+    "marquee": {
+      "source_file": "continuous/marquee.tsx",
+      "export_name": "Marquee",
+      "export_type": "default",
+      "import_statement": "import Marquee from '@/components/animations/marquee'",
+      "dependencies": [],
+      "category": "continuous",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 102
+    },
+    "motionpath-orbit": {
+      "source_file": "continuous/motionpath-orbit.tsx",
+      "export_name": "MotionPathOrbit",
+      "export_type": "default",
+      "import_statement": "import MotionPathOrbit from '@/components/animations/motionpath-orbit'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "continuous",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 66
+    },
+    "character-flip": {
+      "source_file": "text/character-flip.tsx",
+      "export_name": "CharacterFlip",
+      "export_type": "default",
+      "import_statement": "import CharacterFlip from '@/components/animations/character-flip'",
+      "dependencies": [],
+      "category": "text",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 106
+    },
+    "scramble-text": {
+      "source_file": "text/scramble-text.tsx",
+      "export_name": "ScrambleText",
+      "export_type": "default",
+      "import_statement": "import ScrambleText from '@/components/animations/scramble-text'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "text",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 70
+    },
+    "split-text-stagger": {
+      "source_file": "text/split-text-stagger.tsx",
+      "export_name": "BubbleText",
+      "export_type": "named",
+      "import_statement": "import { BubbleText } from '@/components/animations/split-text-stagger'",
+      "dependencies": [],
+      "category": "text",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 53
+    },
+    "splittext-chars": {
+      "source_file": "text/splittext-chars.tsx",
+      "export_name": "SplitTextChars",
+      "export_type": "default",
+      "import_statement": "import SplitTextChars from '@/components/animations/splittext-chars'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "text",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 69
+    },
+    "splittext-lines": {
+      "source_file": "text/splittext-lines.tsx",
+      "export_name": "SplitTextLines",
+      "export_type": "default",
+      "import_statement": "import SplitTextLines from '@/components/animations/splittext-lines'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "text",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 70
+    },
+    "splittext-words": {
+      "source_file": "text/splittext-words.tsx",
+      "export_name": "SplitTextWords",
+      "export_type": "default",
+      "import_statement": "import SplitTextWords from '@/components/animations/splittext-words'",
+      "dependencies": [
+        "gsap"
+      ],
+      "engine": "gsap",
+      "category": "text",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 66
+    },
+    "text-gradient-flow": {
+      "source_file": "text/text-gradient-flow.tsx",
+      "export_name": "TextShimmerWave",
+      "export_type": "named",
+      "import_statement": "import { TextShimmerWave } from '@/components/animations/text-gradient-flow'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "text",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 91
+    },
+    "text-scramble": {
+      "source_file": "text/text-scramble.tsx",
+      "export_name": "ShaderCanvas",
+      "export_type": "default",
+      "import_statement": "import ShaderCanvas from '@/components/animations/text-scramble'",
+      "dependencies": [
+        "three"
+      ],
+      "category": "text",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 161
+    },
+    "typewriter": {
+      "source_file": "text/typewriter.tsx",
+      "export_name": "TypewriterEffect",
+      "export_type": "named",
+      "import_statement": "import { TypewriterEffect } from '@/components/animations/typewriter'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "text",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 189
+    },
+    "border-beam": {
+      "source_file": "effect/border-beam.tsx",
+      "export_name": "BorderBeam",
+      "export_type": "default",
+      "import_statement": "import BorderBeam from '@/components/animations/border-beam'",
+      "dependencies": [],
+      "category": "effect",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 75
+    },
+    "glow-border": {
+      "source_file": "effect/glow-border.tsx",
+      "export_name": "GlowBorder",
+      "export_type": "default",
+      "import_statement": "import GlowBorder from '@/components/animations/glow-border'",
+      "dependencies": [],
+      "category": "effect",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 107
+    },
+    "aurora-background": {
+      "source_file": "background/aurora-background.tsx",
+      "export_name": "AuroraBackground",
+      "export_type": "default",
+      "import_statement": "import AuroraBackground from '@/components/animations/aurora-background'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "background",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 129
+    },
+    "perspective-grid": {
+      "source_file": "background/perspective-grid.tsx",
+      "export_name": "PerspectiveGrid",
+      "export_type": "default",
+      "import_statement": "import PerspectiveGrid from '@/components/animations/perspective-grid'",
+      "dependencies": [],
+      "category": "background",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 84
+    }
+  }
+}

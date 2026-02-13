@@ -61,6 +61,7 @@ const { mapSectionsToArchetypes } = require('./lib/archetype-mapper');
 const patternIdentifier = require('./lib/pattern-identifier');
 const {
   matchAnimationPatterns,
+  detectUIComponents,
   matchUIComponents,
   mapComponentsToSections,
   aggregateGapReport,
@@ -282,7 +283,7 @@ section('C2: UI Component Detection');
     extractionData.sections,
     extractionData.textContent
   );
-  const uiComponents = matchUIComponents(extractionData, mappedSections);
+  const uiComponents = detectUIComponents(extractionData, mappedSections);
 
   // The brands section should have logo-marquee detected (5 small images)
   const brandsUI = uiComponents.find((u) => u.sectionIndex === 3);

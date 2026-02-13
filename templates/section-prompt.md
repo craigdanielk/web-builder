@@ -72,7 +72,19 @@ Requirements:
      * All other sections → fade-up-stagger (default)
    - Always return ctx.revert() in useEffect cleanup
 
-9. **Archetype + Variant Overrides:**
+9. **Animation Component Library (MANDATORY when provided):**
+   - If the Animation Context above includes a "### Animation Component Source" block,
+     you MUST import that component from `@/components/animations/{pattern-name}`.
+   - Do NOT rewrite the animation logic inline — use the provided component as-is.
+   - The component is already copied to the project. Just import and use it.
+   - Example: if the context provides pattern `character-reveal`, import it:
+     `import CharacterReveal from "@/components/animations/character-reveal";`
+   - Wrap your content with the animation component according to its Props section.
+   - If the Animation Context includes a "## Section plugin recommendations" block,
+     use at least one recommended plugin in this section. Import it, register it
+     with `gsap.registerPlugin()`, and use it in your GSAP context.
+
+10. **Archetype + Variant Overrides:**
 
    **When archetype is PRODUCT-SHOWCASE and variant is `demo-cards`:**
    - CRITICAL: Each card in this showcase MUST have a visually DISTINCT treatment
@@ -96,6 +108,28 @@ Requirements:
      * transform: scale + box-shadow for lifts
    - DO NOT give all cards the same gradient, same hover effect, or same layout
    - The entire point of this section is showing VARIETY
+
+11. **Icon & Emoji Rules (MANDATORY):**
+   - NEVER use emoji characters as icons or decorative elements. Unicode symbols (arrows, checkmarks) are acceptable.
+   - For icons, always import from `lucide-react`: `import { Zap, Globe, Shield } from 'lucide-react'`
+   - Render icons as React components: `<Zap className="w-6 h-6" />`
+   - Use semantic icon names that match the content purpose (see Icon Mapping below)
+   - For decorative shapes/blobs, use CSS or SVG, not emoji
+
+   **Icon Mapping by Section Type:**
+   - FEATURES: Zap (performance), Shield (security), Globe (global), Users (community), Code (developer), Gauge (speed), Lock (privacy), Layers (architecture), Cpu (tech), Rocket (launch), Eye (visibility), Sparkles (quality)
+   - PRICING: Check (included), X (excluded), Star (popular), Crown (premium), Infinity (unlimited), BadgeCheck (verified)
+   - HOW-IT-WORKS: ArrowRight (next step), ChevronDown (expand), Play (action), Lightbulb (idea), Settings (configure), CircleDot (step marker)
+   - TRUST / SOCIAL-PROOF: Award (achievement), BadgeCheck (verified), ShieldCheck (certified), Trophy (winner), ThumbsUp (endorsement)
+   - CONTACT: Mail (email), Phone (call), MapPin (location), Clock (hours), MessageCircle (chat), Send (submit)
+   - STATS: TrendingUp (growth), BarChart3 (data), Activity (live), Target (goal), Percent (metric), Hash (count)
+
+12. **Logo Bar Rendering (MANDATORY for LOGO-BAR / SOCIAL-PROOF):**
+   - When actual logo image URLs are provided in the asset context, use them as CSS backgroundImage on divs
+   - When NO logo image URLs are available, render company names as styled text pills:
+     `<div className="min-w-[120px] h-12 flex items-center justify-center px-6 py-3 rounded-full border border-white/10 bg-white/5 text-sm font-medium tracking-wide">{companyName}</div>`
+   - NEVER render logos as `<img>` tags with missing, broken, or placeholder src attributes
+   - For scrolling marquee variants: duplicate the row for seamless CSS @keyframes loop animation
 
 Output ONLY the component code. No explanation, no markdown wrapping.
 Export the component as default.

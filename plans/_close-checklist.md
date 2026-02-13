@@ -37,6 +37,7 @@ node scripts/generate-docs.js
 - [ ] **System Version**: bump version + add changelog entry
 
 ### 4. Update Dependent Docs (if needed)
+- [ ] `VISION.md` — only if module capabilities, phase status, or system trajectory changed
 - [ ] `README.md` — only if user-facing info changed (presets, tech stack, CLI flags)
 - [ ] `.cursorrules` — only if pipeline stages changed
 

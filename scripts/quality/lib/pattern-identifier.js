@@ -36,6 +36,63 @@ const { detectPinnedHorizontalScroll } = require('./animation-detector');
 // ---------------------------------------------------------------------------
 
 const REGISTRY_DIR = path.resolve(__dirname, '../../../skills/animation-components/registry');
+const COMPONENT_REGISTRY_PATH = path.resolve(__dirname, '../../../skills/animation-components/component-registry.json');
+let _componentRegistryCache = null;
+
+function loadComponentRegistry() {
+  if (_componentRegistryCache) return _componentRegistryCache;
+  try {
+    const raw = fs.readFileSync(COMPONENT_REGISTRY_PATH, 'utf8');
+    _componentRegistryCache = JSON.parse(raw);
+    return _componentRegistryCache;
+  } catch (err) {
+    _componentRegistryCache = { components: {} };
+    return _componentRegistryCache;
+  }
+}
+
+function getRegistryComponentByFile(relativePath) {
+  if (!relativePath) return null;
+  const stem = path.basename(relativePath, '.tsx');
+  const reg = loadComponentRegistry();
+  return reg.components[stem] || null;
+}
+
+// ---------------------------------------------------------------------------
+// UI Component Library Matching (v1.2.0)
+// Maps detected UI component patterns to search queries and animation library
+// categories. Used to find pre-built components in the registry instead of
+// relying on Claude to generate them from scratch.
+// ---------------------------------------------------------------------------
+
+const UI_COMPONENT_LIBRARY_MAP = {
+  'logo-marquee':     { search: 'marquee infinite scroll logo',  category: 'continuous',    suggestedFile: 'continuous/marquee.tsx' },
+  'card-grid':        { search: 'card grid staggered entrance',  category: 'entrance',      suggestedFile: 'entrance/staggered-grid.tsx' },
+  'accordion':        { search: 'accordion expand collapse',     category: 'interactive',   suggestedFile: null },
+  'tabs':             { search: 'tab switch transition',         category: 'interactive',   suggestedFile: null },
+  'video-embed':      { search: 'video player modal overlay',    category: null,            suggestedFile: null },
+  'image-lightbox':   { search: 'image lightbox modal zoom',     category: 'interactive',   suggestedFile: null },
+  'pricing-toggle':   { search: 'toggle switch pricing annual',  category: 'interactive',   suggestedFile: null },
+  'carousel':         { search: 'carousel slider drag',          category: 'interactive',   suggestedFile: 'interactive/draggable-carousel.tsx' },
+  'testimonial-slider': { search: 'testimonial slider rotate',   category: 'continuous',    suggestedFile: null },
+  'counter':          { search: 'count up number animate',       category: 'text',          suggestedFile: 'text/count-up.tsx' },
+  'typewriter':       { search: 'typewriter text typing',        category: 'text',          suggestedFile: 'text/word-reveal.tsx' },
+  'parallax':         { search: 'parallax scroll layers depth',  category: 'scroll',        suggestedFile: 'scroll/parallax-layers.tsx' },
+  'magnetic-button':  { search: 'magnetic button hover follow',  category: 'interactive',   suggestedFile: 'interactive/magnetic-button.tsx' },
+  'cursor-effect':    { search: 'cursor trail follow mouse',     category: 'interactive',   suggestedFile: 'interactive/cursor-trail.tsx' },
+  'progress-bar':     { search: 'progress bar scroll indicator', category: 'scroll',        suggestedFile: 'scroll/scroll-progress.tsx' },
+  'text-reveal':      { search: 'text reveal character word',    category: 'text',          suggestedFile: 'text/word-reveal.tsx' },
+  'hover-card':       { search: 'hover card tilt 3d',            category: 'interactive',   suggestedFile: 'interactive/hover-lift.tsx' },
+  'infinite-scroll':  { search: 'infinite scroll load more',     category: null,            suggestedFile: null },
+  'modal':            { search: 'modal dialog overlay',          category: null,            suggestedFile: null },
+  'tooltip':          { search: 'tooltip hover popup',           category: null,            suggestedFile: null },
+  'mega-menu':        { search: 'mega menu dropdown nav',         category: null,            suggestedFile: null },
+  'sticky-nav':       { search: 'sticky navigation scroll hide', category: null,            suggestedFile: null },
+  'back-to-top':      { search: 'back to top scroll button',     category: null,            suggestedFile: null },
+  'breadcrumb':       { search: 'breadcrumb navigation trail',   category: null,            suggestedFile: null },
+  'notification':     { search: 'notification toast alert',      category: null,            suggestedFile: null },
+  'skeleton-loader':  { search: 'skeleton loading placeholder',  category: null,            suggestedFile: null },
+};
 
 let _searchIndex = null;
 function loadSearchIndex() {
@@ -266,9 +323,38 @@ function matchAnimationPatterns(animationAnalysis, engine) {
  */
 function matchPluginPatterns(animationAnalysis) {
   const pluginUsage = animationAnalysis?.pluginUsage || {};
-  const detectedPlugins = Object.keys(pluginUsage);
+  let detectedPlugins = Object.keys(pluginUsage);
   const pluginCapabilities = {};
   const gaps = [];
+
+  // ── Bridge: promote library-detected plugins when static extraction is empty ──
+  // gsap-extractor.js often fails on minified/Webflow bundles, leaving pluginUsage
+  // empty. But animation-detector.js correctly identifies plugins via window globals
+  // and script pattern matching (stored in animationAnalysis.libraries). Bridge them.
+  const KNOWN_PLUGINS = [
+    'SplitText', 'ScrambleText', 'Flip', 'DrawSVG', 'MorphSVG',
+    'MotionPath', 'Draggable', 'Observer', 'ScrollSmoother', 'CustomEase', 'matchMedia',
+  ];
+
+  if (detectedPlugins.length === 0) {
+    const libraryNames = (animationAnalysis?.libraries || []).map(function (l) {
+      return l.name || '';
+    });
+    const gsapPluginNames = animationAnalysis?.gsapPlugins || [];
+    const allCandidates = [...new Set([...libraryNames, ...gsapPluginNames])];
+
+    const bridgedPlugins = allCandidates.filter(function (name) {
+      return KNOWN_PLUGINS.includes(name);
+    });
+
+    if (bridgedPlugins.length > 0) {
+      detectedPlugins = bridgedPlugins;
+      // Note: usage data is unavailable from library detection, set to empty array
+      for (const p of bridgedPlugins) {
+        pluginUsage[p] = [];
+      }
+    }
+  }
 
   const PLUGIN_INTENT_MAP = {
     SplitText: ['character-reveal', 'word-reveal', 'line-reveal'],
@@ -336,7 +422,7 @@ function matchPluginPatterns(animationAnalysis) {
  * @param {Object[]} mappedSections - From archetype mapper
  * @returns {Object[]} Detected UI patterns per section
  */
-function matchUIComponents(extractionData, mappedSections) {
+function detectUIComponents(extractionData, mappedSections) {
   const dom = extractionData.renderedDOM || [];
   const sections = extractionData.sections || [];
   const detected = [];
@@ -424,9 +510,168 @@ function matchUIComponents(extractionData, mappedSections) {
 }
 
 /**
+ * Match detected UI component patterns against the animation library.
+ * For each detected UI pattern, finds the best matching library component
+ * if one exists.
+ *
+ * @param {string[]} detectedPatterns - Array of UI pattern names detected from the source site
+ * @param {object} [searchIndex] - Optional animation_search_index.json data for richer matching
+ * @returns {Array<{ pattern: string, matched: boolean, component: object|null, searchQuery: string }>}
+ */
+function matchUIComponents(detectedPatterns, searchIndex) {
+  if (!detectedPatterns || detectedPatterns.length === 0) return [];
+
+  const results = [];
+
+  detectedPatterns.forEach(function (pattern) {
+    const normalized = pattern.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    let mapping = UI_COMPONENT_LIBRARY_MAP[normalized];
+
+    if (!mapping) {
+      // Try partial match
+      const keys = Object.keys(UI_COMPONENT_LIBRARY_MAP);
+      for (let k = 0; k < keys.length; k++) {
+        if (normalized.includes(keys[k]) || keys[k].includes(normalized)) {
+          mapping = UI_COMPONENT_LIBRARY_MAP[keys[k]];
+          break;
+        }
+      }
+    }
+
+    if (mapping && mapping.suggestedFile) {
+      results.push({
+        pattern,
+        matched: true,
+        component: {
+          file: mapping.suggestedFile,
+          category: mapping.category,
+          searchQuery: mapping.search,
+        },
+        searchQuery: mapping.search,
+      });
+    } else if (mapping && searchIndex) {
+      // Try to find a match in the search index
+      const match = searchIndexLookup(searchIndex, mapping.search, mapping.category);
+      results.push({
+        pattern,
+        matched: !!match,
+        component: match,
+        searchQuery: mapping.search,
+      });
+    } else {
+      results.push({
+        pattern,
+        matched: false,
+        component: null,
+        searchQuery: mapping ? mapping.search : pattern,
+      });
+    }
+  });
+
+  return results;
+}
+
+/**
+ * Simple search index lookup - finds the best matching component from the search index.
+ * @param {object} searchIndex - The animation_search_index.json data
+ * @param {string} query - Search query string
+ * @param {string|null} category - Optional category to filter by
+ * @returns {object|null} - Matched component info or null
+ */
+function searchIndexLookup(searchIndex, query, category) {
+  if (!searchIndex) return null;
+
+  const words = query.toLowerCase().split(/\s+/);
+  let bestMatch = null;
+  let bestScore = 0;
+
+  // Search by section role if available
+  if (searchIndex.by_section_role) {
+    const roles = Object.keys(searchIndex.by_section_role);
+    roles.forEach(function (role) {
+      const entries = searchIndex.by_section_role[role] || [];
+      entries.forEach(function (entry) {
+        let score = 0;
+        const entryText = ((entry.name || '') + ' ' + (entry.description || '') + ' ' + (entry.tags || []).join(' ')).toLowerCase();
+        words.forEach(function (w) {
+          if (entryText.includes(w)) score++;
+        });
+        if (category && entry.category === category) score += 2;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = { file: entry.file || (entry.category + '/' + entry.name + '.tsx'), category: entry.category };
+        }
+      });
+    });
+  }
+
+  // Also search by motion intent if available
+  if (searchIndex.by_motion_intent) {
+    const intents = Object.keys(searchIndex.by_motion_intent);
+    intents.forEach(function (intent) {
+      if (!words.some(function (w) {
+        return intent.toLowerCase().includes(w);
+      })) return;
+      const entries = searchIndex.by_motion_intent[intent] || [];
+      entries.forEach(function (entry) {
+        let score = 2; // bonus for intent match
+        if (category && entry.category === category) score += 2;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = { file: entry.file || (entry.category + '/' + entry.name + '.tsx'), category: entry.category };
+        }
+      });
+    });
+  }
+
+  return bestScore >= 2 ? bestMatch : null;
+}
+
+/**
+ * Build a prompt context block for matched UI components.
+ *
+ * @param {Array} matchedComponents - Output from matchUIComponents()
+ * @returns {{ block: string, componentFiles: string[] }}
+ */
+function buildUIComponentBlock(matchedComponents) {
+  if (!matchedComponents || matchedComponents.length === 0) {
+    return { block: '', componentFiles: [] };
+  }
+
+  const matched = matchedComponents.filter(function (m) {
+    return m.matched;
+  });
+  if (matched.length === 0) return { block: '', componentFiles: [] };
+
+  const lines = [];
+  const componentFiles = [];
+
+  lines.push('═══ UI COMPONENT INJECTION ═══');
+  lines.push('The following UI patterns were detected on the source site and matched to library components.');
+  lines.push('Use the library component instead of building from scratch.');
+  lines.push('');
+
+  matched.forEach(function (m) {
+    var comp = m.component;
+    var regComp = getRegistryComponentByFile(comp.file);
+    var filePath = regComp ? regComp.source_file : comp.file;
+    var importLine = regComp ? regComp.import_statement : ('Import from: @/components/animations/' + comp.file.split('/').pop().replace('.tsx', ''));
+    lines.push('Pattern: ' + m.pattern);
+    lines.push('  Component file: ' + filePath);
+    lines.push('  ' + importLine);
+    lines.push('');
+    componentFiles.push(filePath);
+  });
+
+  lines.push('═════════════════════════════');
+
+  return { block: lines.join('\n'), componentFiles };
+}
+
+/**
  * Map detected components to sections for prompt injection.
  * @param {Object[]} animationPatterns - From matchAnimationPatterns()
- * @param {Object[]} uiComponents - From matchUIComponents()
+ * @param {Object[]} uiComponents - From detectUIComponents()
  * @returns {Object} Map of sectionIndex → { animations, uiComponents }
  */
 function mapComponentsToSections(animationPatterns, uiComponents) {
@@ -612,7 +857,7 @@ function identify(extractionDir, projectName) {
   const engine = animationAnalysis.engine || 'framer-motion';
   const { identifiedPatterns, gaps: animationGaps } = matchAnimationPatterns(animationAnalysis, engine);
   const pluginResult = matchPluginPatterns(animationAnalysis);
-  const uiComponents = matchUIComponents(extractionData, mappedSections);
+  const uiComponents = detectUIComponents(extractionData, mappedSections);
   const sectionMapping = mapComponentsToSections(identifiedPatterns, uiComponents);
 
   // Pinned horizontal scroll detection (from runtime GSAP calls + static bundle analysis)
@@ -669,7 +914,11 @@ module.exports = {
   identify,
   matchAnimationPatterns,
   matchPluginPatterns,
+  detectUIComponents,
   matchUIComponents,
+  buildUIComponentBlock,
+  searchIndexLookup,
+  UI_COMPONENT_LIBRARY_MAP,
   mapComponentsToSections,
   aggregateGapReport,
   classifyGSAPCall,

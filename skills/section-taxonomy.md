@@ -309,28 +309,6 @@ are intentional — they get filled the first time you generate that section typ
 
 ---
 
-## Scroll & Immersive
-
-### PINNED-SCROLL
-**Purpose:** Full-viewport section that pins in place while content scrolls horizontally. The signature pattern of premium marketing sites — vertical scroll input translates to horizontal movement with animated elements.
-**Variants:**
-- `horizontal-panels` — Discrete content panels scrolling horizontally (case studies, features)
-- `animated-scene` — Continuous animated landscape with elements entering/exiting (GSAP homepage style)
-- `product-journey` — Product images/specs flowing left-to-right with parallax layers (Apple style)
-- `timeline-scroll` — Chronological content scrolling horizontally with year/milestone markers
-
-**Animation:** `gsap-pinned-horizontal` component with `ScrollTrigger({ pin: true, scrub: true })`. Inner elements use `gsap.fromTo()` with the same ScrollTrigger for coordinated entrance/exit timing. Can compose with `motionpath-orbit`, `drawsvg-reveal`, and `morphsvg-shape-shift` for rich scenes.
-**Structure:** Section wrapper (100vh, relative) → overflow-hidden container (100vh, flex, items-center) → horizontal track (flex, will-change-transform) → panels/scenes. Each panel is `min-w-[100vw]` or a content-sized block.
-**Notes:**
-- Uses `gsap-pinned-horizontal.tsx` component from `skills/animation-components/scroll/`
-- The scroll distance (how long the section stays pinned) equals the total horizontal content width minus viewport
-- For `animated-scene` variant, inner elements need their own ScrollTrigger with `containerAnimation` param to animate within the horizontal scroll
-- Always include a visual scroll progress indicator (dot trail, progress bar, or panel counter)
-- Mobile fallback: convert to vertical stack via `gsap.matchMedia()` — the component handles this automatically
-- Minimum token budget: 8192 (these sections are complex)
-
----
-
 ## Functional
 
 ### CONTACT
@@ -369,7 +347,7 @@ are intentional — they get filled the first time you generate that section typ
 
 ---
 
-## Section Count: 26 archetypes, 99+ variants
+## Section Count: 25 archetypes, 99+ variants
 
 ## Maintenance Log
 
@@ -377,4 +355,5 @@ are intentional — they get filled the first time you generate that section typ
 |------|--------|---------------|
 | 2026-02-08 | Initial skeleton created | — |
 | 2026-02-11 | Added PINNED-SCROLL archetype (4 variants) for pinned horizontal scroll | Track A v1.1.0 |
+| 2026-02-11 | Removed PINNED-SCROLL archetype — reclassified as animation component (`gsap-pinned-horizontal.tsx`). Pinned horizontal scroll is a presentation technique, not a content type. Applicable to PRODUCT-SHOWCASE, FEATURES, GALLERY, HERO, HOW-IT-WORKS via animation injection. | v1.1.2 |
 | 2026-02-08 | Added Animation field to all 25 archetypes with pattern recommendations | farm-minerals-promo rebuild |

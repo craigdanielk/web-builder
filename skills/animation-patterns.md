@@ -529,8 +529,7 @@ Quick reference for which patterns to use with which section archetypes:
 | **FEATURES** | `fade-up-stagger` | + `icon-glow` on hover |
 | **ABOUT/PROBLEM** | `fade-up-single` | `word-reveal` on heading |
 | **HOW-IT-WORKS** | `fade-up-stagger` | `staggered-timeline` for sequential steps |
-| **PRODUCT-SHOWCASE** | `fade-up-stagger` | — |
-| **PINNED-SCROLL** | `gsap-pinned-horizontal` | + `containerAnimation` nested scenes |
+| **PRODUCT-SHOWCASE** | `fade-up-stagger` | `gsap-pinned-horizontal` for horizontal showcase variant |
 | **TESTIMONIALS** | `fade-up-stagger` | — |
 | **CTA** | `fade-up-single` | `staggered-timeline` for heading → button |
 | **MAP/TRIALS** | `fade-up-single` | `marker-pulse` on SVG points |
@@ -1150,7 +1149,7 @@ gsap.to(section, {
 
 **Critical:** The `containerAnimation` parameter makes nested ScrollTriggers respond to horizontal scroll position instead of vertical page scroll. Without it, nested animations fire based on the page's vertical scroll, which breaks the effect.
 
-**Section fit:** PINNED-SCROLL (all variants), HERO (product-journey variant)
+**Section fit:** Any section needing horizontal scroll immersion — PRODUCT-SHOWCASE (horizontal showcase), FEATURES (horizontal panels), GALLERY (carousel/showcase), HERO (product-journey), HOW-IT-WORKS (timeline). Applied via animation injection, not as a dedicated archetype.
 
 ---
 
@@ -1347,6 +1346,7 @@ particles.forEach((dot, i) => {
 |------|--------|--------|
 | 2026-02-11 | Added K. Card Micro-Animation Effects: 8 card-scoped patterns (card-stroke-draw, card-morph-blob, card-orbit-dot, card-flip-preview, card-text-scramble, card-3d-rotate, card-gradient-shift, card-particle-burst) for PRODUCT-SHOWCASE demo-cards variant | Track B v1.1.0 |
 | 2026-02-11 | Added `pinned-horizontal-scene` pattern, PINNED-SCROLL to archetype map | Track A v1.1.0 |
+| 2026-02-11 | Reclassified PINNED-SCROLL: removed from archetype map, updated section fit to list applicable archetypes | v1.1.2 |
 | 2026-02-11 | Added F. GSAP Plugin Patterns: SplitText, ScrambleText, Flip, DrawSVG, MorphSVG, MotionPath, Draggable, Observer, ScrollSmoother, CustomEase, matchMedia, EasePack | Pattern doc expansion |
 | 2026-02-10 | Added 11 VengenceUI patterns (9 new + 2 replacements), new effect/ and background/ categories, updated archetype map with affinity scores | Animation classification plan v0.7.0 |
 | 2026-02-08 | Initial library created from farm-minerals-site production patterns | farm-minerals-promo rebuild |

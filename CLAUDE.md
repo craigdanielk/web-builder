@@ -1,7 +1,7 @@
 # Web Builder — System Context
 
 **Last Updated:** 2026-02-11
-**System Version:** v1.0.0
+**System Version:** v2.0.2
 
 ---
 
@@ -14,7 +14,7 @@
 | Runtime | Python 3 + Node.js (hybrid pipeline) |
 | Generated stack | Next.js 16.1.6 / React 19 / Tailwind CSS 4 / TypeScript 5 |
 | Animation engines | GSAP 3.14 + Framer Motion 12 (both can coexist) |
-| Pipeline entry | `scripts/orchestrate.py` (1404 lines) |
+| Pipeline entry | `scripts/orchestrate.py` (2504 lines) |
 | API | Anthropic Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) |
 | Deployment | Vercel CLI (`vercel --yes`) |
 | API key | `ANTHROPIC_API_KEY` in `.env` (gitignored) |
@@ -62,40 +62,44 @@ Stage 5: Deploy (--deploy flag)
     └── Ready for: cd site && vercel --yes
 ```
 
-### Data Flow (URL Clone Mode)
+### Data Flow (URL Clone Mode — v2.0.0)
 
 ```
-extract-reference.js
+extract-reference.js (v2: cookie dismiss + lazy scroll + sectionIndex)
     ├── Playwright headless Chromium (1440x900)
-    ├── Scroll-captures, DOM extraction (500 elements, 24 CSS properties)
-    ├── Animation detection (libraries, keyframes, scroll triggers, network assets)
+    ├── Cookie modal dismissal → full-page lazy scroll → DOM extraction
+    ├── Images and text have sectionIndex for per-section assignment
     └── Output: extraction-data.json
          │
-         ├── design-tokens.js → fonts, colors, radii, animation tokens
-         ├── archetype-mapper.js → section archetypes + variants
-         ├── animation-detector.js → intensity, engine, Lottie/Rive/3D URLs
-         └── url-to-preset.js → Claude prompt → preset markdown file
+         ├── archetype-mapper.js → mapped-sections.json
+         ├── animation-detector.js → animation-analysis.json
+         ├── pattern-identifier.js → identification.json
+         ├── confidence-gate.js → gates low-confidence mappings
+         └── build-site-spec.js → site-spec.json (1 structured JSON, zero AI)
+              │ ← component-registry.json (unified, 48 components)
               │
-              ├── animation-analysis.json (score, engine, section overrides)
-              └── mapped-sections.json (archetype assignments)
+              ↓
+         site-spec.json (single source of truth)
+              ├── style: { palette (hex), fonts, spacing, radius, animation }
+              ├── sections: [ { archetype, variant, confidence, content, images, components } ]
+              ├── component_map: { exact import_statements }
+              └── confidence_stats + reanalysis prompt
 ```
 
-### Key Consistency Mechanism
+### Consistency Mechanisms (v2.0.0)
 
-Every section generation prompt includes a **compact style header** extracted from the preset:
+**JSON path (--from-url):** `site-spec.json` contains hex colors, font names, and spacing values as JSON. The style tokens are injected directly into section prompts — no markdown prose, no re-interpretation.
 
+**Legacy path (--preset):** Compact style header from preset markdown is restated in every section prompt:
 ```
 ═══ STYLE CONTEXT ═══
 Palette: warm-earth | stone-50/white/green-700
 Type: Aeonik/Aeonik · 600/400 · 1.25 ratio
-Space: generous (6rem/3rem)
-Radius: pill (buttons) · 3xl (cards)
-Motion: expressive/gsap — entrance:fade-up-stagger hover:lift-glow timing:0.6s-ease-out
-Density: airy | Images: natural-rounded
+...
 ═══════════════════════
 ```
 
-This header is restated in every section prompt. It is the mechanism that prevents cross-section visual inconsistency.
+**Unified Component Registry:** All import statements come from `component-registry.json` with verified export names. Zero AI-constructed imports.
 
 ---
 
@@ -110,27 +114,28 @@ web-builder/
 ├── .gitignore
 │
 ├── skills/                            ← Design knowledge (read-only during generation)
-│   ├── section-taxonomy.md            ← 25 section archetypes, 95+ variants
+│   ├── section-taxonomy.md            ← 25 section archetypes, 99+ variants
 │   ├── style-schema.md                ← 7 style dimensions with Tailwind mappings
 │   ├── animation-patterns.md          ← 20+ named GSAP/Framer Motion patterns
 │   ├── image-extraction.md            ← Image categorization spec (10 categories)
-│   ├── animation-components/            ← Pre-built animation component library (1022 total)
-│   │   ├── registry.json (1016)         ← Legacy pattern → component file mapping (36 entries)
-│   │   ├── registry/                    ← NEW: Comprehensive machine-usable registry
-│   │   │   ├── animation_registry.json (1.6MB) ← Full analysis of all 1022 components
+│   ├── animation-components/            ← Pre-built animation component library (1034 total)
+│   │   ├── component-registry.json (794) ← NEW v2.0.0: Unified registry with export names (48 components)
+│   │   ├── registry.json                ← DELETED v2.0.0 (legacy, no export names — replaced by component-registry.json)
+│   │   ├── registry/                    ← Comprehensive machine-usable registry
+│   │   │   ├── animation_registry.json (1.6MB) ← Full analysis of all 1034 components
 │   │   │   ├── animation_taxonomy.json  ← Controlled vocabulary (motion intents, triggers, roles)
 │   │   │   ├── animation_search_index.json ← Query-optimised lookup by intent/trigger/section/framework
 │   │   │   ├── animation_capability_matrix.csv ← Tabular capabilities (189KB)
-│   │   │   └── analysis_log/ (1022 files) ← Per-component classification rationale
+│   │   │   └── analysis_log/ (1034 files) ← Per-component classification rationale
 │   │   ├── entrance/                    ← Scroll-triggered entrance animations (11 slots)
-│   │   ├── scroll/                      ← Scroll-linked animations (5 slots)
+│   │   ├── scroll/                      ← Scroll-linked animations (6 slots, incl. gsap-pinned-horizontal)
 │   │   ├── interactive/                 ← User-triggered animations (7 slots)
 │   │   ├── continuous/                  ← Always-running animations (5 slots)
 │   │   ├── text/                        ← Text-specific animations (5 slots)
 │   │   ├── effect/                      ← Border/glow/decoration effects (2 slots)
 │   │   ├── background/                  ← Full-section background animations (2 slots)
 │   │   └── 21st-dev-library/ (986 .tsx) ← Community components from 21st.dev
-│   ├── presets/ (32 presets + _template)
+│   ├── presets/ (35 presets + _template)
 │   │   ├── _template.md
 │   │   ├── artisan-food.md            ← Coffee, bakery, artisan food
 │   │   ├── beauty-cosmetics.md
@@ -155,7 +160,8 @@ web-builder/
 │   │   ├── real-estate.md
 │   │   ├── restaurants-cafes.md
 │   │   ├── saas.md
-│   │   └── sports-fitness.md
+│   │   ├── sports-fitness.md
+│   │   └── turm-kaffee-v3.md
 │   └── components/
 │       ├── cursor-trail.md            ← Mouse-following trail effect
 │       └── image-patterns.md          ← CSS backgroundImage rendering patterns
@@ -178,26 +184,30 @@ web-builder/
 │
 ├── scripts/
 │   ├── generate-docs.js               ← Generates docs/ from source code
-│   ├── orchestrate.py (1404 lines)    ← Main pipeline — 7 stages + injection wiring + component copy + cn() utility
+│   ├── orchestrate.py (2417 lines)    ← Main pipeline — v2.0.0 with retry, checkpoints, site-spec path
 │   └── quality/                       ← URL extraction + validation tools
-│       ├── url-to-preset.js (303)     ← URL → preset markdown (+ color system integration)
-│       ├── url-to-brief.js (201)      ← URL → brief markdown
+│       ├── build-site-spec.js (587)   ← NEW v2.0.0: Deterministic site-spec.json builder (zero AI)
+│       ├── build-unified-registry.js (207) ← NEW v2.0.0: Auto-generates component-registry.json from .tsx files
+│       ├── url-to-preset.js (303)     ← URL → preset markdown (kept for --preset mode)
+│       ├── url-to-brief.js (201)      ← URL → brief markdown (kept for --preset mode)
 │       ├── enrich-preset.js (161)     ← Enrich preset with extracted tokens
 │       ├── validate-build.js (287)    ← Post-build quality validation
 │       ├── test-animation-detector.js (196) ← Standalone animation test
-│       ├── test-pattern-pipeline.js (394) ← Pattern identification test harness (57 assertions)
+│       ├── test-pattern-pipeline.js (394) ← Pattern identification test harness (66 assertions)
 │       ├── build-animation-registry.js     ← Analyzes 1022 components → registry artifacts
 │       ├── fixtures/                       ← Synthetic test data for pipeline testing
 │       │   ├── gsap-extraction-data.json   ← Simulated extraction output
 │       │   └── gsap-animation-analysis.json ← Simulated animation analysis
 │       └── lib/
-│           ├── extract-reference.js (556)   ← Playwright extraction engine
+│           ├── extract-reference.js (824)   ← v2.0.0: + cookie dismiss + lazy scroll + sectionIndex
+│           ├── confidence-gate.js (180)     ← NEW v2.0.0: Confidence tiers + re-analysis prompt builder
 │           ├── animation-detector.js (750)  ← Animation detection + GSAP interception + section grouping
 │           ├── archetype-mapper.js (398)    ← Section → archetype mapping (+ class signals, gap flagging)
 │           ├── design-tokens.js (547)       ← CSS → design token collection (+ color intelligence)
-│           ├── pattern-identifier.js (577)  ← Pattern identification, animation/UI matching, gap aggregation
-│           ├── animation-injector.js (956)  ← 3-tier animation injection + selectAnimation() affinity algorithm
-│           ├── asset-injector.js (378)     ← Per-section asset prompt builder
+│           ├── pattern-identifier.js (925)  ← Pattern identification + unified registry reads
+│           ├── animation-injector.js (1334) ← 3-tier injection + unified registry reads
+│           ├── icon-mapper.js              ← Semantic icon mapping (Lucide React) + archetype defaults
+│           ├── asset-injector.js (554)     ← Per-section asset builder + unified registry reads
 │           ├── asset-downloader.js (257)   ← Download + verify extracted assets
 │           ├── gsap-extractor.js (454)      ← Static JS bundle GSAP call extraction
 │           ├── animation-summarizer.js (209) ← Token-efficient animation signature builder
@@ -227,11 +237,13 @@ web-builder/
 ├── plans/
 │   ├── _close-checklist.md                    ← Build close protocol template
 │   ├── active/
-│   │   └── pattern-identification-mapping-pipeline.md ← 6-phase pipeline upgrade
+│   │   └── universal-asset-intelligence-pipeline.md ← v1.2.0 — icons, logos, visual fallbacks, UI components
 │   ├── backlog/                               ← Future plans (not yet implemented)
 │   │   ├── template-library-upgrade-plan.md   ← Aurelix pattern library
 │   │   └── url-site-structure-calculator.md   ← Shopify migration calculator
 │   └── completed/
+│       ├── vision-sync-and-pinned-scroll-reclassification.md ← v1.1.2
+│       ├── pinned-horizontal-scroll-and-showcase-cards.md ← v1.1.0
 │       ├── animation-classification-vengenceui-integration.md ← v0.7.0
 │       ├── animation-extraction-integration.md ← v0.4.0
 │       ├── data-injection-pipeline.md          ← v0.5.0
@@ -253,7 +265,10 @@ web-builder/
     ├── 2026-02-10-animation-library-import-fix.md
     ├── 2026-02-10-animation-registry-build.md
     ├── 2026-02-10-gsap-homepage-stress-test-pipeline-diagnosis.md
-    └── 2026-02-11-pattern-identification-pipeline-v9-success.md
+    ├── 2026-02-11-pattern-identification-pipeline-v9-success.md
+    ├── 2026-02-11-gsap-ecosystem-v10-integration-success.md
+    ├── 2026-02-11-pinned-scroll-showcase-cards-v110.md
+    └── 2026-02-11-vision-sync-pinned-scroll-reclassification.md
 ```
 
 ---
@@ -295,9 +310,9 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 ### Stage 2: Sections (`stage_sections`, orchestrate.py:465)
 
 **Model:** Claude Sonnet 4.5 | **Max tokens:** dynamic (4096–8192 per section)
-**Input per section:** Style header + section spec + structural reference + optional section context + animation context block + asset context block + engine-branched instructions
+**Input per section:** Style header + section spec + structural reference + optional section context + animation context block + asset context block + icon context block (v1.2.0) + visual fallback block (v1.2.0) + card embedded demos block (v1.2.0) + UI component block (v1.2.0) + engine-branched instructions
 **Output:** Self-contained React/TypeScript/Tailwind component with correct animation engine
-**Post-processing:** Ensures `"use client"` directive, ensures `export default`
+**Post-processing:** Truncation detection & auto-repair (v1.1.1), ensures `"use client"` directive, ensures `export default`
 **Injection helpers:** `load_injection_data()`, `get_animation_contexts()`, `get_asset_contexts()` — load extraction data and call Node.js injector modules via subprocess
 
 ### Stage 3: Assembly (`stage_assemble`, orchestrate.py:605)
@@ -341,16 +356,24 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 | gsap-homepage | gsap-homepage | gsap | Vercel* |
 | gsap-v9-test | gsap-v9-test | gsap | Vercel** |
 | gsap-v10 | gsap-v10 | gsap | Vercel |
+| gsap-v11 | gsap-v11 | gsap | Vercel |
+| sofi-health-v2 | sofi-health-v2 | framer-motion | Local (v2.0.1 validation) |
+| sofi-health-v3 | sofi-health-v3 | framer-motion | Local (v2.0.2 validation) |
 
+*sofi-health-v2: First build using v2.0.1 deterministic pipeline. site-spec.json, deterministic scaffold (no Claude), deterministic review, JSON style tokens, checkpoint/retry system all active.
+*sofi-health-v3: v2.0.2 validation build. Recursive section detection + DOM-scoped content extraction. All 10 real sections populated with actual sofi-health content (previously all content landed in wrapper Section 0).
 *farm-minerals-anim: Built before v0.5.0 injection pipeline — preset says gsap but sections use framer-motion. Rebuild with injection pipeline to fix.
 *nicola-romei: Required manual post-build fixes — preset misclassified color (dark vs light #f3f3f3), 0 sections detected in Webflow site broke asset injection, scaffold parser failed on bold markdown. See retro for details.
 *gsap-homepage: Stress test build — functional but visually incomplete. Monochrome orange (missing multi-accent), generic animations, blank gallery cards. Used as diagnostic to identify 6 systemic pipeline gaps. See retro for details.
 **gsap-v9-test: v0.9.0 validation build against gsap.com. Color intelligence correctly identified 5-accent system, class-signal archetype mapping at 80% confidence, gap report generated. Sections invisible on deploy due to pre-existing GSAP `from()` SSR issue (not a v0.9.0 regression).
 
 ### Active Plans
-- None
+- **[Deterministic Pipeline v2.0.0](plans/active/deterministic-pipeline-v2.md)** — Implemented. All 6 phases complete. Pending validation builds (sofi-health, gsap.com).
 
 ### Completed Plans
+- **[Universal Asset Intelligence Pipeline](plans/completed/universal-asset-intelligence-pipeline.md)** — v1.2.0. Extended "detect, match, insert, fallback" chain to icons (Lucide React semantic mapping, archetype defaults), logos (inline SVG extraction, raster logo extraction, styled text pill fallback), visual content (library component fallbacks via `SECTION_VISUAL_FALLBACK_MAP` and `CARD_VISUAL_COMPONENTS`), card-level animation embedding (`CARD_EMBEDDED_DEMOS` with 20 GSAP plugin mappings + fallback sequence), and UI component injection (`UI_COMPONENT_LIBRARY_MAP` with 25 patterns + search index lookup). Emoji ban enforced globally. New `icon-mapper.js` module. 5 new Python helpers in orchestrate.py. Extraction upgraded with SVG/icon-library/logo detection. ~11 files modified/created.
+- **[VISION.md Sync & PINNED-SCROLL Reclassification](plans/completed/vision-sync-and-pinned-scroll-reclassification.md)** — v1.1.2. PINNED-SCROLL removed as section archetype, reclassified as animation component/technique (25 archetypes). VISION.md added to doc-sync-checklist, close-checklist, CLAUDE.md update protocol. VISION.md one-time refresh to v1.1.2 reality. 
+- **[Pinned Horizontal Scroll & Showcase Card Differentiation](plans/completed/pinned-horizontal-scroll-and-showcase-cards.md)** — v1.1.0. GSAP pinned horizontal scroll component and detection pipeline (PINNED-SCROLL archetype added in v1.1.0, reclassified as animation component in v1.1.2). GSAP pinned horizontal scroll component (176 lines, ScrollTrigger pin+scrub, matchMedia mobile fallback). Detection pipeline for pin+scrub patterns in animation-detector, gsap-extractor, pattern-identifier. Scaffold prompt integration with 8192 min token budget. Demo-cards variant for PRODUCT-SHOWCASE with per-card animation differentiation. 8 card micro-animation patterns. `buildCardAnimationBlock()` in animation-injector. Validated with gsap-v11 rebuild.
 - **[GSAP Ecosystem Integration & System Stability](plans/completed/gsap-ecosystem-integration-and-stability.md)** — v1.0.0. 8 bug fixes (from() SSR, parse_scaffold, token truncation, JSX repair, zero-section fallback, color misclassification, font parsing, --force flag). 20 GSAP plugins detectable. 22 new animation patterns documented. 11 new plugin components (SplitText, Flip, DrawSVG, MorphSVG, MotionPath, Draggable, Observer, ScrambleText). Plugin-aware injection + preset generation. Pre-flight validation (Stage 5.5) + post-deploy verification. 66-assertion test harness.
 - **[Pattern Identification & Mapping Pipeline](plans/completed/pattern-identification-mapping-pipeline.md)** — v0.9.0. Color intelligence (hue-aware mapping, gradient parsing, multi-accent systems), archetype intelligence (class-signal matching, confidence-based gaps), pattern identification (animation registry queries, UI component detection), gap aggregation with extension tasks, pipeline integration as Stage 0d. 688 insertions across 10 files, 57-assertion test harness.
 - **[Generated Reference Docs](plans/completed/generated-reference-docs.md)** — v0.7.1. `scripts/generate-docs.js` auto-generates api-reference.md, dependencies.md, data-flow.md from source code. Integrated into close checklist.
@@ -369,9 +392,26 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 
 ### Active Issues
 
-None — all 8 previously active bugs fixed in v1.0.0.
+None — v2.0.0 addresses the 6 root causes from the sofi-health diagnostic (see Resolved Issues).
 
 ### Resolved Issues (Keep for Reference)
+
+**Wrapper Section Swallows All Content** (FIXED v2.0.2)
+- Was: `extract-reference.js` identified a full-page `<div>` (24243px, 98% of page) as "Section 0". The first-match sectionIndex loop assigned ALL 96/97 text items and ALL 19 images to Section 0 (wrapper). Downstream, `build-site-spec.js` populated Section 0 with all content, leaving sections 1-10 empty. Claude generated filler.
+- Fix: Recursive `collectSections()` descends into wrapper divs. Per-section DOM-scoped content extraction (headings, body, CTAs, images via `querySelectorAll`). Post-filter removes remaining wrappers (>70% page + 0 content). Smallest-first sectionIndex assignment. `build-site-spec.js` prefers embedded content over sectionIndex. `archetype-mapper.js` uses embedded content for classification.
+- Validation: sofi-health-v3 — 10 sections, text distributed `{1:17, 2:2, 3:13, 4:6, 5:23, 6:4, 7:2, 8:18, 9:4, 10:7}`, all sections show real sofihealth.com content.
+
+**Lossy Telephone Game: 3 layers of LLM interpretation** (FIXED v2.0.0)
+- Was: extraction-data.json -> Claude -> preset.md -> Claude -> scaffold.md -> Claude -> sections. Each layer lost fidelity. 7/11 sofi-health sections at 30% confidence with "fallback" method. Component import/export mismatches (GradientShift vs GradientBackground).
+- Fix: `build-site-spec.js` produces `site-spec.json` from extraction data with zero AI calls. `stage_scaffold_v2()` reads JSON directly. `stage_sections()` accepts JSON style tokens. Confidence gates block low-confidence sections. Unified component registry has verified export names.
+- New artifacts: `site-spec.json` (single SoT), `component-registry.json` (48 components), `confidence-gate.js`, `checkpoint.json`
+- Resolved: 2026-02-11
+
+**JSX truncation auto-repair not wired** (FIXED v1.1.1)
+- Was: `detectAndRepairTruncation()` existed in post-process.js but was never called from orchestrate.py. 42% of sections truncated on complex builds (gsap-v11: 5 of 12), requiring manual two-pass repair.
+- Fix: `_detect_and_repair_truncation()` Python helper calls Node.js subprocess. Wired into section generation loop (Stage 2, immediately after markdown cleanup). Also wired into Stage 5.5 pre-flight validation with auto-repair + file rewrite. Fallback to basic brace check if Node.js call fails.
+- Two layers: (1) immediate repair at generation time, (2) safety net at pre-flight validation before deployment.
+- Resolved: 2026-02-11
 
 **All 8 v0.9.0 active issues** (FIXED v1.0.0)
 - GSAP `from()` SSR invisibility → Hybrid pattern enforced: Framer Motion for entrances, GSAP for interactive/scrub/continuous
@@ -453,9 +493,11 @@ None — all 8 previously active bugs fixed in v1.0.0.
 | Section (simple/framer) | 4096 | claude-sonnet-4-5-20250929 |
 | Section (complex GSAP/Lottie) | 6144 | claude-sonnet-4-5-20250929 |
 | Section (multi-pattern or component injection) | 8192 | claude-sonnet-4-5-20250929 |
+| Section (PINNED-SCROLL archetype) | 8192 (min) | claude-sonnet-4-5-20250929 |
+| Section (PRODUCT-SHOWCASE demo-cards) | 8192 (min) | claude-sonnet-4-5-20250929 |
 | Review | 4096 | claude-sonnet-4-5-20250929 |
 
-Section token budgets are dynamic — `animation-injector.js` calculates per-section based on pattern complexity, engine, Lottie usage, and whether a library component is being injected (always 8192 for component injection).
+Section token budgets are dynamic — `animation-injector.js` calculates per-section based on pattern complexity, engine, Lottie usage, and whether a library component is being injected (always 8192 for component injection). PINNED-SCROLL and demo-cards archetypes enforce 8192 minimum via orchestrate.py and animation-injector.js respectively.
 
 ### Running the Pipeline
 
@@ -495,24 +537,35 @@ vercel --yes --prod             # Production deployment
 | Change Next.js version | `orchestrate.py:680` (deps dict in stage_deploy) |
 | Fix dependency resolution | `orchestrate.py:684-700` (engine deps in stage_deploy) |
 | Add animation pattern | `animation-injector.js:220-240` (ARCHETYPE_PATTERN_MAP) + `skills/animation-patterns.md` |
-| Add animation component | `skills/animation-components/{category}/{name}.tsx` + update `registry.json` + rerun `node scripts/quality/build-animation-registry.js` |
+| Add animation component | `skills/animation-components/{category}/{name}.tsx` + rerun `node scripts/quality/build-unified-registry.js` + `node scripts/quality/build-animation-registry.js` |
 | Rebuild animation registry | `node scripts/quality/build-animation-registry.js` → regenerates all 5 artifacts in `skills/animation-components/registry/` |
 | Add image category | `asset-injector.js:21-47` (URL/ALT category signals) + `asset-injector.js:53-68` (section map) |
 | Add extraction CSS properties | `scripts/quality/lib/extract-reference.js:73-76` |
 | Add class-signal archetype mapping | `archetype-mapper.js` (`CLASS_NAME_SIGNALS` map) |
 | Add color hue family | `design-tokens.js` (`HUE_FAMILIES` array) |
 | Add UI component detector | `pattern-identifier.js` (`matchUIComponents()` function) |
+| Add icon mapping | `icon-mapper.js` (`SEMANTIC_ICON_MAP` + `ARCHETYPE_ICON_DEFAULTS`) |
+| Add visual fallback | `asset-injector.js` (`SECTION_VISUAL_FALLBACK_MAP` + `CARD_VISUAL_COMPONENTS`) |
+| Add card embedded demo | `animation-injector.js` (`CARD_EMBEDDED_DEMOS`) |
+| Add UI component library match | `pattern-identifier.js` (`UI_COMPONENT_LIBRARY_MAP`) |
 | Run pattern pipeline tests | `node scripts/quality/test-pattern-pipeline.js` |
 
 ---
 
 ## System Version
 
-**Current:** v1.0.0 (2026-02-11)
+**Current:** v2.0.0 (2026-02-11)
 
 ### Changelog
 | Version | Date | Changes |
 |---------|------|---------|
+| v2.0.2 | 2026-02-11 | **Content Extraction Fix: Recursive Section Detection + DOM-Scoped Content.** Root cause: wrapper `<div>` covering entire page was identified as "Section 0," causing ALL text (96/97 items) and ALL images (19/19) to be assigned to it — leaving all other sections empty. Claude then generated filler instead of real content. **Fix 1 (extract-reference.js):** Recursive `collectSections()` descends into wrapper elements (>80% page height with multiple tall children) instead of treating them as sections. **Fix 2:** Per-section DOM-scoped content extraction — headings, body text, CTAs, images extracted via `querySelectorAll()` inside each section element (DOM containment, not rect overlap). Each section now carries embedded `content: { headings, body_text, ctas, image_count }` and `images[]`. **Fix 3:** Post-filter removes any remaining wrapper sections (>70% page height + zero content). Re-indexes after removal. **Fix 4:** Smallest-first sectionIndex assignment — `sectionsBySize` sort ensures inner sections match before outer wrappers for text/image/DOM elements. **Fix 5 (archetype-mapper.js):** Uses embedded per-section content for classification. New methods: `embedded-heading-keyword`, `embedded-body-keyword`, `structural-images`, `structural-multi-heading`, `structural-cta`. HERO always assigned to first section. **Fix 6 (build-site-spec.js):** Prefers embedded per-section content/images over sectionIndex-based filtering. Falls back to sectionIndex only for legacy extraction data. Validated: sofi-health-v3 build — 10 real sections detected (1 wrapper filtered), text distributed across all sections, real content from sofihealth.com renders in every section. |
+| v2.0.1 | 2026-02-11 | **v2 Pipeline Wiring Fix.** Critical fix: `stage_url_extract()` now actually calls `build-site-spec.js` and returns 5 values (was returning 4, causing crash). `stage_sections()` now uses JSON style tokens from `site-spec.json` when available (was ignoring `site_spec` param entirely). `--skip-to` path now uses rich sections from `site-spec.json` instead of `parse_scaffold()`. Legacy `registry.json` fallback in `stage_deploy` removed. Invalid package name filter added (`@gsap`, `motion` blocked from npm deps). `orchestrate.py` 2417->2504 lines. Validated with sofi-health-v2 build: 11 sections, deterministic scaffold, deterministic review (0 errors), API retry caught 529 overload. |
+| v2.0.0 | 2026-02-11 | **Deterministic Pipeline: Eliminate the Lossy Telephone Game.** 6-phase architectural rewrite. **Phase 0 (Extraction):** Cookie modal dismissal (16 selectors), full-page lazy scroll before measurement, sectionIndex on all images and text content. `extract-reference.js` 706->824 lines. **Phase 1 (Registry):** New `build-unified-registry.js` auto-generates `component-registry.json` (48 components with verified export_name + import_statement). Legacy `registry.json` deleted. `animation-injector.js`, `asset-injector.js`, `pattern-identifier.js` all read from unified registry. 66 test assertions pass. **Phase 2 (JSON Spec):** New `build-site-spec.js` (587 lines) — deterministic style token extraction, section building with sectionIndex, component matching from registry. Produces `site-spec.json` (single source of truth) with zero AI calls. New `stage_scaffold_v2()` reads site-spec directly (no Claude scaffold call). `stage_sections()` gains JSON style tokens path alongside legacy compact header. **Phase 3 (Confidence):** New `confidence-gate.js` (180 lines) — 4-tier confidence system (HIGH/MEDIUM/LOW/NONE), gates sections below 0.5 for re-analysis, builds Claude Vision prompt for low-confidence batches. Wired into build-site-spec.js. **Phase 4 (Deterministic Review):** New `stage_review_v2()` — deterministic checks (use-client, export-default, brace balance, emoji, placeholder URLs, import validity, truncation). Writes both review.json and review.md. Zero Claude calls. **Phase 5 (Resilience):** `call_claude_with_retry()` wrapper (90s timeout, 3 retries with exponential backoff). `save_checkpoint()`/`load_checkpoint()` after every stage. `--clean` flag for directory deletion, `--force` now non-destructive. `orchestrate.py` 1404->2417 lines. |
+| v1.2.0 | 2026-02-11 | **Universal Asset Intelligence Pipeline.** Extended the "detect, match, insert, fallback" chain to all visual asset types. **Phase 1 (Prompt Hardening):** Emoji ban in all 3 template files (section-prompt, section-instructions-gsap, section-instructions-framer). Lucide React icon mapping reference (12 section types, ~60 icons). Logo bar rendering rules (styled text pills when no URLs). `lucide-react` added as always-included dependency. **Phase 2 (Extraction Upgrades):** Inline SVG extraction in extract-reference.js (logo + icon SVGs with size filtering). Icon library detection (Lucide, Font Awesome, Heroicons, Material Icons). Enhanced logo image extraction from brand containers. New fields in extraction-data.json: `assets.svgs`, `assets.iconLibrary`, `assets.logos`. **Phase 3a (Icon Mapping):** New `icon-mapper.js` module — `SEMANTIC_ICON_MAP` (~120 concepts), `ARCHETYPE_ICON_DEFAULTS` (16 archetypes), `mapExtractedIcons()`, `getIconsForSection()`, `buildIconContextBlock()`. **Phase 3b (Visual Fallback):** `SECTION_VISUAL_FALLBACK_MAP` (12 archetypes), `CARD_VISUAL_COMPONENTS` (8 decorative components), `getVisualFallback()` in asset-injector.js. **Phase 3c (Card Demos):** `CARD_EMBEDDED_DEMOS` (20 GSAP plugin mappings), `DEMO_FALLBACK_SEQUENCE` (6 components), `buildCardEmbeddedDemos()` in animation-injector.js. **Phase 3d (UI Injection):** `UI_COMPONENT_LIBRARY_MAP` (25 patterns), `matchUIComponents()`, `buildUIComponentBlock()`, `searchIndexLookup()` in pattern-identifier.js. **Phase 4 (Pipeline Wiring):** 5 new Python helper functions in orchestrate.py (`get_icon_context`, `get_visual_fallback`, `get_card_embedded_demos`, `get_ui_component_matches`, enriched identification with icon/logo/SVG data). Section prompt gains `icon_block`, `visual_fallback_block`, `card_embed_block`, `ui_component_block`. Extra component manifest (`extra-components.json`) saved per build, consumed by stage_deploy to copy visual fallback and demo components alongside animation components. |
+| v1.1.2 | 2026-02-11 | **VISION.md Sync & PINNED-SCROLL Reclassification.** Track A: PINNED-SCROLL removed as section archetype (25 archetypes, was 26). Pinned horizontal scroll reclassified as animation component/technique applicable to PRODUCT-SHOWCASE, FEATURES, GALLERY, HERO, HOW-IT-WORKS. `gsap-pinned-horizontal.tsx` component unchanged. orchestrate.py triggers pinned scroll rules on animation assignment (not archetype name). section-instructions-gsap.md reframed as technique. Track B: VISION.md added to doc-sync-checklist, close-checklist, and CLAUDE.md update protocol. Track C: VISION.md one-time refresh — Module 2 stats updated (35 presets, 25 archetypes, 1034 animation components, 13 builds, 8 plans), Phase 0 status corrected (page templates not started), pipeline maturation documented. |
+| v1.1.1 | 2026-02-11 | JSX truncation auto-repair wired into pipeline. New `_detect_and_repair_truncation()` helper in orchestrate.py calls `post-process.js:detectAndRepairTruncation()` via Node.js subprocess. Wired at two layers: (1) Stage 2 section generation loop — repairs truncation immediately after Claude returns, before "use client" and export default checks; (2) Stage 5.5 pre-flight validation — second-pass safety net that auto-repairs and rewrites truncated section files, with fallback to basic brace balance if Node.js unavailable. Closes the #1 reliability issue (42% truncation rate on gsap-v11). |
+| v1.1.0 | 2026-02-11 | Pinned Horizontal Scroll & Showcase Card Differentiation. **Track A:** New `gsap-pinned-horizontal.tsx` component (176 lines, ScrollTrigger pin+scrub, gsap.matchMedia() mobile fallback, progress indicator, snap-to-panel). New PINNED-SCROLL archetype in section-taxonomy (4 variants: horizontal-showcase, animated-scene, timeline-journey, comparison-before-after). Detection in animation-detector (`detectPinnedHorizontalScroll`), gsap-extractor (`_pinnedHorizontalScroll`), pattern-identifier (`pinnedScrollDetected`). Scaffold prompt instruction #5 for PINNED-SCROLL recommendation. Section prompt `pinned_scroll_block` with containerAnimation rules. 8192 min token budget for PINNED-SCROLL. Updated animation-patterns.md with `pinned-horizontal-scene` pattern + "K. Card Micro-Animation Effects". Updated section-instructions-gsap.md with pinned scroll rules. **Track B:** PRODUCT-SHOWCASE `demo-cards` variant. `CARD_ANIMATION_MAP` (8 plugin-specific micro-animations). `buildCardAnimationBlock()` in animation-injector.js. 8192 min token for demo-cards. Animation registry rebuilt: 1,034 components. 66/66 tests pass. Validated with gsap-v11 build (12 sections, both new archetypes used). |
 | v1.0.0 | 2026-02-11 | GSAP Ecosystem Integration & System Stability. **Phase 1:** 8 bug fixes — parse_scaffold bold markdown, GSAP from() SSR hybrid rule, NAV/FOOTER 6144 token budget, zero-section asset heuristic fallback, color temp misclassification guard, parse_fonts YAML leak detection, JSX truncation detection+repair, --force CLI flag. **Phase 2:** 20 GSAP plugin detection (window globals + script pattern matching in animation-detector.js), plugin call classification in gsap-extractor.js (SplitText/Flip/DrawSVG/MorphSVG/MotionPath/Draggable/CustomEase/Observer/ScrambleText/matchMedia), plugin pattern matching in pattern-identifier.js. **Phase 3:** 22 new animation patterns in animation-patterns.md, full plugin instructions in section-instructions-gsap.md, 11 new animation components (splittext-chars/words/lines, scramble-text, flip-grid-filter, flip-expand-card, drawsvg-reveal, morphsvg-icon, motionpath-orbit, draggable-carousel, observer-swipe). **Phase 4:** Plugin-aware injection blocks in animation-injector.js, gsap-setup.ts generation in stage_deploy, plugin context in section prompts, plugin-aware preset generation in url-to-preset.js, token budget +2048 for SplitText/Flip sections. **Phase 5:** Pre-flight validation (Stage 5.5), post-deploy verification (validate-build.js), component copy validation with auto-fix for motion/react imports. 66-assertion test harness. |
 | v0.9.0 | 2026-02-11 | Pattern Identification Pipeline: New identification layer (Stage 0d) between extraction and generation. Color intelligence: hue-aware Tailwind mapping (`hexToTailwindHue`), gradient color extraction (`collectGradientColors`), color system classification (`identifyColorSystem`), per-section profiling (`profileSectionColors`). Archetype intelligence: class-signal matching (`CLASS_NAME_SIGNALS`), content-aware variant selection, confidence-based gap flagging. New `pattern-identifier.js`: animation pattern matching via registry search index, UI component detection (logo-marquee, video-embed, card-grid, accordion, tabs), section mapping, gap aggregation with extension tasks. Preset format extended with `accent_secondary`, `accent_tertiary`, `section_accents`. 688 insertions across 10 files. Test harness: 57 assertions. Validated against live gsap.com. |
 | v0.8.0 | 2026-02-10 | Animation Registry: `build-animation-registry.js` analyzes all 1022 components (36 curated + 986 21st-dev), generates 5 artifacts: `animation_registry.json` (1.6MB, full analysis), `animation_taxonomy.json` (controlled vocabulary), `animation_search_index.json` (query-optimised by intent/trigger/section/framework), `animation_capability_matrix.csv`, `analysis_log/` (1022 .md files). Classification: 335 animation, 613 UI, 74 hybrid. Fixed 5 broken source library components. Zero quality gate failures. |
@@ -562,3 +615,4 @@ After every build, integration session, or plan close:
    - [ ] **System Version**: bump version, add changelog entry
 3. If pipeline stages changed, also update `.cursorrules`
 4. If user-facing info changed (presets, tech stack), also update `README.md`
+5. If module capabilities, phase status, or build count changed, also update `VISION.md`

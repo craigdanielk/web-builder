@@ -180,6 +180,59 @@ function validateComponent(code, componentName) {
     );
   }
 
+  // 3d. GSAP engine usage audit ----------------------------------------------------
+  // If component imports GSAP, it should actually use gsap. calls, not just import.
+  const importsGSAP = /from\s+['"]gsap['"]/.test(code) || /require\s*\(\s*['"]gsap['"]/.test(code);
+  const usesGSAP = /gsap\.\w+\(/.test(code);
+  const importsFramerMotion = /from\s+['"]framer-motion['"]/.test(code);
+  const usesWhileInView = /whileInView/.test(code);
+
+  if (importsGSAP && !usesGSAP) {
+    warnings.push(
+      "Imports GSAP but never calls gsap.*() — the import is dead code."
+    );
+  }
+
+  if (importsGSAP && importsFramerMotion && usesWhileInView && !usesGSAP) {
+    warnings.push(
+      "GSAP engine section uses only Framer Motion whileInView for entrances. " +
+        "Should use GSAP ScrollTrigger for entrances when engine is GSAP."
+    );
+  }
+
+  // 3e. Plugin registration check --------------------------------------------------
+  // If the code uses a GSAP plugin (SplitText, Flip, DrawSVG, etc.) it must
+  // call gsap.registerPlugin() for it.
+  const GSAP_PLUGINS = ["SplitText", "Flip", "DrawSVG", "MorphSVG", "MotionPath",
+    "Draggable", "Observer", "ScrambleText", "CustomEase"];
+  for (const plugin of GSAP_PLUGINS) {
+    const pluginUsed = new RegExp(`\\b${plugin}\\b`).test(code);
+    const pluginImported = new RegExp(`from\\s+['"]gsap/${plugin}['"]`).test(code);
+    const pluginRegistered = new RegExp(`registerPlugin\\([^)]*${plugin}`).test(code);
+    if (pluginUsed && !pluginImported) {
+      warnings.push(
+        `Uses ${plugin} but does not import it from "gsap/${plugin}".`
+      );
+    }
+    if (pluginImported && !pluginRegistered) {
+      warnings.push(
+        `Imports ${plugin} but does not register it with gsap.registerPlugin(${plugin}).`
+      );
+    }
+  }
+
+  // 3f. Animation component library import check ------------------------------------
+  // If the section uses @/components/animations/, check the import is well-formed
+  const animImports = code.match(/@\/components\/animations\/[\w-]+/g) || [];
+  if (animImports.length > 0) {
+    for (const imp of animImports) {
+      const componentName = imp.split('/').pop();
+      if (!componentName || componentName.length < 3) {
+        warnings.push(`Suspicious animation component import: ${imp}`);
+      }
+    }
+  }
+
   return {
     valid: errors.length === 0,
     warnings,

@@ -2,41 +2,45 @@
 
 Generate a complete, self-contained React component for this section.
 
-## Critical SSR Safety Rule
+**Icon Rule:** NEVER use emoji characters. Import icons from `lucide-react` (e.g., `import { Zap } from 'lucide-react'`). Render as `<Zap className="w-6 h-6" />`.
 
-**NEVER use `gsap.from()` or `gsap.fromTo()` with `opacity: 0` for scroll-triggered entrance animations.** In Next.js SSR, `gsap.from()` immediately applies the "from" state (opacity: 0) during hydration. If ScrollTrigger with `once: true` doesn't fire (common in static rendering), elements stay permanently invisible.
+## GSAP-First Animation Rule
 
-**Instead, use this hybrid approach:**
-- **Entrance animations** (fade-in, slide-up on scroll): Use **Framer Motion** `whileInView` — SSR-safe, works without JavaScript on first render
-- **Interactive effects** (hover tilt, magnetic buttons): Use **GSAP** `gsap.to()` — triggered by user action, not scroll
-- **Scroll-linked effects** (parallax, scrub): Use **GSAP** ScrollTrigger with `scrub: true` — elements start visible, transform on scroll
+When the animation engine is `gsap`, use **GSAP for ALL animations** — including scroll-triggered entrances. Do NOT default to Framer Motion `whileInView` for entrances.
+
+**The SSR-safe GSAP entrance pattern:**
+```tsx
+// GSAP entrance — SSR-safe because ScrollTrigger only fires client-side in useEffect
+useEffect(() => {
+  gsap.registerPlugin(ScrollTrigger);
+  const ctx = gsap.context(() => {
+    gsap.from(".animate-item", {
+      y: 40, opacity: 0, duration: 0.8, stagger: 0.12,
+      ease: "power3.out",
+      scrollTrigger: { trigger: sectionRef.current, start: "top 80%", once: true }
+    });
+  }, sectionRef);
+  return () => ctx.revert();
+}, []);
+```
+
+**Why this is SSR-safe:** `useEffect` only runs on the client. `gsap.from()` inside `useEffect` + `gsap.context()` means the "from" state (opacity: 0) is never applied during SSR/hydration. Elements render visible in HTML, then GSAP animates them from the "from" values on scroll. `ctx.revert()` cleans up properly.
+
+**The old `gsap.from()` SSR bug was caused by:** calling `gsap.from()` at the module level or outside `useEffect`, where it runs during SSR and applies `opacity: 0` before hydration. Inside `useEffect` with ScrollTrigger `once: true`, this cannot happen.
+
+**When to use each engine:**
+- **Entrance animations** (fade-in, slide-up on scroll): Use **GSAP** `gsap.from()` inside `useEffect` with `scrollTrigger: { once: true }` — SSR-safe, consistent with the rest of the GSAP pipeline
+- **Interactive effects** (hover tilt, magnetic buttons): Use **GSAP** `gsap.to()` — triggered by user action
+- **Scroll-linked effects** (parallax, scrub): Use **GSAP** ScrollTrigger with `scrub: true`
 - **Continuous animations** (floating, pulsing, rotating): Use **GSAP** `gsap.to()` with `repeat: -1`
-- **Text effects** (SplitText character reveals): Use **GSAP** but set initial state to VISIBLE, animate transform only (not opacity)
+- **Text effects** (SplitText character reveals): Use **GSAP** SplitText — split text into chars/words, animate with stagger
+- **Layout animations** (AnimatePresence, layout shifts): Use **Framer Motion** — only case where Framer is preferred in a GSAP build
+- **Plugin-detected patterns**: If plugins like SplitText, Observer, Flip, DrawSVG, MorphSVG, or MotionPath are listed in the Animation Context, you MUST use them in appropriate sections. Do not ignore detected plugins.
 
-**Correct entrance animation pattern:**
-```tsx
-import { motion } from "framer-motion";
-
-// Entrance: Framer Motion (SSR-safe)
-<motion.div
-  initial={{ opacity: 0, y: 30 }}
-  whileInView={{ opacity: 1, y: 0 }}
-  viewport={{ once: true, margin: "-50px" }}
-  transition={{ duration: 0.6, ease: [0.32, 0, 0.355, 1] }}
->
-  {content}
-</motion.div>
-```
-
-**Correct GSAP-only pattern (for interactive/continuous, NOT entrance):**
-```tsx
-// Interactive: GSAP gsap.to() on hover (safe — user-triggered)
-const onMouseEnter = () => gsap.to(cardRef.current, { scale: 1.05, duration: 0.3 });
-const onMouseLeave = () => gsap.to(cardRef.current, { scale: 1, duration: 0.3 });
-
-// Scroll-linked: GSAP with scrub (safe — elements start visible)
-gsap.to(el, { y: -50, scrollTrigger: { trigger: el, scrub: true } });
-```
+**Only import `framer-motion` when you genuinely need:**
+- `AnimatePresence` for mount/unmount transitions
+- `layoutId` for shared layout animations
+- Do NOT import `framer-motion` just for `whileInView` — use GSAP ScrollTrigger instead
 
 ---
 
@@ -63,16 +67,15 @@ Requirements:
    }, []);
    ```
 7. ScrollTrigger pattern:
-   - **Entrance animations:** Use Framer Motion `whileInView` (see Critical SSR Safety Rule above) — do NOT use `gsap.from()` for opacity/fade entrances
-   - For scroll-linked (parallax, scrub) use `scrollTrigger: { trigger: element, scrub: true }`; for non-entrance triggers use `start: "top 80%", once: true`
-   - Use `stagger` with Framer Motion for multi-element reveals, or GSAP `gsap.to()` only for interactive/scroll-linked/continuous effects
+   - **Entrance animations:** Use GSAP `gsap.from()` inside `useEffect` with `scrollTrigger: { trigger: el, start: "top 80%", once: true }` — this is SSR-safe (see GSAP-First Animation Rule above)
+   - For scroll-linked (parallax, scrub) use `scrollTrigger: { trigger: element, scrub: true }`
+   - Use `stagger` with GSAP for multi-element reveals: `gsap.from(".items", { stagger: 0.12, ... })`
    - For counter/number animations use: `gsap.to(obj, { value: target, snap: { value: 1 }, ... })`
 8. If a Reference Animation Pattern is provided above, use that exact GSAP pattern
    with the timing values from the style header's Motion line
-9. Hover effects: Use Framer Motion `motion.div` with `whileHover` for simple hover
-   states (scale, shadow), or GSAP `gsap.to()` on mouse enter/leave for interactive
-   effects. Use Framer Motion `whileInView` for scroll entrances; use GSAP for
-   scroll-linked (scrub), continuous, and interactive effects only.
+9. Hover effects: Use GSAP `gsap.to()` on mouse enter/leave for interactive
+   effects. Only use Framer Motion `motion.div` with `whileHover` if you also need
+   `AnimatePresence` or `layoutId` in the same component. Prefer GSAP for consistency.
 10. All text content should be realistic for the client — not lorem ipsum
 11. Export the component as default
 
@@ -349,9 +352,9 @@ Only import plugins that the section actually uses. Do not import all plugins in
 
 ---
 
-## Pinned Horizontal Scroll Sections (PINNED-SCROLL archetype)
+## Pinned Horizontal Scroll Technique
 
-When generating a **PINNED-SCROLL** section, follow these rules:
+When a section uses the **pinned horizontal scroll** technique (detected via animation injection or reference extraction), follow these rules:
 
 ### Structure
 ```tsx
@@ -410,16 +413,18 @@ useEffect(() => {
 }, []);
 ```
 
-### Rules for PINNED-SCROLL
+### Rules for Pinned Horizontal Scroll
 1. **ALWAYS use `containerAnimation`** for nested animations inside the pinned section. Without it, nested ScrollTriggers respond to vertical page scroll, not the horizontal scroll position.
 2. **ALWAYS add `gsap.matchMedia()`** for mobile fallback — convert to vertical stack on screens < 768px.
 3. **ALWAYS add `invalidateOnRefresh: true`** for responsive recalculation on resize.
 4. **NEVER use `gsap.from()` with `opacity: 0`** for elements inside the pinned scroll. Use `gsap.fromTo()` instead to avoid SSR invisibility.
 5. **Set `will-change-transform`** on the horizontal track for GPU acceleration.
-6. For `animated-scene` variant: inner elements like floating shapes, SVGs, and decorative elements each get their own `containerAnimation`-based ScrollTrigger.
-7. For `horizontal-panels` variant: each panel is `min-w-[100vw]` and self-contained.
-8. For `product-journey` variant: use parallax layers with different `start`/`end` values within the `containerAnimation` for depth.
+6. For animated scene layouts: inner elements like floating shapes, SVGs, and decorative elements each get their own `containerAnimation`-based ScrollTrigger.
+7. For horizontal panel layouts: each panel is `min-w-[100vw]` and self-contained.
+8. For product journey layouts: use parallax layers with different `start`/`end` values within the `containerAnimation` for depth.
 9. Include a visual progress indicator (progress bar, dot trail, or panel counter).
+
+**Applicable archetypes:** PRODUCT-SHOWCASE, FEATURES, GALLERY, HERO, HOW-IT-WORKS — any section where horizontal immersion enhances the content narrative.
 
 ---
 

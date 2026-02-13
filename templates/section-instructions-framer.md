@@ -2,6 +2,8 @@
 
 Generate a complete, self-contained React component for this section.
 
+**Icon Rule:** NEVER use emoji characters. Import icons from `lucide-react` (e.g., `import { Zap } from 'lucide-react'`). Render as `<Zap className="w-6 h-6" />`.
+
 Requirements:
 1. Use TypeScript with React.FC typing
 2. Use ONLY the colors, fonts, spacing, radius, and animation values from

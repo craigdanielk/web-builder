@@ -166,18 +166,23 @@ Analyze a source website or structured data export and output a deterministic ar
 ### Purpose
 Take a brief and industry preset, generate a production-quality Next.js website through a multi-pass pipeline, and deploy it to Vercel.
 
-### Current State: PRODUCTION-READY for static sites; commerce-ready pending page template work (in progress) ✅
-- 23 industry presets covering major verticals
-- 25 section archetypes with 95+ variants
+### Current State: PRODUCTION-READY for visual sites (v1.1.2); commerce page templates pending ✅
+- **35 industry presets** covering major verticals
+- **25 section archetypes** with 99+ variants
 - 7-dimension style schema (color, type, space, radius, motion, density, imagery)
 - Compact style header mechanism prevents visual drift across sections
-- Dual animation engine: GSAP + ScrollTrigger or Framer Motion
+- Dual animation engine: **GSAP 3.14 + ScrollTrigger** (20 plugins detectable) or **Framer Motion 12**
+- **1,034-component animation library** with machine-usable registry (search index, taxonomy, capability matrix)
 - URL clone mode: Playwright extraction → auto-generated preset + brief → build
-- Python SDK orchestration script (1404 lines, 7 stages + injection wiring)
+- **Pattern identification pipeline** (Stage 0d): color intelligence, archetype mapping, animation/UI pattern matching, gap reporting
+- Python + Node.js hybrid orchestration (7 stages + injection wiring + pre-flight validation)
 - Multi-agent support (Architect, Builder, Reviewer, Fixer roles)
-- Automated Vercel deployment
+- Automated Vercel deployment with post-deploy verification
+- JSX truncation auto-repair (two-layer: generation-time + pre-flight)
 - Cost: ~$0.55-1.15 per page in API calls
 - Fully isolated builds — 100 agents can build in parallel
+- **13 completed builds** deployed to Vercel across diverse industries
+- **8 completed engineering plans** (v0.4.0 → v1.1.2)
 - Commerce prop contract defined (`skills/commerce-contract.ts`) — Shopify Storefront API types
 
 ### Interface Contract
@@ -226,8 +231,8 @@ Commerce sections accept typed props matching Shopify's Storefront API. Defined 
 - **Prop-driven sections** (ProductGrid, ProductDetail, CollectionHero) — accept typed Shopify data via props
 - **Hybrid sections** (Nav, Footer, FeaturedProducts) — work standalone with fallback content, enhanced with real data when available
 
-### Current Work: Page Preset Template Builds
-Building page-level preset templates that define section sequences for each page type, with sections correctly marked as static or prop-driven.
+### Current Work: Pipeline Maturation Complete — Page Templates Next
+The Web Builder's visual pipeline (v1.1.2) is production-ready for single-page static sites. The next step is building page-level preset templates that define section sequences for each page type (homepage, collection, product, landing, about, contact, legal), with sections correctly marked as static or prop-driven using the commerce contract.
 
 ---
 
@@ -433,14 +438,17 @@ No payment code, no PCI compliance burden, no payment gateway configuration.
 
 Build in this order. Parallel tracks where noted. Each phase is independently valuable.
 
-### Phase 0: Commerce Contract + Page Templates (NOW — Web Builder)
+### Phase 0: Commerce Contract + Page Templates (Web Builder)
 - Define commerce prop contract (`skills/commerce-contract.ts`) ✅ DONE
-- Build page template structures into presets (homepage, collection, product, landing, about, contact, legal)
-- Mark sections as static / prop-driven / hybrid
-- Validate section generation produces prop-driven commerce components
-- Update section generation prompt for commerce-aware output
+- Pipeline maturation: v0.1.0 → v1.1.2 ✅ DONE (animation library, GSAP ecosystem, pattern identification, build reliability)
+- Build page template structures into presets (homepage, collection, product, landing, about, contact, legal) — NOT STARTED
+- Mark sections as static / prop-driven / hybrid within presets — NOT STARTED
+- Validate section generation produces prop-driven commerce components — NOT STARTED
+- Update section generation prompt for commerce-aware output — NOT STARTED
 
 **Deliverable:** Web Builder generates a complete template set (5-8 page types) with commerce sections accepting typed Shopify props
+
+**Note:** Pipeline maturation (animation systems, extraction quality, build reliability) was prioritized over page template work. The commerce contract types and data mode classifications are complete — the remaining work is preset structure upgrades and orchestrator integration.
 
 ### Phase 1: Parallel Tracks (Weeks 1-2)
 
@@ -566,14 +574,18 @@ The system is production-ready when:
 
 ## WHERE YOU (CURSOR AGENT) FIT RIGHT NOW
 
-You are working on **Module 2: Web Builder** — specifically Phase 0: the page preset template builds with commerce-aware section generation. This is the correct current focus.
+You are working on **Module 2: Web Builder**. The visual pipeline is production-ready (v1.1.2, 13 builds deployed). The next planned step is Phase 0's remaining work: page preset template structures with commerce-aware section generation.
 
 ### Completed
 - Commerce prop contract defined (`skills/commerce-contract.ts`) — Shopify Storefront API types, section data mode classification, page template metadata
+- Pipeline maturation v0.1.0 → v1.1.2: animation library (1,034 components), GSAP ecosystem (20 plugins), pattern identification (Stage 0d), build reliability (JSX auto-repair), 8 engineering plans closed
+- 13 successful builds deployed to Vercel across diverse industries
+- VISION.md sync mechanism wired into doc-sync-checklist, close-checklist, and CLAUDE.md update protocol
 
-### In Progress
+### Not Started (Next)
 - Page template structures in presets (homepage, collection, product, landing, about, contact, legal)
 - Section generation prompt updates for prop-driven commerce sections
+- Orchestrator multi-page generation support
 
 ### Context for Decision-Making
 1. **Understand the interfaces** — your output (deployed Next.js site with prop-driven commerce sections) feeds into Module 3
@@ -587,4 +599,5 @@ You are working on **Module 2: Web Builder** — specifically Phase 0: the page 
 
 *Document created: 2026-02-11*
 *Last updated: 2026-02-11*
-*Status: Active — Phase 0 in progress*
+*Web Builder version: v1.1.2*
+*Status: Active — Phase 0 page templates not started (pipeline maturation complete)*
