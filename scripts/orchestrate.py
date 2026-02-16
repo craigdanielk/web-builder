@@ -652,6 +652,51 @@ def parse_scaffold(scaffold: str) -> list[dict]:
     return sections
 
 
+def parse_preset_section_sequence(preset_name: str) -> list[dict]:
+    """
+    Load the preset markdown and parse its "Default Section Sequence" block into
+    section dicts compatible with get_section_sequence (position, archetype, variant,
+    content_direction, priority). Used when DB returns 0 sections for multipage.
+    """
+    path = SKILLS_DIR / "presets" / f"{preset_name}.md"
+    if not path.exists():
+        return []
+    text = path.read_text(encoding="utf-8")
+    # Find ## Default Section Sequence and the next ``` block (skip opening fence)
+    in_header = False
+    past_fence = False
+    block_lines: list[str] = []
+    for line in text.split("\n"):
+        if line.strip().startswith("## Default Section Sequence"):
+            in_header = True
+            continue
+        if in_header:
+            if line.strip().startswith("```"):
+                if not block_lines:
+                    past_fence = True
+                    continue
+                break
+            if past_fence:
+                block_lines.append(line)
+    result: list[dict] = []
+    for i, line in enumerate(block_lines):
+        cleaned = line.strip().replace("**", "")
+        # Match: 1. ARCHETYPE | variant   or   1. ARCHETYPE | variant | content
+        match = re.match(
+            r"\d+\.\s+([\w][\w-]*)\s*\|\s*([\w][\w-]*)(?:\s*\|\s*(.+))?",
+            cleaned,
+        )
+        if match:
+            result.append({
+                "position": i + 1,
+                "archetype": match.group(1).strip(),
+                "variant": match.group(2).strip(),
+                "content_direction": (match.group(3) or "").strip(),
+                "priority": "required",
+            })
+    return result
+
+
 def stage_scaffold_v2(site_spec: dict, project_name: str) -> tuple:
     """Stage 1 (v2): Produce section list from site-spec.json. No Claude call needed."""
     print("\n  Stage 1 (v2): Building scaffold from site-spec.json...")
@@ -960,12 +1005,16 @@ def stage_sections(
     build_cache: "BuildCache | None" = None,
     output_subdir: str | None = None,
     section_file_names: list[str] | None = None,
+    brief: str | None = None,
 ) -> list[Path]:
     """Stage 2: Generate each section component individually with engine-aware injection.
     When output_subdir and section_file_names are set (e.g. Layer 6 shared components),
     writes to output/{project}/{output_subdir}/{section_file_names[i]} instead of sections/.
+    When brief is provided, it is injected into each section prompt for brand context.
     """
     print(f"\n🔨 Stage 2: Generating {len(sections)} sections...")
+    if brief:
+        print(f"  Loaded brief: ({len(brief)} chars)")
     if section_contexts:
         print(f"  (with per-section reference context from URL extraction)")
 
@@ -1041,12 +1090,16 @@ def stage_sections(
         budget_label = f" [{token_budget} tokens]" if token_budget != MAX_TOKENS["section"] else ""
         print(f"  [{num}/{len(sections):02d}] {section['archetype']} | {section['variant']}{budget_label}...")
 
-        # ── Template-first check: if a parameterized template exists, use it ──
+        # ── Template-first check: local file, then Supabase code_template, else LLM ──
         if SUPABASE_AVAILABLE and build_cache:
-            template_path = check_template_exists(section["archetype"], section["variant"])
-            if template_path:
-                print(f"      ↳ TEMPLATE FOUND: {template_path.name} — skipping LLM generation")
-                template_code = template_path.read_text(encoding="utf-8")
+            tpl = check_template_exists(section["archetype"], section["variant"], build_cache)
+            if tpl is not None:
+                if isinstance(tpl, Path):
+                    print(f"      ↳ TEMPLATE FOUND: {tpl.name} (local) — skipping LLM generation")
+                    template_code = tpl.read_text(encoding="utf-8")
+                else:
+                    print(f"      ↳ TEMPLATE FOUND: Supabase code_template — skipping LLM generation")
+                    template_code = tpl
 
                 # Inject brand tokens from build cache style config
                 style = build_cache.style_config
@@ -1266,9 +1319,17 @@ Content Direction: {section['content']}"""
                 headings = content_display.get("headings", [])
                 content_display = headings[0] if headings else ""
 
+        # Build optional brief context block
+        brief_block = ""
+        if brief:
+            brief_block = f"""
+## Brand Context (from client brief — use this to inform tone, content, and visual decisions)
+{brief}
+"""
+
         prompt = f"""You are a senior frontend developer generating a single website section
 as a React + Tailwind CSS component.
-
+{brief_block}
 {style_and_spec_block}
 
 ## Structural Reference
@@ -1287,17 +1348,49 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
         code = re.sub(r"^```\w*\n?", "", code)
         code = re.sub(r"\n?```$", "", code)
 
-        # ── Truncation detection & repair (v1.1.1) ──
+        # ── Truncation detection & repair with retry (v1.1.1 + retry v2) ──
         truncation_result = _detect_and_repair_truncation(code, filename)
-        if truncation_result:
-            if truncation_result.get("truncated"):
-                if truncation_result.get("repaired"):
-                    code = truncation_result["code"]
-                    print(f"    ⚠ {filename}: truncated — auto-repaired")
-                    for w in truncation_result.get("warnings", []):
-                        print(f"      {w}")
+        section_is_truncated = truncation_result and truncation_result.get("truncated") and not truncation_result.get("repaired")
+        if truncation_result and truncation_result.get("truncated") and truncation_result.get("repaired"):
+            code = truncation_result["code"]
+            print(f"    ⚠ {filename}: truncated — auto-repaired")
+            for w in truncation_result.get("warnings", []):
+                print(f"      {w}")
+            section_is_truncated = False
+
+        # Retry loop: if truncated and not repairable, retry with higher budget / conciseness
+        if section_is_truncated:
+            for retry_num in range(1, 3):  # max 2 retries
+                if retry_num == 1:
+                    retry_budget = int(token_budget * 1.5)
+                    retry_prompt = prompt
+                    print(f"    🔄 {filename}: truncated, retry {retry_num} with max_tokens {retry_budget} (was {token_budget})")
                 else:
-                    print(f"    ❌ {filename}: truncated but could not be repaired")
+                    retry_budget = int(token_budget * 1.5)
+                    retry_prompt = prompt + "\n\nIMPORTANT: Generate a more concise version of this section. Keep it under 120 lines. Prioritize completeness over detail."
+                    print(f"    🔄 {filename}: truncated, retry {retry_num} with conciseness instruction")
+
+                code = call_claude(retry_prompt, "section", max_tokens_override=retry_budget)
+                code = re.sub(r"^```\w*\n?", "", code)
+                code = re.sub(r"\n?```$", "", code)
+
+                truncation_result = _detect_and_repair_truncation(code, filename)
+                if truncation_result and truncation_result.get("truncated"):
+                    if truncation_result.get("repaired"):
+                        code = truncation_result["code"]
+                        print(f"    ⚠ {filename}: retry {retry_num} truncated — auto-repaired")
+                        section_is_truncated = False
+                        break
+                    # Still truncated and not repairable — continue retry loop
+                else:
+                    # Not truncated
+                    section_is_truncated = False
+                    print(f"    ✅ {filename}: retry {retry_num} succeeded")
+                    break
+
+            if section_is_truncated:
+                print(f"    ❌ {filename}: truncated after 2 retries — skipping broken section")
+                continue  # Skip this section, don't write a broken file
 
         # Post-process: ensure "use client" directive for components using
         # animation libraries or React hooks
@@ -1427,19 +1520,28 @@ def stage_scaffold_multipage(
     manifest: dict,
     project_name: str,
     industry: str,
+    preset: str | None = None,
 ) -> dict:
-    """Layer 6: Enrich manifest with per-page section sequences from Supabase (NAV/FOOTER filtered)."""
+    """Layer 6: Enrich manifest with per-page section sequences from Supabase (NAV/FOOTER filtered).
+    When DB returns 0 sections for a page, falls back to preset's Default Section Sequence if preset is set."""
     print("\n📋 Layer 6: Scaffold (multi-page) — loading section sequences per page type...")
-    if not get_section_sequence:
-        print("  ⚠ Supabase not available; cannot load per-page sections. Use --preset for single-page.")
+    if not get_section_sequence and not preset:
+        print("  ⚠ Supabase not available and no preset; cannot load per-page sections. Use --preset for single-page.")
         return manifest
+    preset_sections: list[dict] | None = None
     for page in manifest.get("pages", []):
         page_type = page.get("page_type", "homepage")
         page_id = page.get("id", "")
         if page_id == "not-found":
             page["sections"] = []
             continue
-        raw = get_section_sequence(industry, page_type)
+        raw = get_section_sequence(industry, page_type) if get_section_sequence else []
+        if not raw and preset:
+            if preset_sections is None:
+                preset_sections = parse_preset_section_sequence(preset)
+                if preset_sections:
+                    print(f"  Using preset '{preset}' Default Section Sequence ({len(preset_sections)} sections) for pages with no DB sequence.")
+            raw = preset_sections if preset_sections else []
         page["sections"] = site_manifest_lib.filter_nav_footer_from_sections(raw) if site_manifest_lib else raw
         print(f"  {page_id} ({page_type}): {len(page['sections'])} sections")
     out_path = OUTPUT_DIR / project_name / "site-manifest.json"
@@ -1454,6 +1556,7 @@ def stage_sections_multipage(
     project_name: str,
     build_cache: "BuildCache | None" = None,
     identification: dict | None = None,
+    brief: str | None = None,
 ) -> dict[str, list[Path]]:
     """Layer 6: Generate sections for each page; write to output/{project}/sections/{page_id}/."""
     print("\n🔨 Layer 6: Sections (multi-page)...")
@@ -1482,6 +1585,7 @@ def stage_sections_multipage(
             build_cache=build_cache,
             output_subdir=f"sections/{page_id}",
             section_file_names=None,
+            brief=brief,
         )
         section_files_by_page[page_id] = files
     return section_files_by_page
@@ -1690,10 +1794,10 @@ def _layer7_index_page_content(src_homepage_content: str) -> str:
     for imp in reversed(shopify_imports):
         lines.insert(insert_idx, imp)
     content = "\n".join(lines)
-    # Make Page async and add fetch + collections
+    # Make Page async and add fetch + collections (defensive: try/catch + Array.isArray so build never fails on .map)
     content = content.replace(
         "export default function Page() {",
-        "export default async function Page() {\n  const data = await shopifyFetch<CollectionsListResult>(COLLECTIONS_LIST, { first: 20 });\n  const collections = data?.collections?.edges?.map((e) => ({ handle: e.node.handle, title: e.node.title, description: e.node.description ?? \"\", image: e.node.image })) ?? [];",
+        "export default async function Page() {\n  let collections: Array<{ handle: string; title: string; description: string; image?: { url: string; altText: string | null } | null }> = [];\n  try {\n    const data = await shopifyFetch<CollectionsListResult>(COLLECTIONS_LIST, { first: 20 });\n    const edges = data?.collections?.edges;\n    collections = Array.isArray(edges) ? edges.map((e) => ({ handle: e.node.handle, title: e.node.title, description: e.node.description ?? \"\", image: e.node.image })) : [];\n  } catch { collections = []; }\n",
     )
     content = content.replace(
         "<Section04PRODUCTSHOWCASE />",
@@ -1840,7 +1944,7 @@ def stage_deploy(
             "private": True,
             "scripts": {
                 "dev": "next dev --webpack",
-                "build": "next build",
+                "build": "NODE_ENV=production next build",
                 "start": "next start",
                 "lint": "eslint",
             },
@@ -2733,10 +2837,14 @@ def stage_validate(project_name: str) -> dict:
     issues = []
 
     # 1. Check all section files exist and have content
+    # Support both single-page (sections/*.tsx) and multi-page (sections/{page_type}/*.tsx)
     section_files = sorted(sections_dir.glob("*.tsx")) if sections_dir.exists() else []
+    if not section_files and sections_dir.exists():
+        # Multi-page mode: check subdirectories (e.g. sections/homepage/*.tsx)
+        section_files = sorted(sections_dir.glob("**/*.tsx"))
     repaired_count = 0
     if not section_files:
-        issues.append("CRITICAL: No section files found in sections/")
+        issues.append("CRITICAL: No section files found in sections/ or sections/{page_type}/")
     else:
         for sf in section_files:
             content = sf.read_text(encoding="utf-8")
@@ -2833,10 +2941,12 @@ def main():
                         default=None, metavar="PATH")
     parser.add_argument("--compiled-dir", help="Path to Calculator compiled dir (architecture.json); enables multi-route generation",
                         default=None, metavar="PATH")
+    parser.add_argument("--brief", help="Path to brief.md file (overrides brief lookup from compiled-dir or briefs/)",
+                        default=None, metavar="PATH")
 
     args = parser.parse_args()
     if getattr(args, "compiled_dir", None) and not args.industry:
-        args.industry = "ecommerce"
+        args.industry = "electronics-tech"
 
     output_dir = OUTPUT_DIR / args.project
     if args.clean and output_dir.exists():
@@ -2891,14 +3001,28 @@ def main():
 
     # ── Standard Mode ───────────────────────────────────────────────
     else:
-        # Validate brief exists
-        brief_path = BRIEFS_DIR / f"{args.project}.md"
-        if not brief_path.exists():
-            print(f"Error: No brief found at {brief_path}")
-            print(f"Available briefs: {[f.stem for f in BRIEFS_DIR.glob('*.md') if f.stem != '_template']}")
-            sys.exit(1)
-
-        brief = read_file(brief_path)
+        # Brief: --brief flag > compiled-dir/brief.md > briefs/{project}.md
+        compiled_brief_path = None
+        if getattr(args, "brief", None):
+            p = Path(args.brief).resolve()
+            if p.exists():
+                compiled_brief_path = p
+            else:
+                print(f"  ⚠ --brief path not found: {p}")
+        if not compiled_brief_path and getattr(args, "compiled_dir", None):
+            p = Path(args.compiled_dir).resolve() / "brief.md"
+            if p.exists():
+                compiled_brief_path = p
+        if compiled_brief_path:
+            brief = read_file(compiled_brief_path)
+            print(f"  Loaded brief: {compiled_brief_path} ({len(brief)} chars)")
+        else:
+            brief_path = BRIEFS_DIR / f"{args.project}.md"
+            if not brief_path.exists():
+                print(f"Error: No brief found at {brief_path}")
+                print(f"Available briefs: {[f.stem for f in BRIEFS_DIR.glob('*.md') if f.stem != '_template']}")
+                sys.exit(1)
+            brief = read_file(brief_path)
 
         # Determine preset — --industry (database) vs --preset (legacy .md)
         preset = args.preset
@@ -3031,11 +3155,11 @@ def main():
             print("  ⚠ --skip-to is not supported for multipage; running full multipage pipeline.")
         stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache)
         save_checkpoint(output_dir, "shared_components", args.project)
-        site_manifest = stage_scaffold_multipage(site_manifest, args.project, industry)
+        site_manifest = stage_scaffold_multipage(site_manifest, args.project, industry, preset=preset)
         save_checkpoint(output_dir, "scaffold_mp", args.project)
         section_files_by_page = stage_sections_multipage(
             site_manifest, preset, args.project,
-            build_cache=build_cache, identification=identification,
+            build_cache=build_cache, identification=identification, brief=brief,
         )
         save_checkpoint(output_dir, "sections_mp", args.project, {"section_files_by_page_keys": list(section_files_by_page.keys())})
         stage_assemble_multipage(site_manifest, section_files_by_page, args.project)
@@ -3061,18 +3185,31 @@ def main():
         _build_end_time = _time.time()
         _build_duration_ms = int((_build_end_time - _build_start_time) * 1000)
         if build_cache and SUPABASE_AVAILABLE:
-            total_sec = sum(len(p.get("sections", [])) for p in site_manifest.get("pages", []))
+            all_sections = []
+            for p in site_manifest.get("pages", []):
+                for s in p.get("sections", []):
+                    all_sections.append(s)
+            _local_count = _db_count = _llm_count = 0
+            for sec in all_sections:
+                tpl = check_template_exists(sec.get("archetype", ""), sec.get("variant", ""), build_cache)
+                if isinstance(tpl, Path):
+                    _local_count += 1
+                elif isinstance(tpl, str):
+                    _db_count += 1
+                else:
+                    _llm_count += 1
             log_build(
                 project_name=args.project,
                 industry=industry,
                 page_type="multipage",
-                sections_from_template=0,
-                sections_from_llm=total_sec,
-                total_sections=total_sec,
+                sections_from_template=_local_count,
+                db_template_count=_db_count,
+                sections_from_llm=_llm_count,
+                total_sections=len(all_sections),
                 build_duration_ms=_build_duration_ms,
                 status="completed",
             )
-            print(f"  📊 Build logged to Supabase (multipage, {len(site_manifest.get('pages', []))} pages)")
+            print(f"  📊 Build logged to Supabase (multipage, {len(site_manifest.get('pages', []))} pages — {_local_count} local / {_db_count} db / {_llm_count} LLM)")
         print(f"\n{'═' * 60}")
         print(f"  ✅ Layer 6 multi-page complete")
         print(f"  Output: output/{args.project}/")
@@ -3125,7 +3262,7 @@ def main():
     if args.skip_to in (None, "sections"):
         section_files = stage_sections(
             sections, preset, args.project, section_contexts, extraction_dir, identification,
-            site_spec=site_spec, build_cache=build_cache,
+            site_spec=site_spec, build_cache=build_cache, brief=brief,
         )
         save_checkpoint(output_dir, "sections", args.project, {"section_count": len(section_files)})
     else:
@@ -3171,26 +3308,28 @@ def main():
     _build_end_time = _time.time()
     _build_duration_ms = int((_build_end_time - _build_start_time) * 1000)
     if build_cache and SUPABASE_AVAILABLE:
-        # Count template vs LLM sections
-        _template_count = 0
-        _llm_count = len(sections)
-        if build_cache:
-            for sec in sections:
-                tpl = check_template_exists(sec["archetype"], sec["variant"])
-                if tpl:
-                    _template_count += 1
-                    _llm_count -= 1
+        # Count local / db / LLM sections (cache used so no extra Supabase reads)
+        _local_count = _db_count = _llm_count = 0
+        for sec in sections:
+            tpl = check_template_exists(sec["archetype"], sec["variant"], build_cache)
+            if isinstance(tpl, Path):
+                _local_count += 1
+            elif isinstance(tpl, str):
+                _db_count += 1
+            else:
+                _llm_count += 1
         log_build(
             project_name=args.project,
             industry=args.industry or preset,
             page_type=getattr(args, "page", "homepage"),
-            sections_from_template=_template_count,
+            sections_from_template=_local_count,
+            db_template_count=_db_count,
             sections_from_llm=_llm_count,
             total_sections=len(sections),
             build_duration_ms=_build_duration_ms,
             status="completed",
         )
-        print(f"  📊 Build logged to Supabase ({_template_count} template / {_llm_count} LLM)")
+        print(f"  📊 Build logged to Supabase ({_local_count} local / {_db_count} db / {_llm_count} LLM)")
 
     mode_label = "URL Clone" if args.from_url else ("Database" if args.industry else "Pipeline")
     print(f"\n{'═' * 60}")
