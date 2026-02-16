@@ -969,6 +969,53 @@ console.log(JSON.stringify(result));
     return {"block": "", "componentFiles": [], "matches": []}
 
 
+_CONTENT_TOKEN_DEFAULTS: dict[str, str] = {
+    "headline": "Discover Our Collection",
+    "subheadline": "Premium quality products crafted for you",
+    "cta_text": "Shop Now",
+    "cta_url": "#",
+    "price": "$0.00",
+    "product_image_src": "/images/placeholder.jpg",
+    "product_image_alt": "Product image",
+    "image_url": "/images/placeholder.jpg",
+    "image_alt": "Image",
+    "section_title": "About Us",
+    "section_subtitle": "Learn more about what we do",
+    "section_body": "We are passionate about delivering exceptional products and experiences to our customers.",
+    "section_body_2": "Our commitment to quality drives everything we do.",
+    "section_label": "Trusted By",
+    "placeholder_text": "Enter your email",
+    "button_text": "Subscribe",
+    "privacy_text": "We respect your privacy.",
+    "highlight_stat": "10K+",
+    "highlight_label": "Happy customers",
+    "bg_color_class": "bg-gray-900",
+}
+
+# Regex: bare {token_name} in JSX — lowercase + underscores, not inside quotes or .map/key patterns
+_CONTENT_TOKEN_RE = re.compile(r'(?<!["\w.])(\{)([a-z][a-z_0-9]{2,})(\})(?!["\w])')
+
+
+def _replace_content_tokens(code: str) -> str:
+    """Replace {token_name} content placeholders in Supabase code_templates with string literals.
+    Only replaces tokens listed in _CONTENT_TOKEN_DEFAULTS or matching the Tokens: comment."""
+    # Extract declared tokens from the // Tokens: comment line
+    declared: set[str] = set()
+    for line in code.split("\n"):
+        if line.strip().startswith("// Tokens:"):
+            declared = set(re.findall(r'\{([a-z][a-z_0-9]+?)(?:\[\])?(?:\.[a-z_]+)?\}', line))
+            break
+
+    def _replacer(m: re.Match) -> str:
+        token = m.group(2)
+        if token not in declared and token not in _CONTENT_TOKEN_DEFAULTS:
+            return m.group(0)  # Not a content token — leave as-is
+        val = _CONTENT_TOKEN_DEFAULTS.get(token, token.replace("_", " ").title())
+        return f'{{"{val}"}}'
+
+    return _CONTENT_TOKEN_RE.sub(_replacer, code)
+
+
 def _detect_and_repair_truncation(code: str, section_name: str) -> dict | None:
     """Call post-process.js detectAndRepairTruncation() via Node.js subprocess.
 
@@ -1111,6 +1158,11 @@ def stage_sections(
                         template_code = template_code.replace(f"{{{{brand.{token_key}}}}}", str(token_val))
                     for token_key, token_val in typography.items():
                         template_code = template_code.replace(f"{{{{brand.{token_key}}}}}", str(token_val))
+
+                # Replace content placeholder tokens {token_name} with string literals
+                # so JSX doesn't reference undefined variables at render time.
+                # Matches bare {word_word} patterns in JSX (not {var} inside .map callbacks etc.)
+                template_code = _replace_content_tokens(template_code)
 
                 sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
                 out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
@@ -1899,68 +1951,68 @@ def stage_deploy(
     app_dir = src_dir / "app"
     comp_dir = src_dir / "components" / "sections"
 
-    # ── Scaffold Next.js project if it doesn't exist ──
-    if not (site_dir / "package.json").exists():
+    # ── package.json: always write (ensures deps match current build, even if stale site/ exists) ──
+    deps = {
+        "next": "16.1.6",
+        "react": "19.2.3",
+        "react-dom": "19.2.3",
+        "framer-motion": "^12.33.0",  # Always included (hover/tap effects)
+        "clsx": "^2.1.1",
+        "tailwind-merge": "^2.6.0",
+        "lucide-react": "^0.468.0",
+    }
+    if engine == "gsap":
+        deps["gsap"] = "^3.14.2"
+
+    # Detect Lottie assets from extraction data
+    has_lottie = False
+    if extraction_dir:
+        anim_path = extraction_dir / "animation-analysis.json"
+        if anim_path.exists():
+            try:
+                anim_data = json.loads(anim_path.read_text(encoding="utf-8"))
+                lottie_files = anim_data.get("lottieFiles", [])
+                lottie_assets = (anim_data.get("assets", {}) or {}).get("lottie", [])
+                has_lottie = len(lottie_files) > 0 or len(lottie_assets) > 0
+            except (json.JSONDecodeError, OSError):
+                pass
+    # Also detect from generated sections importing DotLottieReact
+    if not has_lottie:
+        for sf in section_files:
+            if sf.exists() and "DotLottieReact" in sf.read_text(encoding="utf-8"):
+                has_lottie = True
+                break
+    if has_lottie:
+        deps["@lottiefiles/dotlottie-react"] = "^0.13.0"
+        print(f"  Lottie files detected — adding @lottiefiles/dotlottie-react")
+
+    pkg = {
+        "name": project_name,
+        "version": "0.1.0",
+        "private": True,
+        "scripts": {
+            "dev": "next dev --webpack",
+            "build": "NODE_ENV=production next build",
+            "start": "next start",
+            "lint": "eslint",
+        },
+        "dependencies": deps,
+        "devDependencies": {
+            "@tailwindcss/postcss": "^4",
+            "@types/node": "^20",
+            "@types/react": "^19",
+            "@types/react-dom": "^19",
+            "eslint": "^9",
+            "eslint-config-next": "16.1.6",
+            "tailwindcss": "^4",
+            "typescript": "^5",
+        },
+    }
+    write_file(site_dir / "package.json", json.dumps(pkg, indent=2) + "\n")
+
+    # ── Scaffold remaining config files only if project is new ──
+    if not (site_dir / "tsconfig.json").exists():
         print("  Creating Next.js project structure...")
-
-        # package.json
-        deps = {
-            "next": "16.1.6",
-            "react": "19.2.3",
-            "react-dom": "19.2.3",
-            "framer-motion": "^12.33.0",  # Always included (hover/tap effects)
-            "clsx": "^2.1.1",
-            "tailwind-merge": "^2.6.0",
-            "lucide-react": "^0.468.0",
-        }
-        if engine == "gsap":
-            deps["gsap"] = "^3.14.2"
-
-        # Detect Lottie assets from extraction data
-        has_lottie = False
-        if extraction_dir:
-            anim_path = extraction_dir / "animation-analysis.json"
-            if anim_path.exists():
-                try:
-                    anim_data = json.loads(anim_path.read_text(encoding="utf-8"))
-                    lottie_files = anim_data.get("lottieFiles", [])
-                    lottie_assets = (anim_data.get("assets", {}) or {}).get("lottie", [])
-                    has_lottie = len(lottie_files) > 0 or len(lottie_assets) > 0
-                except (json.JSONDecodeError, OSError):
-                    pass
-        # Also detect from generated sections importing DotLottieReact
-        if not has_lottie:
-            for sf in section_files:
-                if sf.exists() and "DotLottieReact" in sf.read_text(encoding="utf-8"):
-                    has_lottie = True
-                    break
-        if has_lottie:
-            deps["@lottiefiles/dotlottie-react"] = "^0.13.0"
-            print(f"  Lottie files detected — adding @lottiefiles/dotlottie-react")
-
-        pkg = {
-            "name": project_name,
-            "version": "0.1.0",
-            "private": True,
-            "scripts": {
-                "dev": "next dev --webpack",
-                "build": "NODE_ENV=production next build",
-                "start": "next start",
-                "lint": "eslint",
-            },
-            "dependencies": deps,
-            "devDependencies": {
-                "@tailwindcss/postcss": "^4",
-                "@types/node": "^20",
-                "@types/react": "^19",
-                "@types/react-dom": "^19",
-                "eslint": "^9",
-                "eslint-config-next": "16.1.6",
-                "tailwindcss": "^4",
-                "typescript": "^5",
-            },
-        }
-        write_file(site_dir / "package.json", json.dumps(pkg, indent=2) + "\n")
 
         # tsconfig.json
         tsconfig = {
