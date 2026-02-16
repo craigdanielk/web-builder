@@ -53,9 +53,9 @@ bulk-graphql-importer repo → Imports 50k products into Shopify in ~120 minutes
 Analyze a source website or structured data export and output a deterministic architecture specification that defines what needs to be built, how it should be structured, and what content populates it.
 
 ### Current State
-- Framework exists from the Turm Kaffee case study (`aurelix_calculator_real.py`)
+- Framework exists from a prior case study (`aurelix_calculator_real.py`)
 - Proven on one project (265 products, 3 markets, 6 collections, 19 landing pages)
-- Not generalized — hardcoded to Turm's CSV format and Magento structure
+- Not generalized — hardcoded to a specific CSV format and Magento structure
 - URL crawling and page classification logic validated (379 URLs, 86% classification accuracy)
 - Navigation extraction validated (60-item hierarchical menu)
 
@@ -64,8 +64,8 @@ Analyze a source website or structured data export and output a deterministic ar
 **Artifact 1: `architecture.json`** — The complete store blueprint (primary output)
 ```json
 {
-  "project_id": "turm-kaffee",
-  "source_url": "https://shop.turmkaffee.ch",
+  "project_id": "demo",
+  "source_url": "https://example-shop.example",
   "source_platform": "magento",
   "collections": [
     {
@@ -122,7 +122,7 @@ Analyze a source website or structured data export and output a deterministic ar
 ```json
 {
   "product_images": [
-    { "product_handle": "kenner", "source_url": "https://...", "position": 1, "alt_text": "..." }
+    { "product_handle": "example-product", "source_url": "https://...", "position": 1, "alt_text": "..." }
   ],
   "hero_images": [
     { "page_handle": "kaffee-bohnen", "source_url": "https://...", "usage": "hero_banner", "dimensions": "1920x600" }
@@ -453,7 +453,7 @@ Build in this order. Parallel tracks where noted. Each phase is independently va
 ### Phase 1: Parallel Tracks (Weeks 1-2)
 
 **Track A: Calculator Generalization**
-- Generalize URL crawler beyond Turm/Magento
+- Generalize URL crawler beyond a single platform
 - Implement platform detection (Magento, Shopify, WooCommerce, generic)
 - Build page classifier (product, category, content, legal, contact)
 - Build architecture.json generator
@@ -464,7 +464,7 @@ Build in this order. Parallel tracks where noted. Each phase is independently va
 **Deliverable:** Given any e-commerce URL → outputs architecture.json + brief.md + media-manifest.json
 
 **Track B: Module 2→3 Handoff Spike (1-2 days)**
-- Take one existing Web Builder output (e.g., turm-kaffee-v3)
+- Take one existing Web Builder output (e.g., demo build)
 - Manually wire it to a Shopify dev store via Storefront API
 - Validate the Option D hybrid approach: static pages as-is, commerce pages with injected data layer
 - Document: what works, what breaks, what the Web Builder output needs to change

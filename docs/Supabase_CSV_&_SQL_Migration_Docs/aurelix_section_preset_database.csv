@@ -1,0 +1,843 @@
+id,industry,page_type,component_type,position,section_archetype,section_variant,content_direction,priority
+1,artisan-food,homepage,page_section,1,HERO,full-bleed-overlay,Heritage/origin story hero with product imagery,required
+2,artisan-food,homepage,page_section,2,LOGO-BAR,scrolling-marquee,"Press mentions, certifications (organic, fair trade)",recommended
+3,artisan-food,homepage,page_section,3,ABOUT,editorial-split,"Founder story, craft process, heritage",required
+4,artisan-food,homepage,page_section,4,PRODUCT-SHOWCASE,hover-cards,Featured collections (3-4 categories),required
+5,artisan-food,homepage,page_section,5,HOW-IT-WORKS,horizontal-timeline,From source to cup/plate journey,recommended
+6,artisan-food,homepage,page_section,6,TESTIMONIALS,single-featured,Customer story with product photo,required
+7,artisan-food,homepage,page_section,7,GALLERY,masonry,Lifestyle/product photography,optional
+8,artisan-food,homepage,page_section,8,NEWSLETTER,inline,Subscribe for recipes/tips + discount,recommended
+9,artisan-food,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,Product images + origin badge overlay,required
+10,artisan-food,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, tasting notes, brewing guide",required
+11,artisan-food,product-detail,page_section,3,PRODUCT-DETAIL,subscription-upsell,Subscribe & save toggle,recommended
+12,artisan-food,product-detail,page_section,4,PRODUCT-SHOWCASE,related-products,Same origin / complementary products,required
+13,artisan-food,product-detail,page_section,5,TESTIMONIALS,mini-reviews,3 inline customer reviews,recommended
+14,artisan-food,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+15,artisan-food,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+16,artisan-food,collection,page_section,3,ABOUT,inline-blurb,"Category story (origin, process)",recommended
+17,artisan-food,collection,page_section,4,PRODUCT-SHOWCASE,featured-3,Featured/signature products,optional
+18,artisan-food,collection,page_section,5,CTA,inline,Back to all collections,optional
+19,artisan-food,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+20,artisan-food,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+21,artisan-food,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+22,artisan-food,about,page_section,1,HERO,page-header,Company name + tagline,required
+23,artisan-food,about,page_section,2,ABOUT,editorial-split,Founder / origin story,required
+24,artisan-food,about,page_section,3,HOW-IT-WORKS,horizontal-timeline,Heritage timeline,recommended
+25,artisan-food,about,page_section,4,GALLERY,masonry,Process / team / facility photography,required
+26,artisan-food,about,page_section,5,STATS,counter,"Years, products, customers served",recommended
+27,artisan-food,about,page_section,6,TEAM,grid,Key team members,optional
+28,artisan-food,about,page_section,7,TESTIMONIALS,single-featured,Community/partner quote,optional
+29,artisan-food,about,page_section,8,CTA,centered,Shop our products,required
+30,artisan-food,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+31,artisan-food,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+32,artisan-food,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+33,artisan-food,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+34,artisan-food,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+35,artisan-food,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+36,artisan-food,shared,navigation,0,NAV,sticky-transparent,Minimal with dropdown categories,required
+37,artisan-food,shared,footer,0,FOOTER,minimal,"Logo, links, newsletter, certifications",required
+38,artisan-food,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+39,fashion-apparel,homepage,page_section,1,HERO,video-background,Seasonal campaign with model imagery,required
+40,fashion-apparel,homepage,page_section,2,PRODUCT-SHOWCASE,hover-cards,New arrivals / seasonal collection,required
+41,fashion-apparel,homepage,page_section,3,ABOUT,editorial-split,"Brand ethos, design philosophy",recommended
+42,fashion-apparel,homepage,page_section,4,GALLERY,lookbook-grid,Editorial lookbook / styled outfits,required
+43,fashion-apparel,homepage,page_section,5,PRODUCT-SHOWCASE,carousel,Bestsellers with quick-add,required
+44,fashion-apparel,homepage,page_section,6,TESTIMONIALS,wall,UGC / customer photos wall,recommended
+45,fashion-apparel,homepage,page_section,7,LOGO-BAR,static-grid,Featured in press logos,optional
+46,fashion-apparel,homepage,page_section,8,CTA,split-image,Shop the collection CTA,required
+47,fashion-apparel,homepage,page_section,9,NEWSLETTER,inline,VIP access + first look discount,recommended
+48,fashion-apparel,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Multi-angle + model shots, zoom on hover",required
+49,fashion-apparel,product-detail,page_section,2,PRODUCT-DETAIL,variant-selector,"Color swatches, size guide modal",required
+50,fashion-apparel,product-detail,page_section,3,PRODUCT-DETAIL,description-tabs,"Details, fabric/care, size chart",required
+51,fashion-apparel,product-detail,page_section,4,PRODUCT-SHOWCASE,complete-the-look,Styled outfit cross-sell (3-4 items),required
+52,fashion-apparel,product-detail,page_section,5,TESTIMONIALS,mini-reviews,Customer fit reviews with photos,required
+53,fashion-apparel,product-detail,page_section,6,PRODUCT-SHOWCASE,related-products,You may also like,required
+54,fashion-apparel,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+55,fashion-apparel,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+56,fashion-apparel,collection,page_section,3,GALLERY,lookbook-banner,Styled campaign banner mid-grid,recommended
+57,fashion-apparel,collection,page_section,4,PRODUCT-SHOWCASE,trending,Trending in this category,optional
+58,fashion-apparel,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+59,fashion-apparel,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+60,fashion-apparel,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+61,fashion-apparel,about,page_section,1,HERO,page-header,Company name + tagline,required
+62,fashion-apparel,about,page_section,2,ABOUT,editorial-split,Company story,required
+63,fashion-apparel,about,page_section,3,TEAM,grid,Team members,optional
+64,fashion-apparel,about,page_section,4,STATS,counter,Key metrics,recommended
+65,fashion-apparel,about,page_section,5,CTA,centered,Get started / contact,required
+66,fashion-apparel,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+67,fashion-apparel,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+68,fashion-apparel,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+69,fashion-apparel,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+70,fashion-apparel,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+71,fashion-apparel,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+72,fashion-apparel,shared,navigation,0,NAV,mega-menu,Mega-menu with imagery per category,required
+73,fashion-apparel,shared,footer,0,FOOTER,mega,Multi-column with Instagram feed link,required
+74,fashion-apparel,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+75,beauty-cosmetics,homepage,page_section,1,HERO,split-image,Hero product with benefit callouts,required
+76,beauty-cosmetics,homepage,page_section,2,LOGO-BAR,static-grid,"Dermatologist-tested, cruelty-free badges",required
+77,beauty-cosmetics,homepage,page_section,3,PRODUCT-SHOWCASE,hover-cards,Shop by concern/category,required
+78,beauty-cosmetics,homepage,page_section,4,HOW-IT-WORKS,numbered-steps,Skincare routine / application guide,required
+79,beauty-cosmetics,homepage,page_section,5,TESTIMONIALS,carousel,Before/after with customer quotes,required
+80,beauty-cosmetics,homepage,page_section,6,VIDEO,autoplay-hero,Product demo / ingredient story,recommended
+81,beauty-cosmetics,homepage,page_section,7,COMPARISON,table,Why us vs competitors,optional
+82,beauty-cosmetics,homepage,page_section,8,STATS,counter,Clinical results numbers,recommended
+83,beauty-cosmetics,homepage,page_section,9,NEWSLETTER,inline,Beauty tips + sample offer,recommended
+84,beauty-cosmetics,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,Product + texture shots + swatch,required
+85,beauty-cosmetics,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Ingredients, how to use, clinical results",required
+86,beauty-cosmetics,product-detail,page_section,3,FEATURES,icon-row,Key benefits (3-4 icons inline),required
+87,beauty-cosmetics,product-detail,page_section,4,PRODUCT-DETAIL,subscription-upsell,Subscribe & save for consumables,recommended
+88,beauty-cosmetics,product-detail,page_section,5,TESTIMONIALS,mini-reviews,Before/after customer reviews,required
+89,beauty-cosmetics,product-detail,page_section,6,PRODUCT-SHOWCASE,routine-builder,Complete your routine cross-sell,required
+90,beauty-cosmetics,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+91,beauty-cosmetics,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+92,beauty-cosmetics,collection,page_section,3,HOW-IT-WORKS,routine-banner,Build your routine CTA banner,recommended
+93,beauty-cosmetics,collection,page_section,4,PRODUCT-SHOWCASE,bestsellers,Category bestsellers highlighted,optional
+94,beauty-cosmetics,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+95,beauty-cosmetics,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+96,beauty-cosmetics,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+97,beauty-cosmetics,about,page_section,1,HERO,page-header,Company name + tagline,required
+98,beauty-cosmetics,about,page_section,2,ABOUT,editorial-split,Company story,required
+99,beauty-cosmetics,about,page_section,3,TEAM,grid,Team members,optional
+100,beauty-cosmetics,about,page_section,4,STATS,counter,Key metrics,recommended
+101,beauty-cosmetics,about,page_section,5,CTA,centered,Get started / contact,required
+102,beauty-cosmetics,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+103,beauty-cosmetics,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+104,beauty-cosmetics,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+105,beauty-cosmetics,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+106,beauty-cosmetics,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+107,beauty-cosmetics,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+108,beauty-cosmetics,shared,navigation,0,NAV,mega-menu,Mega-menu with concern/category split,required
+109,beauty-cosmetics,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+110,beauty-cosmetics,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+111,jewelry-watches,homepage,page_section,1,HERO,minimal-text,Luxe typography over dark product shot,required
+112,jewelry-watches,homepage,page_section,2,PRODUCT-SHOWCASE,hover-cards,Collections by category,required
+113,jewelry-watches,homepage,page_section,3,ABOUT,editorial-split,Craftsmanship story,required
+114,jewelry-watches,homepage,page_section,4,VIDEO,autoplay-hero,Making-of / detail shots,recommended
+115,jewelry-watches,homepage,page_section,5,GALLERY,masonry,Lifestyle + detail photography,required
+116,jewelry-watches,homepage,page_section,6,TESTIMONIALS,single-featured,Customer milestone stories,recommended
+117,jewelry-watches,homepage,page_section,7,TRUST-BADGES,horizontal-strip,"Warranty, authenticity, shipping",required
+118,jewelry-watches,homepage,page_section,8,CTA,centered,Book consultation / custom design,optional
+119,jewelry-watches,homepage,page_section,9,NEWSLETTER,inline,First access + care guide,recommended
+120,jewelry-watches,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,High-res detail shots + lifestyle,required
+121,jewelry-watches,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Materials, dimensions, care, certificate",required
+122,jewelry-watches,product-detail,page_section,3,TRUST-BADGES,inline-strip,"Authenticity, warranty, free shipping",required
+123,jewelry-watches,product-detail,page_section,4,VIDEO,inline-player,360° view or craftsmanship detail,recommended
+124,jewelry-watches,product-detail,page_section,5,PRODUCT-SHOWCASE,related-products,From the same collection,required
+125,jewelry-watches,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+126,jewelry-watches,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+127,jewelry-watches,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+128,jewelry-watches,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+129,jewelry-watches,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+130,jewelry-watches,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+131,jewelry-watches,about,page_section,1,HERO,page-header,Company name + tagline,required
+132,jewelry-watches,about,page_section,2,ABOUT,editorial-split,Company story,required
+133,jewelry-watches,about,page_section,3,TEAM,grid,Team members,optional
+134,jewelry-watches,about,page_section,4,STATS,counter,Key metrics,recommended
+135,jewelry-watches,about,page_section,5,CTA,centered,Get started / contact,required
+136,jewelry-watches,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+137,jewelry-watches,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+138,jewelry-watches,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+139,jewelry-watches,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+140,jewelry-watches,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+141,jewelry-watches,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+142,jewelry-watches,shared,navigation,0,NAV,sticky-transparent,Elegant minimal with centered logo,required
+143,jewelry-watches,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+144,jewelry-watches,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+145,health-wellness,homepage,page_section,1,HERO,split-image,Wellness outcome imagery with clear CTA,required
+146,health-wellness,homepage,page_section,2,STATS,counter,Clinical results / user outcomes,required
+147,health-wellness,homepage,page_section,3,PRODUCT-SHOWCASE,hover-cards,Shop by goal/need,required
+148,health-wellness,homepage,page_section,4,HOW-IT-WORKS,numbered-steps,How it works / protocol,required
+149,health-wellness,homepage,page_section,5,COMPARISON,table,Ingredient transparency vs competitors,recommended
+150,health-wellness,homepage,page_section,6,TESTIMONIALS,carousel,Transformation stories,required
+151,health-wellness,homepage,page_section,7,TRUST-BADGES,horizontal-strip,"FDA, GMP, third-party tested",required
+152,health-wellness,homepage,page_section,8,FAQ,accordion,"Dosage, interactions, shipping",required
+153,health-wellness,homepage,page_section,9,NEWSLETTER,inline,Wellness tips + first order discount,recommended
+154,health-wellness,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,Product + supplement facts overlay,required
+155,health-wellness,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Benefits, ingredients, dosage, research",required
+156,health-wellness,product-detail,page_section,3,TRUST-BADGES,inline-strip,"Third-party tested, GMP, FDA facility",required
+157,health-wellness,product-detail,page_section,4,PRODUCT-DETAIL,subscription-upsell,Subscribe & save 15%,required
+158,health-wellness,product-detail,page_section,5,FAQ,mini-accordion,Product-specific FAQ (3-5 questions),recommended
+159,health-wellness,product-detail,page_section,6,TESTIMONIALS,mini-reviews,Customer results reviews,required
+160,health-wellness,product-detail,page_section,7,PRODUCT-SHOWCASE,stack-builder,Stack with these supplements,recommended
+161,health-wellness,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+162,health-wellness,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+163,health-wellness,collection,page_section,3,FEATURES,goal-navigator,Shop by goal/need filter,recommended
+164,health-wellness,collection,page_section,4,TRUST-BADGES,inline-strip,Category-level certifications,optional
+165,health-wellness,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+166,health-wellness,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+167,health-wellness,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+168,health-wellness,about,page_section,1,HERO,page-header,Company name + tagline,required
+169,health-wellness,about,page_section,2,ABOUT,editorial-split,Company story,required
+170,health-wellness,about,page_section,3,TEAM,grid,Team members,optional
+171,health-wellness,about,page_section,4,STATS,counter,Key metrics,recommended
+172,health-wellness,about,page_section,5,CTA,centered,Get started / contact,required
+173,health-wellness,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+174,health-wellness,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+175,health-wellness,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+176,health-wellness,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+177,health-wellness,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+178,health-wellness,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+179,health-wellness,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+180,health-wellness,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+181,health-wellness,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+182,sports-fitness,homepage,page_section,1,HERO,video-background,Action athlete footage,required
+183,sports-fitness,homepage,page_section,2,LOGO-BAR,scrolling-marquee,Athlete endorsements / team logos,recommended
+184,sports-fitness,homepage,page_section,3,PRODUCT-SHOWCASE,hover-cards,Shop by sport/activity,required
+185,sports-fitness,homepage,page_section,4,FEATURES,icon-grid,Technology/material callouts,required
+186,sports-fitness,homepage,page_section,5,TESTIMONIALS,wall,Athlete + customer reviews,recommended
+187,sports-fitness,homepage,page_section,6,GALLERY,masonry,Action photography,recommended
+188,sports-fitness,homepage,page_section,7,COMPARISON,table,Product comparison matrix,optional
+189,sports-fitness,homepage,page_section,8,CTA,split-image,Join the community / challenge,recommended
+190,sports-fitness,homepage,page_section,9,NEWSLETTER,inline,Training tips + early access,recommended
+191,sports-fitness,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+192,sports-fitness,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+193,sports-fitness,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+194,sports-fitness,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+195,sports-fitness,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+196,sports-fitness,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+197,sports-fitness,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+198,sports-fitness,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+199,sports-fitness,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+200,sports-fitness,about,page_section,1,HERO,page-header,Company name + tagline,required
+201,sports-fitness,about,page_section,2,ABOUT,editorial-split,Company story,required
+202,sports-fitness,about,page_section,3,TEAM,grid,Team members,optional
+203,sports-fitness,about,page_section,4,STATS,counter,Key metrics,recommended
+204,sports-fitness,about,page_section,5,CTA,centered,Get started / contact,required
+205,sports-fitness,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+206,sports-fitness,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+207,sports-fitness,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+208,sports-fitness,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+209,sports-fitness,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+210,sports-fitness,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+211,sports-fitness,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+212,sports-fitness,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+213,sports-fitness,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+214,outdoor-adventure,homepage,page_section,1,HERO,full-bleed-overlay,Landscape hero with gear in action,required
+215,outdoor-adventure,homepage,page_section,2,PRODUCT-SHOWCASE,hover-cards,"Shop by activity (hiking, camping, climbing)",required
+216,outdoor-adventure,homepage,page_section,3,FEATURES,icon-grid,"Durability, weather-proof, weight specs",required
+217,outdoor-adventure,homepage,page_section,4,VIDEO,autoplay-hero,Field testing / expedition footage,recommended
+218,outdoor-adventure,homepage,page_section,5,TESTIMONIALS,carousel,Adventure stories from customers,recommended
+219,outdoor-adventure,homepage,page_section,6,HOW-IT-WORKS,horizontal-timeline,Gear guide / packing list,optional
+220,outdoor-adventure,homepage,page_section,7,GALLERY,masonry,Customer adventure photos,recommended
+221,outdoor-adventure,homepage,page_section,8,TRUST-BADGES,horizontal-strip,"Warranty, repair program, materials",required
+222,outdoor-adventure,homepage,page_section,9,NEWSLETTER,inline,Trail guides + gear drops,recommended
+223,outdoor-adventure,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+224,outdoor-adventure,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+225,outdoor-adventure,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+226,outdoor-adventure,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+227,outdoor-adventure,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+228,outdoor-adventure,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+229,outdoor-adventure,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+230,outdoor-adventure,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+231,outdoor-adventure,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+232,outdoor-adventure,about,page_section,1,HERO,page-header,Company name + tagline,required
+233,outdoor-adventure,about,page_section,2,ABOUT,editorial-split,Company story,required
+234,outdoor-adventure,about,page_section,3,TEAM,grid,Team members,optional
+235,outdoor-adventure,about,page_section,4,STATS,counter,Key metrics,recommended
+236,outdoor-adventure,about,page_section,5,CTA,centered,Get started / contact,required
+237,outdoor-adventure,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+238,outdoor-adventure,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+239,outdoor-adventure,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+240,outdoor-adventure,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+241,outdoor-adventure,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+242,outdoor-adventure,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+243,outdoor-adventure,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+244,outdoor-adventure,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+245,outdoor-adventure,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+246,home-lifestyle,homepage,page_section,1,HERO,split-image,Styled room setting with hero product,required
+247,home-lifestyle,homepage,page_section,2,PRODUCT-SHOWCASE,hover-cards,Shop by room/category,required
+248,home-lifestyle,homepage,page_section,3,GALLERY,lookbook-grid,Interior inspiration / styled spaces,required
+249,home-lifestyle,homepage,page_section,4,ABOUT,editorial-split,"Design philosophy, materials sourcing",recommended
+250,home-lifestyle,homepage,page_section,5,TESTIMONIALS,carousel,Customer home transformations,recommended
+251,home-lifestyle,homepage,page_section,6,HOW-IT-WORKS,numbered-steps,Design service / consultation flow,optional
+252,home-lifestyle,homepage,page_section,7,PRODUCT-SHOWCASE,carousel,Trending / bestsellers,recommended
+253,home-lifestyle,homepage,page_section,8,CTA,split-image,Design consultation CTA,optional
+254,home-lifestyle,homepage,page_section,9,NEWSLETTER,inline,Design tips + sale notifications,recommended
+255,home-lifestyle,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,Product + styled room context shots,required
+256,home-lifestyle,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, dimensions, materials, care",required
+257,home-lifestyle,product-detail,page_section,3,FEATURES,icon-row,"Material, dimensions, weight specs",required
+258,home-lifestyle,product-detail,page_section,4,GALLERY,in-context,Room inspiration with product,recommended
+259,home-lifestyle,product-detail,page_section,5,PRODUCT-SHOWCASE,complete-the-look,Style this room cross-sell,required
+260,home-lifestyle,product-detail,page_section,6,TESTIMONIALS,mini-reviews,Customer home photos,recommended
+261,home-lifestyle,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+262,home-lifestyle,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+263,home-lifestyle,collection,page_section,3,GALLERY,room-inspiration,Styled room inspiration banner,recommended
+264,home-lifestyle,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+265,home-lifestyle,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+266,home-lifestyle,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+267,home-lifestyle,about,page_section,1,HERO,page-header,Company name + tagline,required
+268,home-lifestyle,about,page_section,2,ABOUT,editorial-split,Company story,required
+269,home-lifestyle,about,page_section,3,TEAM,grid,Team members,optional
+270,home-lifestyle,about,page_section,4,STATS,counter,Key metrics,recommended
+271,home-lifestyle,about,page_section,5,CTA,centered,Get started / contact,required
+272,home-lifestyle,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+273,home-lifestyle,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+274,home-lifestyle,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+275,home-lifestyle,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+276,home-lifestyle,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+277,home-lifestyle,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+278,home-lifestyle,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+279,home-lifestyle,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+280,home-lifestyle,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+281,pet-products,homepage,page_section,1,HERO,split-image,Happy pets with products,required
+282,pet-products,homepage,page_section,2,PRODUCT-SHOWCASE,hover-cards,Shop by pet type / need,required
+283,pet-products,homepage,page_section,3,FEATURES,icon-grid,"Natural ingredients, vet-approved",required
+284,pet-products,homepage,page_section,4,TESTIMONIALS,wall,Pet parent reviews with pet photos,required
+285,pet-products,homepage,page_section,5,HOW-IT-WORKS,numbered-steps,Subscription / feeding guide,recommended
+286,pet-products,homepage,page_section,6,STATS,counter,"Happy pets served, 5-star reviews",recommended
+287,pet-products,homepage,page_section,7,FAQ,accordion,"Ingredients, allergies, shipping",recommended
+288,pet-products,homepage,page_section,8,CTA,centered,Subscribe and save CTA,recommended
+289,pet-products,homepage,page_section,9,NEWSLETTER,inline,Pet care tips + first order discount,recommended
+290,pet-products,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,Product + happy pet photos,required
+291,pet-products,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Ingredients, feeding guide, sizing",required
+292,pet-products,product-detail,page_section,3,TRUST-BADGES,inline-strip,"Vet-approved, natural, made in [country]",required
+293,pet-products,product-detail,page_section,4,PRODUCT-DETAIL,subscription-upsell,Autoship & save,recommended
+294,pet-products,product-detail,page_section,5,TESTIMONIALS,mini-reviews,Pet parent reviews with pet photos,required
+295,pet-products,product-detail,page_section,6,PRODUCT-SHOWCASE,related-products,Frequently bought together,required
+296,pet-products,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+297,pet-products,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+298,pet-products,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+299,pet-products,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+300,pet-products,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+301,pet-products,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+302,pet-products,about,page_section,1,HERO,page-header,Company name + tagline,required
+303,pet-products,about,page_section,2,ABOUT,editorial-split,Company story,required
+304,pet-products,about,page_section,3,TEAM,grid,Team members,optional
+305,pet-products,about,page_section,4,STATS,counter,Key metrics,recommended
+306,pet-products,about,page_section,5,CTA,centered,Get started / contact,required
+307,pet-products,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+308,pet-products,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+309,pet-products,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+310,pet-products,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+311,pet-products,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+312,pet-products,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+313,pet-products,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+314,pet-products,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+315,pet-products,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+316,electronics-tech,homepage,page_section,1,HERO,product-hero,Product hero with spec highlights,required
+317,electronics-tech,homepage,page_section,2,FEATURES,icon-grid,Key specs with icons,required
+318,electronics-tech,homepage,page_section,3,PRODUCT-SHOWCASE,hover-cards,Product lineup / categories,required
+319,electronics-tech,homepage,page_section,4,COMPARISON,table,Model comparison matrix,required
+320,electronics-tech,homepage,page_section,5,VIDEO,autoplay-hero,Product demo / unboxing,recommended
+321,electronics-tech,homepage,page_section,6,TESTIMONIALS,carousel,Tech reviewer quotes,recommended
+322,electronics-tech,homepage,page_section,7,HOW-IT-WORKS,numbered-steps,Setup / getting started,optional
+323,electronics-tech,homepage,page_section,8,STATS,counter,"Users, uptime, performance metrics",recommended
+324,electronics-tech,homepage,page_section,9,FAQ,accordion,"Compatibility, warranty, specs",required
+325,electronics-tech,homepage,page_section,10,NEWSLETTER,inline,Product updates + early access,recommended
+326,electronics-tech,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,Product angles + annotated features,required
+327,electronics-tech,product-detail,page_section,2,FEATURES,spec-table,Full specifications table,required
+328,electronics-tech,product-detail,page_section,3,PRODUCT-DETAIL,description-tabs,"Overview, specs, in the box, compatibility",required
+329,electronics-tech,product-detail,page_section,4,COMPARISON,inline-compare,Compare models side-by-side,recommended
+330,electronics-tech,product-detail,page_section,5,VIDEO,inline-player,Demo / setup walkthrough,recommended
+331,electronics-tech,product-detail,page_section,6,TESTIMONIALS,mini-reviews,User reviews with star breakdown,required
+332,electronics-tech,product-detail,page_section,7,PRODUCT-SHOWCASE,accessories,Compatible accessories bundle,required
+333,electronics-tech,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+334,electronics-tech,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+335,electronics-tech,collection,page_section,3,COMPARISON,inline-compare,Quick compare selected products,recommended
+336,electronics-tech,collection,page_section,4,FAQ,mini-accordion,Category buying guide FAQ,optional
+337,electronics-tech,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+338,electronics-tech,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+339,electronics-tech,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+340,electronics-tech,about,page_section,1,HERO,page-header,Company name + tagline,required
+341,electronics-tech,about,page_section,2,ABOUT,editorial-split,Company story,required
+342,electronics-tech,about,page_section,3,TEAM,grid,Team members,optional
+343,electronics-tech,about,page_section,4,STATS,counter,Key metrics,recommended
+344,electronics-tech,about,page_section,5,CTA,centered,Get started / contact,required
+345,electronics-tech,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+346,electronics-tech,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+347,electronics-tech,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+348,electronics-tech,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+349,electronics-tech,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+350,electronics-tech,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+351,electronics-tech,shared,navigation,0,NAV,mega-menu,Utility-first with search prominence,required
+352,electronics-tech,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+353,electronics-tech,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+354,saas-software,homepage,page_section,1,HERO,split-image,Product screenshot with value prop,required
+355,saas-software,homepage,page_section,2,LOGO-BAR,scrolling-marquee,Customer logos,required
+356,saas-software,homepage,page_section,3,FEATURES,icon-grid,Core features (3-6),required
+357,saas-software,homepage,page_section,4,HOW-IT-WORKS,numbered-steps,3-step onboarding,required
+358,saas-software,homepage,page_section,5,STATS,counter,"Users, uptime, time saved",recommended
+359,saas-software,homepage,page_section,6,TESTIMONIALS,carousel,Customer case studies,required
+360,saas-software,homepage,page_section,7,PRICING,tiered-cards,Plan comparison,required
+361,saas-software,homepage,page_section,8,COMPARISON,table,Us vs alternatives,optional
+362,saas-software,homepage,page_section,9,FAQ,accordion,"Billing, security, integrations",required
+363,saas-software,homepage,page_section,10,CTA,centered,Start free trial,required
+364,saas-software,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+365,saas-software,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+366,saas-software,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+367,saas-software,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+368,saas-software,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+369,saas-software,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+370,saas-software,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+371,saas-software,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+372,saas-software,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+373,saas-software,about,page_section,1,HERO,page-header,Company name + tagline,required
+374,saas-software,about,page_section,2,ABOUT,editorial-split,Mission and founding story,required
+375,saas-software,about,page_section,3,STATS,counter,"Users, team size, countries",required
+376,saas-software,about,page_section,4,TEAM,grid,Leadership team,required
+377,saas-software,about,page_section,5,FEATURES,icon-grid,Company values,recommended
+378,saas-software,about,page_section,6,LOGO-BAR,static-grid,Investors / partners,optional
+379,saas-software,about,page_section,7,CTA,centered,Join us / careers,recommended
+380,saas-software,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+381,saas-software,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+382,saas-software,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+383,saas-software,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+384,saas-software,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+385,saas-software,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+386,saas-software,shared,navigation,0,NAV,sticky-solid,Clean with CTA button in nav,required
+387,saas-software,shared,footer,0,FOOTER,mega,"Product, company, resources, legal columns",required
+388,saas-software,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+389,professional-services,homepage,page_section,1,HERO,centered,Clear value proposition with CTA,required
+390,professional-services,homepage,page_section,2,LOGO-BAR,static-grid,Client logos / certifications,required
+391,professional-services,homepage,page_section,3,FEATURES,icon-grid,Service offerings (3-6),required
+392,professional-services,homepage,page_section,4,ABOUT,editorial-split,"Team expertise, years of experience",required
+393,professional-services,homepage,page_section,5,TESTIMONIALS,carousel,Client success stories,required
+394,professional-services,homepage,page_section,6,STATS,counter,"Projects completed, clients served",recommended
+395,professional-services,homepage,page_section,7,HOW-IT-WORKS,numbered-steps,Engagement process,recommended
+396,professional-services,homepage,page_section,8,TEAM,grid,Key team members,optional
+397,professional-services,homepage,page_section,9,FAQ,accordion,"Pricing, process, timeline",recommended
+398,professional-services,homepage,page_section,10,CTA,centered,Book consultation,required
+399,professional-services,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+400,professional-services,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+401,professional-services,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+402,professional-services,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+403,professional-services,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+404,professional-services,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+405,professional-services,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+406,professional-services,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+407,professional-services,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+408,professional-services,about,page_section,1,HERO,page-header,Company name + tagline,required
+409,professional-services,about,page_section,2,ABOUT,editorial-split,Firm philosophy + approach,required
+410,professional-services,about,page_section,3,STATS,counter,"Years, clients, team members",required
+411,professional-services,about,page_section,4,TEAM,grid,Partners / leadership,required
+412,professional-services,about,page_section,5,TESTIMONIALS,carousel,Client endorsements,recommended
+413,professional-services,about,page_section,6,TRUST-BADGES,horizontal-strip,"Certifications, memberships",recommended
+414,professional-services,about,page_section,7,CTA,centered,Get in touch,required
+415,professional-services,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+416,professional-services,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+417,professional-services,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+418,professional-services,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+419,professional-services,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+420,professional-services,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+421,professional-services,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+422,professional-services,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+423,professional-services,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+424,real-estate,homepage,page_section,1,HERO,full-bleed-overlay,Featured property / development hero,required
+425,real-estate,homepage,page_section,2,PRODUCT-SHOWCASE,hover-cards,Featured listings / developments,required
+426,real-estate,homepage,page_section,3,STATS,counter,"Properties sold, years experience, markets",required
+427,real-estate,homepage,page_section,4,FEATURES,icon-grid,Service differentiators,recommended
+428,real-estate,homepage,page_section,5,TESTIMONIALS,carousel,Client success stories,required
+429,real-estate,homepage,page_section,6,ABOUT,editorial-split,"Agency story, market expertise",recommended
+430,real-estate,homepage,page_section,7,GALLERY,masonry,Property photography showcase,recommended
+431,real-estate,homepage,page_section,8,CONTACT,split-form,Inquiry form with map,required
+432,real-estate,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+433,real-estate,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+434,real-estate,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+435,real-estate,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+436,real-estate,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+437,real-estate,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+438,real-estate,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+439,real-estate,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+440,real-estate,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+441,real-estate,about,page_section,1,HERO,page-header,Company name + tagline,required
+442,real-estate,about,page_section,2,ABOUT,editorial-split,Company story,required
+443,real-estate,about,page_section,3,TEAM,grid,Team members,optional
+444,real-estate,about,page_section,4,STATS,counter,Key metrics,recommended
+445,real-estate,about,page_section,5,CTA,centered,Get started / contact,required
+446,real-estate,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+447,real-estate,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+448,real-estate,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+449,real-estate,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+450,real-estate,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+451,real-estate,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+452,real-estate,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+453,real-estate,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+454,real-estate,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+455,education,homepage,page_section,1,HERO,split-image,Students/outcomes imagery,required
+456,education,homepage,page_section,2,STATS,counter,"Students enrolled, completion rate, career outcomes",required
+457,education,homepage,page_section,3,PRODUCT-SHOWCASE,hover-cards,Course/program catalog,required
+458,education,homepage,page_section,4,TESTIMONIALS,carousel,Student success stories,required
+459,education,homepage,page_section,5,HOW-IT-WORKS,numbered-steps,Enrollment process,required
+460,education,homepage,page_section,6,FEATURES,icon-grid,Platform features / learning benefits,recommended
+461,education,homepage,page_section,7,TEAM,grid,Instructors / faculty,optional
+462,education,homepage,page_section,8,FAQ,accordion,"Admissions, pricing, certificates",required
+463,education,homepage,page_section,9,CTA,centered,Enroll now / free preview,required
+464,education,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+465,education,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+466,education,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+467,education,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+468,education,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+469,education,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+470,education,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+471,education,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+472,education,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+473,education,about,page_section,1,HERO,page-header,Company name + tagline,required
+474,education,about,page_section,2,ABOUT,editorial-split,Company story,required
+475,education,about,page_section,3,TEAM,grid,Team members,optional
+476,education,about,page_section,4,STATS,counter,Key metrics,recommended
+477,education,about,page_section,5,CTA,centered,Get started / contact,required
+478,education,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+479,education,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+480,education,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+481,education,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+482,education,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+483,education,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+484,education,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+485,education,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+486,education,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+487,restaurants-cafes,homepage,page_section,1,HERO,full-bleed-overlay,Signature dish / interior ambiance,required
+488,restaurants-cafes,homepage,page_section,2,ABOUT,editorial-split,"Chef story, philosophy, heritage",required
+489,restaurants-cafes,homepage,page_section,3,GALLERY,masonry,Food photography + ambiance,required
+490,restaurants-cafes,homepage,page_section,4,PRODUCT-SHOWCASE,hover-cards,Menu highlights / categories,required
+491,restaurants-cafes,homepage,page_section,5,TESTIMONIALS,single-featured,Review quotes,recommended
+492,restaurants-cafes,homepage,page_section,6,HOW-IT-WORKS,numbered-steps,Reservation / ordering process,recommended
+493,restaurants-cafes,homepage,page_section,7,CONTACT,split-form,"Location, hours, reservation",required
+494,restaurants-cafes,homepage,page_section,8,NEWSLETTER,inline,Special events + offers,optional
+495,restaurants-cafes,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+496,restaurants-cafes,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+497,restaurants-cafes,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+498,restaurants-cafes,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+499,restaurants-cafes,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+500,restaurants-cafes,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+501,restaurants-cafes,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+502,restaurants-cafes,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+503,restaurants-cafes,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+504,restaurants-cafes,about,page_section,1,HERO,page-header,Company name + tagline,required
+505,restaurants-cafes,about,page_section,2,ABOUT,editorial-split,Company story,required
+506,restaurants-cafes,about,page_section,3,TEAM,grid,Team members,optional
+507,restaurants-cafes,about,page_section,4,STATS,counter,Key metrics,recommended
+508,restaurants-cafes,about,page_section,5,CTA,centered,Get started / contact,required
+509,restaurants-cafes,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+510,restaurants-cafes,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+511,restaurants-cafes,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+512,restaurants-cafes,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+513,restaurants-cafes,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+514,restaurants-cafes,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+515,restaurants-cafes,shared,navigation,0,NAV,hamburger-only,Minimal with reservation CTA,required
+516,restaurants-cafes,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+517,restaurants-cafes,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+518,hotels-hospitality,homepage,page_section,1,HERO,video-background,Property showcase video,required
+519,hotels-hospitality,homepage,page_section,2,GALLERY,masonry,Room types + amenities photography,required
+520,hotels-hospitality,homepage,page_section,3,FEATURES,icon-grid,Amenities and services,required
+521,hotels-hospitality,homepage,page_section,4,PRODUCT-SHOWCASE,hover-cards,Room categories / experiences,required
+522,hotels-hospitality,homepage,page_section,5,TESTIMONIALS,carousel,Guest reviews,required
+523,hotels-hospitality,homepage,page_section,6,ABOUT,editorial-split,"Property story, location highlights",recommended
+524,hotels-hospitality,homepage,page_section,7,STATS,counter,"Guest satisfaction, awards, years",recommended
+525,hotels-hospitality,homepage,page_section,8,CTA,centered,Book your stay,required
+526,hotels-hospitality,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+527,hotels-hospitality,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+528,hotels-hospitality,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+529,hotels-hospitality,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+530,hotels-hospitality,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+531,hotels-hospitality,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+532,hotels-hospitality,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+533,hotels-hospitality,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+534,hotels-hospitality,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+535,hotels-hospitality,about,page_section,1,HERO,page-header,Company name + tagline,required
+536,hotels-hospitality,about,page_section,2,ABOUT,editorial-split,Company story,required
+537,hotels-hospitality,about,page_section,3,TEAM,grid,Team members,optional
+538,hotels-hospitality,about,page_section,4,STATS,counter,Key metrics,recommended
+539,hotels-hospitality,about,page_section,5,CTA,centered,Get started / contact,required
+540,hotels-hospitality,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+541,hotels-hospitality,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+542,hotels-hospitality,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+543,hotels-hospitality,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+544,hotels-hospitality,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+545,hotels-hospitality,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+546,hotels-hospitality,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+547,hotels-hospitality,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+548,hotels-hospitality,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+549,events-venues,homepage,page_section,1,HERO,video-background,Event highlight reel,required
+550,events-venues,homepage,page_section,2,GALLERY,masonry,Venue + event photography,required
+551,events-venues,homepage,page_section,3,FEATURES,icon-grid,"Venue specs (capacity, A/V, catering)",required
+552,events-venues,homepage,page_section,4,TESTIMONIALS,carousel,Client event testimonials,required
+553,events-venues,homepage,page_section,5,PRODUCT-SHOWCASE,hover-cards,Event packages / venue spaces,required
+554,events-venues,homepage,page_section,6,HOW-IT-WORKS,numbered-steps,Booking process,recommended
+555,events-venues,homepage,page_section,7,FAQ,accordion,"Capacity, catering, availability",recommended
+556,events-venues,homepage,page_section,8,CONTACT,split-form,Inquiry form,required
+557,events-venues,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+558,events-venues,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+559,events-venues,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+560,events-venues,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+561,events-venues,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+562,events-venues,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+563,events-venues,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+564,events-venues,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+565,events-venues,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+566,events-venues,about,page_section,1,HERO,page-header,Company name + tagline,required
+567,events-venues,about,page_section,2,ABOUT,editorial-split,Company story,required
+568,events-venues,about,page_section,3,TEAM,grid,Team members,optional
+569,events-venues,about,page_section,4,STATS,counter,Key metrics,recommended
+570,events-venues,about,page_section,5,CTA,centered,Get started / contact,required
+571,events-venues,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+572,events-venues,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+573,events-venues,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+574,events-venues,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+575,events-venues,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+576,events-venues,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+577,events-venues,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+578,events-venues,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+579,events-venues,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+580,creative-studios,homepage,page_section,1,HERO,animated-gradient,Bold typography + showreel,required
+581,creative-studios,homepage,page_section,2,PORTFOLIO,masonry,Selected works showcase,required
+582,creative-studios,homepage,page_section,3,ABOUT,editorial-split,"Studio philosophy, process",required
+583,creative-studios,homepage,page_section,4,FEATURES,icon-grid,Services offered,required
+584,creative-studios,homepage,page_section,5,LOGO-BAR,scrolling-marquee,Client logos,recommended
+585,creative-studios,homepage,page_section,6,TESTIMONIALS,single-featured,Client quote,recommended
+586,creative-studios,homepage,page_section,7,TEAM,grid,Creative team,optional
+587,creative-studios,homepage,page_section,8,CTA,centered,Start a project,required
+588,creative-studios,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+589,creative-studios,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+590,creative-studios,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+591,creative-studios,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+592,creative-studios,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+593,creative-studios,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+594,creative-studios,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+595,creative-studios,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+596,creative-studios,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+597,creative-studios,about,page_section,1,HERO,page-header,Company name + tagline,required
+598,creative-studios,about,page_section,2,ABOUT,editorial-split,Company story,required
+599,creative-studios,about,page_section,3,TEAM,grid,Team members,optional
+600,creative-studios,about,page_section,4,STATS,counter,Key metrics,recommended
+601,creative-studios,about,page_section,5,CTA,centered,Get started / contact,required
+602,creative-studios,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+603,creative-studios,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+604,creative-studios,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+605,creative-studios,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+606,creative-studios,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+607,creative-studios,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+608,creative-studios,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+609,creative-studios,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+610,creative-studios,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+611,construction-trades,homepage,page_section,1,HERO,full-bleed-overlay,Completed project showcase,required
+612,construction-trades,homepage,page_section,2,STATS,counter,"Projects completed, years experience",required
+613,construction-trades,homepage,page_section,3,FEATURES,icon-grid,"Services (residential, commercial, renovation)",required
+614,construction-trades,homepage,page_section,4,PORTFOLIO,masonry,Project gallery with before/after,required
+615,construction-trades,homepage,page_section,5,TESTIMONIALS,carousel,Client testimonials,required
+616,construction-trades,homepage,page_section,6,HOW-IT-WORKS,numbered-steps,Project process (consult → design → build),recommended
+617,construction-trades,homepage,page_section,7,TRUST-BADGES,horizontal-strip,"Licensed, insured, certified",required
+618,construction-trades,homepage,page_section,8,FAQ,accordion,"Timeline, pricing, permits",recommended
+619,construction-trades,homepage,page_section,9,CONTACT,split-form,Get a quote form,required
+620,construction-trades,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+621,construction-trades,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+622,construction-trades,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+623,construction-trades,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+624,construction-trades,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+625,construction-trades,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+626,construction-trades,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+627,construction-trades,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+628,construction-trades,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+629,construction-trades,about,page_section,1,HERO,page-header,Company name + tagline,required
+630,construction-trades,about,page_section,2,ABOUT,editorial-split,Company story,required
+631,construction-trades,about,page_section,3,TEAM,grid,Team members,optional
+632,construction-trades,about,page_section,4,STATS,counter,Key metrics,recommended
+633,construction-trades,about,page_section,5,CTA,centered,Get started / contact,required
+634,construction-trades,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+635,construction-trades,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+636,construction-trades,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+637,construction-trades,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+638,construction-trades,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+639,construction-trades,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+640,construction-trades,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+641,construction-trades,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+642,construction-trades,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+643,medical-dental,homepage,page_section,1,HERO,split-image,Welcoming facility + team,required
+644,medical-dental,homepage,page_section,2,FEATURES,icon-grid,Services offered,required
+645,medical-dental,homepage,page_section,3,TRUST-BADGES,horizontal-strip,"Board certifications, insurance accepted",required
+646,medical-dental,homepage,page_section,4,TEAM,grid,Doctors/practitioners with credentials,required
+647,medical-dental,homepage,page_section,5,TESTIMONIALS,carousel,Patient reviews,required
+648,medical-dental,homepage,page_section,6,HOW-IT-WORKS,numbered-steps,New patient process,recommended
+649,medical-dental,homepage,page_section,7,FAQ,accordion,"Insurance, procedures, aftercare",required
+650,medical-dental,homepage,page_section,8,ABOUT,editorial-split,"Practice philosophy, technology",recommended
+651,medical-dental,homepage,page_section,9,CONTACT,split-form,Book appointment,required
+652,medical-dental,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+653,medical-dental,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+654,medical-dental,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+655,medical-dental,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+656,medical-dental,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+657,medical-dental,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+658,medical-dental,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+659,medical-dental,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+660,medical-dental,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+661,medical-dental,about,page_section,1,HERO,page-header,Company name + tagline,required
+662,medical-dental,about,page_section,2,ABOUT,editorial-split,Company story,required
+663,medical-dental,about,page_section,3,TEAM,grid,Team members,optional
+664,medical-dental,about,page_section,4,STATS,counter,Key metrics,recommended
+665,medical-dental,about,page_section,5,CTA,centered,Get started / contact,required
+666,medical-dental,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+667,medical-dental,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+668,medical-dental,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+669,medical-dental,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+670,medical-dental,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+671,medical-dental,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+672,medical-dental,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+673,medical-dental,shared,footer,0,FOOTER,mega,Multi-column with compliance/legal emphasis,required
+674,medical-dental,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+675,nonprofits-social,homepage,page_section,1,HERO,full-bleed-overlay,Impact imagery with mission statement,required
+676,nonprofits-social,homepage,page_section,2,STATS,counter,"Lives impacted, funds raised, projects",required
+677,nonprofits-social,homepage,page_section,3,ABOUT,editorial-split,"Mission, vision, founding story",required
+678,nonprofits-social,homepage,page_section,4,HOW-IT-WORKS,numbered-steps,How donations create impact,required
+679,nonprofits-social,homepage,page_section,5,TESTIMONIALS,carousel,Beneficiary stories,required
+680,nonprofits-social,homepage,page_section,6,TEAM,grid,Leadership team,optional
+681,nonprofits-social,homepage,page_section,7,GALLERY,masonry,Impact photography,recommended
+682,nonprofits-social,homepage,page_section,8,CTA,centered,Donate now / volunteer,required
+683,nonprofits-social,homepage,page_section,9,NEWSLETTER,inline,Impact updates,recommended
+684,nonprofits-social,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+685,nonprofits-social,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+686,nonprofits-social,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+687,nonprofits-social,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+688,nonprofits-social,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+689,nonprofits-social,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+690,nonprofits-social,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+691,nonprofits-social,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+692,nonprofits-social,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+693,nonprofits-social,about,page_section,1,HERO,page-header,Company name + tagline,required
+694,nonprofits-social,about,page_section,2,ABOUT,editorial-split,"Mission, vision, founding story",required
+695,nonprofits-social,about,page_section,3,STATS,counter,Impact metrics,required
+696,nonprofits-social,about,page_section,4,HOW-IT-WORKS,horizontal-timeline,Organization history,recommended
+697,nonprofits-social,about,page_section,5,TEAM,grid,Board + leadership,required
+698,nonprofits-social,about,page_section,6,GALLERY,masonry,Impact photography,recommended
+699,nonprofits-social,about,page_section,7,CTA,centered,Donate / volunteer,required
+700,nonprofits-social,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+701,nonprofits-social,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+702,nonprofits-social,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+703,nonprofits-social,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+704,nonprofits-social,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+705,nonprofits-social,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+706,nonprofits-social,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+707,nonprofits-social,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+708,nonprofits-social,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+709,automotive,homepage,page_section,1,HERO,video-background,Vehicle hero with cinematic footage,required
+710,automotive,homepage,page_section,2,PRODUCT-SHOWCASE,hover-cards,Vehicle lineup / categories,required
+711,automotive,homepage,page_section,3,FEATURES,icon-grid,"Performance specs, safety features",required
+712,automotive,homepage,page_section,4,COMPARISON,table,Model comparison,recommended
+713,automotive,homepage,page_section,5,GALLERY,masonry,Interior + exterior + action shots,required
+714,automotive,homepage,page_section,6,TESTIMONIALS,carousel,Owner reviews,recommended
+715,automotive,homepage,page_section,7,VIDEO,autoplay-hero,Performance / technology showcase,recommended
+716,automotive,homepage,page_section,8,CTA,centered,Book test drive / configure,required
+717,automotive,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,"Image gallery left, buy box right",required
+718,automotive,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, specs, reviews in tabs",required
+719,automotive,product-detail,page_section,3,PRODUCT-SHOWCASE,related-products,4 related products carousel,required
+720,automotive,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+721,automotive,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+722,automotive,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+723,automotive,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+724,automotive,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+725,automotive,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+726,automotive,about,page_section,1,HERO,page-header,Company name + tagline,required
+727,automotive,about,page_section,2,ABOUT,editorial-split,Company story,required
+728,automotive,about,page_section,3,TEAM,grid,Team members,optional
+729,automotive,about,page_section,4,STATS,counter,Key metrics,recommended
+730,automotive,about,page_section,5,CTA,centered,Get started / contact,required
+731,automotive,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+732,automotive,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+733,automotive,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+734,automotive,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+735,automotive,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+736,automotive,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+737,automotive,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+738,automotive,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+739,automotive,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+740,kids-baby,homepage,page_section,1,HERO,split-image,Playful imagery with warm tones,required
+741,kids-baby,homepage,page_section,2,PRODUCT-SHOWCASE,hover-cards,Shop by age / category,required
+742,kids-baby,homepage,page_section,3,TRUST-BADGES,horizontal-strip,"Safety certifications, non-toxic, organic",required
+743,kids-baby,homepage,page_section,4,FEATURES,icon-grid,"Material safety, durability, design",required
+744,kids-baby,homepage,page_section,5,TESTIMONIALS,wall,Parent reviews with kid photos,required
+745,kids-baby,homepage,page_section,6,HOW-IT-WORKS,numbered-steps,Subscription / registry flow,optional
+746,kids-baby,homepage,page_section,7,FAQ,accordion,"Sizing, safety, returns",recommended
+747,kids-baby,homepage,page_section,8,CTA,centered,Shop bestsellers / gift registry,recommended
+748,kids-baby,homepage,page_section,9,NEWSLETTER,inline,Parenting tips + new arrivals,recommended
+749,kids-baby,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,Product + child-safe demo shots,required
+750,kids-baby,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Description, safety info, age range, materials",required
+751,kids-baby,product-detail,page_section,3,TRUST-BADGES,inline-strip,"Safety certs, non-toxic, age-appropriate",required
+752,kids-baby,product-detail,page_section,4,PRODUCT-SHOWCASE,bundle-builder,Gift set / bundle builder,recommended
+753,kids-baby,product-detail,page_section,5,TESTIMONIALS,mini-reviews,Parent reviews,required
+754,kids-baby,product-detail,page_section,6,PRODUCT-SHOWCASE,related-products,Also great for this age,required
+755,kids-baby,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+756,kids-baby,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+757,kids-baby,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+758,kids-baby,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+759,kids-baby,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+760,kids-baby,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+761,kids-baby,about,page_section,1,HERO,page-header,Company name + tagline,required
+762,kids-baby,about,page_section,2,ABOUT,editorial-split,Company story,required
+763,kids-baby,about,page_section,3,TEAM,grid,Team members,optional
+764,kids-baby,about,page_section,4,STATS,counter,Key metrics,recommended
+765,kids-baby,about,page_section,5,CTA,centered,Get started / contact,required
+766,kids-baby,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+767,kids-baby,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+768,kids-baby,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+769,kids-baby,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+770,kids-baby,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+771,kids-baby,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+772,kids-baby,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+773,kids-baby,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+774,kids-baby,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+775,luxury-premium,homepage,page_section,1,HERO,minimal-text,Cinematic product on dark background,required
+776,luxury-premium,homepage,page_section,2,PRODUCT-SHOWCASE,hover-cards,Curated collections,required
+777,luxury-premium,homepage,page_section,3,VIDEO,autoplay-hero,Brand film / craftsmanship,required
+778,luxury-premium,homepage,page_section,4,ABOUT,editorial-split,"Heritage, artistry, provenance",required
+779,luxury-premium,homepage,page_section,5,GALLERY,masonry,Lifestyle + detail photography,required
+780,luxury-premium,homepage,page_section,6,TESTIMONIALS,single-featured,VIP client story,recommended
+781,luxury-premium,homepage,page_section,7,TRUST-BADGES,horizontal-strip,"Authenticity, provenance, white-glove service",required
+782,luxury-premium,homepage,page_section,8,CTA,centered,Book private consultation,optional
+783,luxury-premium,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,Art-directed product + detail macro shots,required
+784,luxury-premium,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Provenance, materials, dimensions, care",required
+785,luxury-premium,product-detail,page_section,3,VIDEO,inline-player,Craftsmanship / making-of,recommended
+786,luxury-premium,product-detail,page_section,4,TRUST-BADGES,inline-strip,"Authenticity certificate, concierge, lifetime care",required
+787,luxury-premium,product-detail,page_section,5,PRODUCT-SHOWCASE,curated-pairing,Pairs beautifully with...,recommended
+788,luxury-premium,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+789,luxury-premium,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+790,luxury-premium,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+791,luxury-premium,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+792,luxury-premium,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+793,luxury-premium,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+794,luxury-premium,about,page_section,1,HERO,page-header,Company name + tagline,required
+795,luxury-premium,about,page_section,2,ABOUT,editorial-split,Company story,required
+796,luxury-premium,about,page_section,3,TEAM,grid,Team members,optional
+797,luxury-premium,about,page_section,4,STATS,counter,Key metrics,recommended
+798,luxury-premium,about,page_section,5,CTA,centered,Get started / contact,required
+799,luxury-premium,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+800,luxury-premium,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+801,luxury-premium,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+802,luxury-premium,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+803,luxury-premium,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+804,luxury-premium,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+805,luxury-premium,shared,navigation,0,NAV,sticky-transparent,Ultra-minimal centered logo split,required
+806,luxury-premium,shared,footer,0,FOOTER,minimal,Understated with essential links only,required
+807,luxury-premium,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required
+808,sustainable-eco,homepage,page_section,1,HERO,full-bleed-overlay,Nature/product intersection imagery,required
+809,sustainable-eco,homepage,page_section,2,STATS,counter,"Carbon offset, trees planted, plastic reduced",required
+810,sustainable-eco,homepage,page_section,3,PRODUCT-SHOWCASE,hover-cards,Shop by impact / category,required
+811,sustainable-eco,homepage,page_section,4,HOW-IT-WORKS,horizontal-timeline,Supply chain transparency,required
+812,sustainable-eco,homepage,page_section,5,ABOUT,editorial-split,"Mission, impact report, certifications",required
+813,sustainable-eco,homepage,page_section,6,TESTIMONIALS,carousel,Community member stories,recommended
+814,sustainable-eco,homepage,page_section,7,TRUST-BADGES,horizontal-strip,"B-Corp, carbon neutral, organic certs",required
+815,sustainable-eco,homepage,page_section,8,COMPARISON,table,Our impact vs conventional,optional
+816,sustainable-eco,homepage,page_section,9,NEWSLETTER,inline,Impact updates + conscious living tips,recommended
+817,sustainable-eco,product-detail,page_section,1,PRODUCT-DETAIL,gallery-sidebar,Product + impact/materials story,required
+818,sustainable-eco,product-detail,page_section,2,PRODUCT-DETAIL,description-tabs,"Materials, impact metrics, care/end-of-life",required
+819,sustainable-eco,product-detail,page_section,3,FEATURES,impact-metrics,"CO2 saved, plastic reduced, materials sourced",required
+820,sustainable-eco,product-detail,page_section,4,TRUST-BADGES,inline-strip,"Certifications (B-Corp, organic, etc)",required
+821,sustainable-eco,product-detail,page_section,5,TESTIMONIALS,mini-reviews,Community reviews,recommended
+822,sustainable-eco,product-detail,page_section,6,PRODUCT-SHOWCASE,related-products,More conscious choices,required
+823,sustainable-eco,collection,page_section,1,HERO,page-header,Collection title + description + optional banner,required
+824,sustainable-eco,collection,page_section,2,PRODUCT-SHOWCASE,filtered-grid,Product grid with sort/filter,required
+825,sustainable-eco,collection,page_section,3,PRODUCT-SHOWCASE,featured-3,Featured products from collection,optional
+826,sustainable-eco,content-page,page_section,1,HERO,page-header,Page title + optional subtitle,required
+827,sustainable-eco,content-page,page_section,2,CONTENT,rich-text,HTML content body,required
+828,sustainable-eco,content-page,page_section,3,CTA,inline,Related page or action CTA,optional
+829,sustainable-eco,about,page_section,1,HERO,page-header,Company name + tagline,required
+830,sustainable-eco,about,page_section,2,ABOUT,editorial-split,Company story,required
+831,sustainable-eco,about,page_section,3,TEAM,grid,Team members,optional
+832,sustainable-eco,about,page_section,4,STATS,counter,Key metrics,recommended
+833,sustainable-eco,about,page_section,5,CTA,centered,Get started / contact,required
+834,sustainable-eco,contact,page_section,1,HERO,page-header,Contact us + subtitle,required
+835,sustainable-eco,contact,page_section,2,CONTACT,split-form,Form + location/map/hours,required
+836,sustainable-eco,contact,page_section,3,FAQ,mini-accordion,Common questions before contacting,optional
+837,sustainable-eco,blog-index,page_section,1,HERO,page-header,Blog title + optional category filter,required
+838,sustainable-eco,blog-index,page_section,2,BLOG-PREVIEW,grid,Blog post grid with featured post,required
+839,sustainable-eco,blog-index,page_section,3,NEWSLETTER,inline,Subscribe for updates,optional
+840,sustainable-eco,shared,navigation,0,NAV,sticky-transparent,Standard dropdown navigation,required
+841,sustainable-eco,shared,footer,0,FOOTER,mega,Multi-column standard footer,required
+842,sustainable-eco,shared,cart_drawer,0,CART-DRAWER,slide-out,Side panel with upsell recommendations,required

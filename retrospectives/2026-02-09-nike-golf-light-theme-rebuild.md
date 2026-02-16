@@ -245,7 +245,7 @@ Also: the extraction tools should automatically verify the bg_primary against co
 
 ## Related Sessions
 
-- `2026-02-08-web-builder-first-build-success.md` - Initial web-builder pipeline build (Turm Kaffee)
+- `2026-02-08-web-builder-first-build-success.md` - Initial web-builder pipeline build (demo/artisan-food)
 - `2026-02-08-farm-minerals-rebuild.md` - Farm Minerals build with similar pipeline
 
 ## Attachments

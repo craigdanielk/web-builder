@@ -14,7 +14,7 @@ Fix the root cause of animation library underutilization: 32 animation component
 
 1. Audit library component APIs to understand why they weren't being imported
 2. Fix broken components so they're actually importable
-3. Refactor turm-kaffee-v3 sections to import from library instead of inlining
+3. Refactor demo build sections to import from library instead of inlining
 4. Add new library components that weren't being used at all
 5. Update the animation-upgrade skill to prevent recurrence
 
@@ -197,7 +197,7 @@ Would add a post-copy validation step to stage_deploy that runs `tsc --noEmit` o
 ## Documentation Sync Results
 
 **CLAUDE.md**: Updated
-- Added turm-kaffee-v3 to completed builds
+- Added demo build to completed builds
 - Added new resolved issue: "Animation library components broken"
 - Updated retrospectives list
 - Bumped version to v0.7.2
@@ -218,7 +218,7 @@ Would add a post-copy validation step to stage_deploy that runs `tsc --noEmit` o
 date: 2026-02-10
 duration_minutes: 45
 outcome: success
-tags: [animation-library, refactoring, component-architecture, turm-kaffee-v3, skill-update]
-project: turm-kaffee-v3
+tags: [animation-library, refactoring, component-architecture, demo build, skill-update]
+project: demo build
 phase: post-build-enhancement
 ```

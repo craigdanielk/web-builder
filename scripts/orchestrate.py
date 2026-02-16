@@ -40,6 +40,29 @@ except ImportError:
     print("Run: pip install anthropic --break-system-packages")
     sys.exit(1)
 
+# Supabase integration (optional — falls back to .md presets if not configured)
+try:
+    from lib.supabase_client import (
+        BuildCache,
+        check_template_exists,
+        log_build,
+        is_supabase_configured,
+        get_industry_metadata,
+        get_section_sequence,
+    )
+    SUPABASE_AVAILABLE = is_supabase_configured()
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    BuildCache = None  # type: ignore
+    get_industry_metadata = None  # type: ignore
+    get_section_sequence = None  # type: ignore
+
+# Layer 6: Site manifest for multi-page generation
+try:
+    from lib import site_manifest as site_manifest_lib
+except ImportError:
+    site_manifest_lib = None  # type: ignore
+
 
 # --- Configuration ---
 
@@ -458,23 +481,30 @@ def print_gap_summary(project_name: str):
 
 # --- Pipeline Stages ---
 
-def stage_scaffold(brief: str, preset: str, project_name: str, no_pause: bool, identification: dict | None = None) -> str:
+def stage_scaffold(brief: str, preset: str, project_name: str, no_pause: bool, identification: dict | None = None, build_cache: "BuildCache | None" = None) -> str:
     """Stage 1: Generate the page scaffold."""
     print("\n📋 Stage 1: Generating scaffold...")
 
     # Load resources
     scaffold_template = read_file(TEMPLATES_DIR / "scaffold-prompt.md")
     taxonomy = read_file(SKILLS_DIR / "section-taxonomy.md")
-    preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
 
-    # Extract section sequence from preset
-    # (Look for the Default Section Sequence block)
-    sequence_match = re.search(
-        r"## Default Section Sequence\n\n```\n(.*?)```",
-        preset_content,
-        re.DOTALL,
-    )
-    preset_sequence = sequence_match.group(1).strip() if sequence_match else "See preset file"
+    # ── Database path: use cached section sequence from Supabase ──
+    if build_cache and build_cache.section_sequence:
+        preset_sequence = build_cache.get_preset_sequence_text()
+        print(f"  Using Supabase section sequence ({len(build_cache.section_sequence)} sections)")
+    else:
+        # ── Legacy path: read from .md preset file ──
+        preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
+
+        # Extract section sequence from preset
+        # (Look for the Default Section Sequence block)
+        sequence_match = re.search(
+            r"## Default Section Sequence\n\n```\n(.*?)```",
+            preset_content,
+            re.DOTALL,
+        )
+        preset_sequence = sequence_match.group(1).strip() if sequence_match else "See preset file"
 
     # Extract just archetype names and variants from taxonomy (keep it concise)
     archetype_lines = []
@@ -927,14 +957,28 @@ def stage_sections(
     extraction_dir: Path | None = None,
     identification: dict | None = None,
     site_spec: dict | None = None,
+    build_cache: "BuildCache | None" = None,
+    output_subdir: str | None = None,
+    section_file_names: list[str] | None = None,
 ) -> list[Path]:
-    """Stage 2: Generate each section component individually with engine-aware injection."""
+    """Stage 2: Generate each section component individually with engine-aware injection.
+    When output_subdir and section_file_names are set (e.g. Layer 6 shared components),
+    writes to output/{project}/{output_subdir}/{section_file_names[i]} instead of sections/.
+    """
     print(f"\n🔨 Stage 2: Generating {len(sections)} sections...")
     if section_contexts:
         print(f"  (with per-section reference context from URL extraction)")
 
-    preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
-    style_header = extract_style_header(preset_content)
+    # ── Database path: use cached style from Supabase ──
+    if build_cache and build_cache.style_config:
+        preset_content = build_cache.build_synthetic_preset_content()
+        style_header = build_cache.compact_style_header
+        print(f"  Using Supabase industry style (cached)")
+    else:
+        # ── Legacy path: read from .md preset file ──
+        preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
+        style_header = extract_style_header(preset_content)
+
     taxonomy = read_file(SKILLS_DIR / "section-taxonomy.md")
     engine = detect_animation_engine(preset_content)
 
@@ -996,6 +1040,32 @@ def stage_sections(
 
         budget_label = f" [{token_budget} tokens]" if token_budget != MAX_TOKENS["section"] else ""
         print(f"  [{num}/{len(sections):02d}] {section['archetype']} | {section['variant']}{budget_label}...")
+
+        # ── Template-first check: if a parameterized template exists, use it ──
+        if SUPABASE_AVAILABLE and build_cache:
+            template_path = check_template_exists(section["archetype"], section["variant"])
+            if template_path:
+                print(f"      ↳ TEMPLATE FOUND: {template_path.name} — skipping LLM generation")
+                template_code = template_path.read_text(encoding="utf-8")
+
+                # Inject brand tokens from build cache style config
+                style = build_cache.style_config
+                if style:
+                    # Replace placeholder tokens with actual brand values
+                    palette = style.get("palette", {})
+                    typography = style.get("typography", {})
+                    for token_key, token_val in palette.items():
+                        template_code = template_code.replace(f"{{{{brand.{token_key}}}}}", str(token_val))
+                    for token_key, token_val in typography.items():
+                        template_code = template_code.replace(f"{{{{brand.{token_key}}}}}", str(token_val))
+
+                sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
+                out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
+                filepath = sections_base / out_name
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+                filepath.write_text(template_code, encoding="utf-8")
+                section_files.append(filepath)
+                continue  # Skip LLM generation for this section
 
         # Try to find structural reference in taxonomy
         structure_ref = "[No structural reference yet — infer from archetype and variant]"
@@ -1250,11 +1320,14 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
             else:
                 code += f"\n\nexport default {component_name};\n"
 
-        filepath = OUTPUT_DIR / project_name / "sections" / filename
+        sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
+        out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
+        filepath = sections_base / out_name
         write_file(filepath, code)
         section_files.append(filepath)
 
-        save_checkpoint(OUTPUT_DIR / project_name, "sections", project_name, {"last_section_index": i, "section_count": len(sections)})
+        if not output_subdir:
+            save_checkpoint(OUTPUT_DIR / project_name, "sections", project_name, {"last_section_index": i, "section_count": len(sections)})
 
         # v1.2.0: Track extra component files for this section
         if extra_component_files:
@@ -1299,6 +1372,204 @@ export default function Page() {{
     write_file(OUTPUT_DIR / project_name / "page.tsx", page_code)
 
 
+def stage_shared_components(
+    manifest: dict,
+    preset: str,
+    project_name: str,
+    build_cache: "BuildCache | None" = None,
+) -> list[Path]:
+    """Layer 6: Generate Navigation and Footer once as shared layout components."""
+    print("\n🧩 Layer 6: Generating shared layout components (Navigation, Footer)...")
+    shared = manifest.get("shared_components", {})
+    nav_spec = shared.get("navigation", {"archetype": "NAV", "variant": "sticky-transparent"})
+    footer_spec = shared.get("footer", {"archetype": "FOOTER", "variant": "four-column"})
+    # Include project name so generated logo/nav use correct brand (e.g. demo → Demo, not generic LUXE)
+    nav_content = f"Site navigation with logo and main menu links for project: {project_name}. Use the project name as the logo text (e.g. demo → Demo)."
+    footer_content = f"Site footer with links and contact for project: {project_name}."
+    sections = [
+        {"archetype": nav_spec["archetype"], "variant": nav_spec["variant"], "content": nav_content},
+        {"archetype": footer_spec["archetype"], "variant": footer_spec["variant"], "content": footer_content},
+    ]
+    files = stage_sections(
+        sections,
+        preset,
+        project_name,
+        section_contexts=None,
+        extraction_dir=None,
+        identification=None,
+        site_spec=None,
+        build_cache=build_cache,
+        output_subdir="shared",
+        section_file_names=["Navigation.tsx", "Footer.tsx"],
+    )
+    # Fix default export names so layout can import Navigation and Footer
+    shared_dir = OUTPUT_DIR / project_name / "shared"
+    renames = [
+        ("Section01NAV", "Navigation"),
+        ("Section01Nav", "Navigation"),
+        ("Section02FOOTER", "Footer"),
+        ("Section02Footer", "Footer"),
+    ]
+    for fpath in files:
+        if not fpath.exists():
+            continue
+        code = fpath.read_text(encoding="utf-8")
+        if "Navigation.tsx" in str(fpath):
+            code = code.replace("Section01NAV", "Navigation").replace("Section01Nav", "Navigation")
+        elif "Footer.tsx" in str(fpath):
+            code = code.replace("Section02FOOTER", "Footer").replace("Section02Footer", "Footer")
+        fpath.write_text(code, encoding="utf-8")
+    print(f"  ✓ Wrote {len(files)} shared components to output/{project_name}/shared/")
+    return files
+
+
+def stage_scaffold_multipage(
+    manifest: dict,
+    project_name: str,
+    industry: str,
+) -> dict:
+    """Layer 6: Enrich manifest with per-page section sequences from Supabase (NAV/FOOTER filtered)."""
+    print("\n📋 Layer 6: Scaffold (multi-page) — loading section sequences per page type...")
+    if not get_section_sequence:
+        print("  ⚠ Supabase not available; cannot load per-page sections. Use --preset for single-page.")
+        return manifest
+    for page in manifest.get("pages", []):
+        page_type = page.get("page_type", "homepage")
+        page_id = page.get("id", "")
+        if page_id == "not-found":
+            page["sections"] = []
+            continue
+        raw = get_section_sequence(industry, page_type)
+        page["sections"] = site_manifest_lib.filter_nav_footer_from_sections(raw) if site_manifest_lib else raw
+        print(f"  {page_id} ({page_type}): {len(page['sections'])} sections")
+    out_path = OUTPUT_DIR / project_name / "site-manifest.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return manifest
+
+
+def stage_sections_multipage(
+    manifest: dict,
+    preset: str,
+    project_name: str,
+    build_cache: "BuildCache | None" = None,
+    identification: dict | None = None,
+) -> dict[str, list[Path]]:
+    """Layer 6: Generate sections for each page; write to output/{project}/sections/{page_id}/."""
+    print("\n🔨 Layer 6: Sections (multi-page)...")
+    section_files_by_page: dict[str, list[Path]] = {}
+    for page in manifest.get("pages", []):
+        page_id = page.get("id", "")
+        sections = page.get("sections", [])
+        if page_id == "not-found" or not sections:
+            section_files_by_page[page_id] = []
+            continue
+        print(f"  Page: {page_id} ({len(sections)} sections)")
+        # Add index to each section for compatibility with stage_sections
+        sections_with_index = []
+        for j, s in enumerate(sections):
+            s = dict(s)
+            s.setdefault("content", s.get("content_direction", ""))
+            sections_with_index.append(s)
+        files = stage_sections(
+            sections_with_index,
+            preset,
+            project_name,
+            section_contexts=None,
+            extraction_dir=None,
+            identification=identification,
+            site_spec=None,
+            build_cache=build_cache,
+            output_subdir=f"sections/{page_id}",
+            section_file_names=None,
+        )
+        section_files_by_page[page_id] = files
+    return section_files_by_page
+
+
+def stage_assemble_multipage(
+    manifest: dict,
+    section_files_by_page: dict[str, list[Path]],
+    project_name: str,
+) -> None:
+    """Layer 6: Assemble one page.tsx per page into output/{project}/pages/{page_id}.tsx."""
+    print("\n📦 Layer 6: Assembling pages...")
+    pages_dir = OUTPUT_DIR / project_name / "pages"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+    for page in manifest.get("pages", []):
+        page_id = page.get("id", "")
+        sections = page.get("sections", [])
+        files = section_files_by_page.get(page_id, [])
+        if page_id == "not-found":
+            continue
+        if not files:
+            # Dynamic route with no sections from DB: write minimal shell
+            if page.get("dynamic"):
+                params_type = '({ params }: { params: { handle: string } })' if "[handle]" in page.get("route", "") else "()"
+                page_code = f'''// TODO: Layer 7 — Connect to Shopify Storefront API
+
+export function generateStaticParams() {{
+  return [];
+}}
+
+export default function Page{params_type} {{
+  return (
+    <main className="min-h-screen">
+      <p>Placeholder — data connection in Layer 7</p>
+    </main>
+  );
+}}
+'''
+            else:
+                page_code = '''export default function Page() {
+  return <main className="min-h-screen"><p>Placeholder</p></main>;
+}
+'''
+            (pages_dir / f"{page_id}.tsx").write_text(page_code, encoding="utf-8")
+            print(f"  {page_id}: placeholder (no sections)")
+            continue
+        imports = []
+        components = []
+        for i, (sec, fpath) in enumerate(zip(sections, files)):
+            num = f"{i + 1:02d}"
+            comp_name = f"Section{num}{sec.get('archetype', '').replace('-', '')}"
+            rel = f"@/components/sections/{page_id}/{fpath.name.replace('.tsx', '')}"
+            imports.append(f'import {comp_name} from "{rel}";')
+            components.append(f"      <{comp_name} />")
+        params_type = ""
+        components_nl = chr(10).join(components)
+        if page.get("dynamic") and "[handle]" in page.get("route", ""):
+            params_type = '({ params }: { params: { handle: string } })'
+            imports.insert(0, '// TODO: Layer 7 — Connect to Shopify Storefront API')
+            body = f'''
+export function generateStaticParams() {{
+  return [];
+}}
+
+export default function Page{params_type} {{
+  return (
+    <main className="min-h-screen">
+{components_nl}
+    </main>
+  );
+}}
+'''
+        else:
+            body = f'''
+export default function Page() {{
+  return (
+    <main className="min-h-screen">
+{components_nl}
+    </main>
+  );
+}}
+'''
+        page_code = chr(10).join(imports) + body
+        (pages_dir / f"{page_id}.tsx").write_text(page_code, encoding="utf-8")
+        print(f"  {page_id}: {len(files)} sections")
+    print(f"  ✓ Assembled to output/{project_name}/pages/")
+
+
 def detect_animation_engine(preset_content: str) -> str:
     """Detect animation engine from preset's Motion line. Returns 'gsap' or 'framer-motion'."""
     match = re.search(r"Motion:.*?/(gsap|framer-motion)", preset_content)
@@ -1330,17 +1601,191 @@ def font_import_name(font_name: str) -> str:
     return font_name.replace(" ", "_")
 
 
+def _layer7_collection_page_content() -> str:
+    """Layer 7: Collection page that fetches from Storefront API."""
+    return '''import { shopifyFetch } from "@/lib/shopify/client";
+import { COLLECTION_PRODUCTS } from "@/lib/shopify/queries";
+import type { CollectionProductsResult } from "@/lib/shopify/queries";
+import Link from "next/link";
+
+export function generateStaticParams() {
+  return [];
+}
+
+export default async function Page({ params }: { params: { handle: string } }) {
+  const data = await shopifyFetch<CollectionProductsResult>(COLLECTION_PRODUCTS, {
+    handle: params.handle,
+    first: 24,
+  });
+  const collection = data?.collection;
+  if (!collection) {
+    return (
+      <main className="min-h-screen p-8">
+        <p>Collection not found.</p>
+      </main>
+    );
+  }
+  const products = collection.products?.edges ?? [];
+  return (
+    <main className="min-h-screen pt-24 px-6 pb-12">
+      <h1 className="text-3xl font-semibold text-neutral-900 mb-2">{collection.title}</h1>
+      {collection.description && (
+        <p className="text-neutral-600 mb-8 max-w-2xl">{collection.description}</p>
+      )}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
+        {products.map(({ node: p }) => (
+          <Link key={p.handle} href={`/products/${p.handle}`} className="group">
+            <div className="aspect-square bg-neutral-100 rounded-lg overflow-hidden mb-2">
+              {p.featuredImage?.url && (
+                <img src={p.featuredImage.url} alt={p.featuredImage.altText ?? p.title} className="w-full h-full object-cover" />
+              )}
+            </div>
+            <h2 className="font-medium text-neutral-900 group-hover:underline">{p.title}</h2>
+            <p className="text-sm text-neutral-600">
+              {p.priceRange?.minVariantPrice?.amount} {p.priceRange?.minVariantPrice?.currencyCode}
+            </p>
+          </Link>
+        ))}
+      </div>
+      {products.length === 0 && <p className="text-neutral-500">No products in this collection yet.</p>}
+    </main>
+  );
+}
+'''
+
+
+def _patch_section04_collections_prop(section04_code: str) -> str:
+    """Patch 04-product_showcase to accept optional collections prop from Storefront API."""
+    if "collections?: " in section04_code:
+        return section04_code
+    # Rename legacy collections prop to presetCollections (no client-specific names)
+    section04_code = section04_code.replace("turmCollections", "presetCollections")
+    # Add prop and merge with presetCollections for styling (icon, gradient, etc.)
+    section04_code = section04_code.replace(
+        "const Section04PRODUCTSHOWCASE: React.FC = () => {",
+        "const Section04PRODUCTSHOWCASE: React.FC<{ collections?: Array<{ handle: string; title: string; description?: string; image?: { url: string } }> }> = ({ collections: collectionsProp }) => {\n  const list = collectionsProp?.length ? collectionsProp.map((c, i) => ({ ...presetCollections[i % presetCollections.length], ...c })) : presetCollections;",
+    )
+    section04_code = section04_code.replace(
+        "presetCollections.map((collection, index)",
+        "list.map((collection, index)",
+    )
+    return section04_code
+
+
+def _layer7_index_page_content(src_homepage_content: str) -> str:
+    """Layer 7: Homepage that fetches collections from Storefront API and passes to product showcase section."""
+    if "shopifyFetch" in src_homepage_content or "COLLECTIONS_LIST" in src_homepage_content:
+        return src_homepage_content  # already injected
+    # Add Storefront imports after last import line
+    lines = src_homepage_content.split("\n")
+    insert_idx = 0
+    for i, line in enumerate(lines):
+        if line.strip().startswith("import ") and "from" in line:
+            insert_idx = i + 1
+    shopify_imports = [
+        'import { shopifyFetch } from "@/lib/shopify/client";',
+        'import { COLLECTIONS_LIST } from "@/lib/shopify/queries";',
+        'import type { CollectionsListResult } from "@/lib/shopify/queries";',
+    ]
+    for imp in reversed(shopify_imports):
+        lines.insert(insert_idx, imp)
+    content = "\n".join(lines)
+    # Make Page async and add fetch + collections
+    content = content.replace(
+        "export default function Page() {",
+        "export default async function Page() {\n  const data = await shopifyFetch<CollectionsListResult>(COLLECTIONS_LIST, { first: 20 });\n  const collections = data?.collections?.edges?.map((e) => ({ handle: e.node.handle, title: e.node.title, description: e.node.description ?? \"\", image: e.node.image })) ?? [];",
+    )
+    content = content.replace(
+        "<Section04PRODUCTSHOWCASE />",
+        "<Section04PRODUCTSHOWCASE collections={collections} />",
+    )
+    return content
+
+
+def _layer7_product_page_content() -> str:
+    """Layer 7: Product page that fetches from Storefront API."""
+    return '''import { shopifyFetch } from "@/lib/shopify/client";
+import { PRODUCT_BY_HANDLE } from "@/lib/shopify/queries";
+import type { ProductByHandleResult } from "@/lib/shopify/queries";
+import Link from "next/link";
+
+export function generateStaticParams() {
+  return [];
+}
+
+export default async function Page({ params }: { params: { handle: string } }) {
+  const data = await shopifyFetch<ProductByHandleResult>(PRODUCT_BY_HANDLE, {
+    handle: params.handle,
+  });
+  const product = data?.product;
+  if (!product) {
+    return (
+      <main className="min-h-screen p-8">
+        <p>Product not found.</p>
+      </main>
+    );
+  }
+  const price = product.priceRange?.minVariantPrice;
+  return (
+    <main className="min-h-screen pt-24 px-6 pb-12 max-w-4xl mx-auto">
+      <nav className="text-sm text-neutral-500 mb-4">
+        <Link href="/" className="hover:underline">Home</Link>
+        <span className="mx-2">/</span>
+        <span>{product.title}</span>
+      </nav>
+      <div className="grid md:grid-cols-2 gap-8">
+        <div className="aspect-square bg-neutral-100 rounded-lg overflow-hidden">
+          {product.featuredImage?.url && (
+            <img src={product.featuredImage.url} alt={product.featuredImage.altText ?? product.title} className="w-full h-full object-cover" />
+          )}
+        </div>
+        <div>
+          <h1 className="text-2xl font-semibold text-neutral-900 mb-2">{product.title}</h1>
+          {price && (
+            <p className="text-lg text-neutral-700 mb-4">
+              {price.amount} {price.currencyCode}
+            </p>
+          )}
+          {product.description && <p className="text-neutral-600 whitespace-pre-wrap mb-6">{product.description}</p>}
+          <p className="text-sm text-neutral-500">Add to cart — Layer 8 (cart UI) can be wired next.</p>
+        </div>
+      </div>
+    </main>
+  );
+}
+'''
+
+
 def stage_deploy(
     sections: list[dict],
     section_files: list[Path],
     preset: str,
     project_name: str,
     extraction_dir: Path | None = None,
+    build_cache: "BuildCache | None" = None,
+    site_manifest: dict | None = None,
+    section_files_by_page: dict[str, list[Path]] | None = None,
 ):
-    """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/."""
+    """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/.
+    When site_manifest and section_files_by_page are set (Layer 6), deploys multi-route app
+    with shared layout components and per-page sections."""
     print("\n🚀 Stage 5: Deploying to Next.js project...")
+    is_multipage = bool(site_manifest and section_files_by_page is not None)
+    if is_multipage:
+        # Flatten for has_lottie and used_archetypes
+        section_files = [f for files in section_files_by_page.values() for f in files]
+        sections = [s for p in site_manifest.get("pages", []) for s in p.get("sections", [])]
+    else:
+        pass  # use existing sections, section_files
 
-    preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
+    # ── Database path: use cached style from Supabase ──
+    if build_cache and build_cache.style_config:
+        preset_content = build_cache.build_synthetic_preset_content()
+        print(f"  Using Supabase industry style (cached)")
+    else:
+        # ── Legacy path: read from .md preset file ──
+        preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
+
     engine = detect_animation_engine(preset_content)
     fonts = parse_fonts(preset_content)
     style_header = extract_style_header(preset_content)
@@ -1561,7 +2006,30 @@ def stage_deploy(
     if font_config:
         font_config = chr(10) + font_config + chr(10)
 
-    layout_code = f"""{chr(10).join(import_lines)}
+    if is_multipage:
+        import_lines.append('import Navigation from "@/components/layout/Navigation";')
+        import_lines.append('import Footer from "@/components/layout/Footer";')
+        layout_code = f"""{chr(10).join(import_lines)}
+{font_config}
+export const metadata: Metadata = {{
+  title: "{project_name.replace('-', ' ').title()}",
+  description: "Built with web-builder pipeline",
+}};
+
+export default function RootLayout({{ children }}: {{ children: React.ReactNode }}) {{
+  return (
+    <html lang="en">
+      <body className="antialiased" style={{{{ fontFamily: "{font_family}" }}}}>
+        <Navigation />
+        {{children}}
+        <Footer />
+      </body>
+    </html>
+  );
+}}
+"""
+    else:
+        layout_code = f"""{chr(10).join(import_lines)}
 {font_config}
 export const metadata: Metadata = {{
   title: "{project_name.replace('-', ' ').title()}",
@@ -1634,12 +2102,91 @@ export {{ gsap, ScrollTrigger, {", ".join(plugin_registers)} }};
                 gsap_setup_path.write_text(gsap_setup)
                 print(f"  Created gsap-setup.ts with plugins: {', '.join(plugin_registers)}")
 
-    # ── Copy sections ──
-    print("  Copying sections...")
-    comp_dir.mkdir(parents=True, exist_ok=True)
-    for filepath in section_files:
-        code = read_file(filepath)
-        write_file(comp_dir / filepath.name, code)
+    # ── Copy sections (or multipage: shared + per-page sections) ──
+    if is_multipage:
+        print("  Copying shared layout components...")
+        layout_dest = src_dir / "components" / "layout"
+        layout_dest.mkdir(parents=True, exist_ok=True)
+        shared_dir = OUTPUT_DIR / project_name / "shared"
+        for name in ("Navigation.tsx", "Footer.tsx"):
+            src_f = shared_dir / name
+            if src_f.exists():
+                write_file(layout_dest / name, read_file(src_f))
+        print("  Copying per-page sections...")
+        comp_dir.mkdir(parents=True, exist_ok=True)
+        for page_id, files in section_files_by_page.items():
+            dest_sub = comp_dir / page_id
+            dest_sub.mkdir(parents=True, exist_ok=True)
+            for fpath in files:
+                if fpath.exists():
+                    write_file(dest_sub / fpath.name, read_file(fpath))
+        # ── Layer 7: Copy lib/shopify when manifest has commerce routes (Storefront API client, cart, queries) ──
+        industry = (site_manifest or {}).get("industry", "")
+        page_ids = [p.get("id") for p in site_manifest.get("pages", [])]
+        has_commerce_routes = "collection-template" in page_ids or "product-template" in page_ids
+        if has_commerce_routes and (ROOT / "lib" / "shopify").exists():
+            shopify_lib_src = ROOT / "lib" / "shopify"
+            shopify_lib_dest = src_dir / "lib" / "shopify"
+            shopify_lib_dest.mkdir(parents=True, exist_ok=True)
+            for f in shopify_lib_src.iterdir():
+                if f.is_file():
+                    write_file(shopify_lib_dest / f.name, read_file(f))
+            print("  ✓ Layer 7: Copied lib/shopify (Storefront API client, cart, queries)")
+        print("  Writing page files to app routes...")
+        pages_src = OUTPUT_DIR / project_name / "pages"
+        for page in site_manifest.get("pages", []):
+            page_id = page.get("id", "")
+            app_path = page.get("app_path", "")
+            if not app_path or not page_id:
+                continue
+            dest_file = site_dir / app_path
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+            # Layer 7: Use Storefront-wired content for collection/product/homepage when lib/shopify is present
+            if has_commerce_routes and (ROOT / "lib" / "shopify").exists():
+                if page_id == "collection-template":
+                    write_file(dest_file, _layer7_collection_page_content())
+                    continue
+                if page_id == "product-template":
+                    write_file(dest_file, _layer7_product_page_content())
+                    continue
+                if page_id == "homepage":
+                    src_page = pages_src / f"{page_id}.tsx"
+                    if src_page.exists():
+                        homepage_content = read_file(src_page)
+                        write_file(dest_file, _layer7_index_page_content(homepage_content))
+                        # Patch Section04 to accept optional collections prop (inject products/collections into site)
+                        section04_path = site_dir / "src" / "components" / "sections" / "homepage" / "04-product_showcase.tsx"
+                        if section04_path.exists():
+                            section04_code = read_file(section04_path)
+                            if "collections?" in section04_code or "collections:" in section04_code:
+                                pass  # already patched
+                            else:
+                                section04_code = _patch_section04_collections_prop(section04_code)
+                                write_file(section04_path, section04_code)
+                        continue
+            src_page = pages_src / f"{page_id}.tsx"
+            if not src_page.exists():
+                continue
+            write_file(dest_file, read_file(src_page))
+        # not-found.tsx
+        not_found_code = '''export default function NotFound() {
+  return (
+    <main className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold">404</h1>
+        <p className="mt-2 text-muted-foreground">Page not found</p>
+      </div>
+    </main>
+  );
+}
+'''
+        write_file(app_dir / "not-found.tsx", not_found_code)
+    else:
+        print("  Copying sections...")
+        comp_dir.mkdir(parents=True, exist_ok=True)
+        for filepath in section_files:
+            code = read_file(filepath)
+            write_file(comp_dir / filepath.name, code)
 
     # ── Copy animation components from library ──
     anim_components_dir = SKILLS_DIR / "animation-components"
@@ -1762,18 +2309,19 @@ export {{ gsap, ScrollTrigger, {", ".join(plugin_registers)} }};
         except (json.JSONDecodeError, OSError) as e:
             print(f"  ⚠ Could not process extra components: {e}")
 
-    # ── Generate page.tsx ──
-    print("  Generating page.tsx...")
-    imports = []
-    components = []
-    for i, (section, filepath) in enumerate(zip(sections, section_files)):
-        num = f"{i + 1:02d}"
-        component_name = f"Section{num}{section['archetype'].replace('-', '')}"
-        rel = f"@/components/sections/{filepath.name.replace('.tsx', '')}"
-        imports.append(f'import {component_name} from "{rel}";')
-        components.append(f"      <{component_name} />")
+    # ── Generate page.tsx (single-page only) ──
+    if not is_multipage:
+        print("  Generating page.tsx...")
+        imports = []
+        components = []
+        for i, (section, filepath) in enumerate(zip(sections, section_files)):
+            num = f"{i + 1:02d}"
+            component_name = f"Section{num}{section['archetype'].replace('-', '')}"
+            rel = f"@/components/sections/{filepath.name.replace('.tsx', '')}"
+            imports.append(f'import {component_name} from "{rel}";')
+            components.append(f"      <{component_name} />")
 
-    page_code = f"""{chr(10).join(imports)}
+        page_code = f"""{chr(10).join(imports)}
 
 export default function Page() {{
   return (
@@ -1783,7 +2331,7 @@ export default function Page() {{
   );
 }}
 """
-    write_file(app_dir / "page.tsx", page_code)
+        write_file(app_dir / "page.tsx", page_code)
 
     # ── Download assets if extraction data available ──
     if extraction_dir:
@@ -2098,12 +2646,18 @@ def stage_review_v2(section_files: list[Path], site_spec: dict | None, project_n
     return result
 
 
-def stage_review(sections: list[dict], section_files: list[Path], preset: str, project_name: str):
+def stage_review(sections: list[dict], section_files: list[Path], preset: str, project_name: str, build_cache: "BuildCache | None" = None):
     """Stage 4: Run consistency review."""
     print("\n🔍 Stage 4: Running consistency review...")
 
-    preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
-    style_header = extract_style_header(preset_content)
+    # ── Database path: use cached style from Supabase ──
+    if build_cache and build_cache.style_config:
+        style_header = build_cache.compact_style_header
+        print(f"  Using Supabase industry style (cached)")
+    else:
+        # ── Legacy path: read from .md preset file ──
+        preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
+        style_header = extract_style_header(preset_content)
 
     # Concatenate all section code
     all_sections_code = ""
@@ -2271,8 +2825,18 @@ def main():
                         help="Delete existing output and start completely fresh")
     parser.add_argument("--force", action="store_true",
                         help="Ignore warnings (low confidence, validation issues) and proceed")
+    parser.add_argument("--industry", help="Select industry from Supabase preset database (alternative to --preset)",
+                        default=None, metavar="INDUSTRY")
+    parser.add_argument("--page", help="Page type for --industry mode (default: homepage)",
+                        default="homepage", metavar="PAGE_TYPE")
+    parser.add_argument("--site-manifest", help="Path to site-manifest.json for multi-page build (Layer 6)",
+                        default=None, metavar="PATH")
+    parser.add_argument("--compiled-dir", help="Path to Calculator compiled dir (architecture.json); enables multi-route generation",
+                        default=None, metavar="PATH")
 
     args = parser.parse_args()
+    if getattr(args, "compiled_dir", None) and not args.industry:
+        args.industry = "ecommerce"
 
     output_dir = OUTPUT_DIR / args.project
     if args.clean and output_dir.exists():
@@ -2336,9 +2900,9 @@ def main():
 
         brief = read_file(brief_path)
 
-        # Determine preset
+        # Determine preset — --industry (database) vs --preset (legacy .md)
         preset = args.preset
-        if not preset:
+        if not preset and not args.industry:
             available = list_presets()
             if len(available) == 1:
                 preset = available[0]
@@ -2346,20 +2910,68 @@ def main():
             else:
                 print(f"Available presets: {', '.join(available)}")
                 preset = input("Select preset: ").strip()
+        elif args.industry and not preset:
+            # --industry mode: use industry name as preset identifier
+            preset = args.industry
 
-        preset_path = SKILLS_DIR / "presets" / f"{preset}.md"
-        if not preset_path.exists():
-            print(f"Error: Preset not found: {preset_path}")
-            sys.exit(1)
+        if not args.industry:
+            preset_path = SKILLS_DIR / "presets" / f"{preset}.md"
+            if not preset_path.exists():
+                print(f"Error: Preset not found: {preset_path}")
+                sys.exit(1)
 
+        mode_label = "Database" if args.industry else "Preset"
         print(f"\n{'═' * 60}")
-        print(f"  Website Builder Pipeline")
+        print(f"  Website Builder Pipeline ({mode_label} Mode)")
         print(f"  Project: {args.project}")
-        print(f"  Preset:  {preset}")
+        if args.industry:
+            print(f"  Industry: {args.industry}")
+            print(f"  Page:     {args.page}")
+        else:
+            print(f"  Preset:  {preset}")
         print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M')}")
         print(f"{'═' * 60}")
 
+    # ── Layer 6: Site manifest (multi-page) ─────────────────────────
+    site_manifest = None
+    if not args.from_url and site_manifest_lib:
+        if getattr(args, "site_manifest", None):
+            manifest_path = Path(args.site_manifest)
+            if not manifest_path.is_absolute():
+                manifest_path = (ROOT / manifest_path).resolve()
+            site_manifest = site_manifest_lib.load_site_manifest(manifest_path)
+            print(f"  ✓ Site manifest loaded: {args.site_manifest} ({len(site_manifest.get('pages', []))} pages)")
+        elif args.industry:
+            industry_meta = get_industry_metadata(args.industry) if SUPABASE_AVAILABLE and get_industry_metadata else None
+            arch_path = None
+            if getattr(args, "compiled_dir", None):
+                arch_path = Path(args.compiled_dir) / "architecture.json"
+                if not arch_path.exists():
+                    arch_path = None
+            site_manifest = site_manifest_lib.generate_site_manifest(
+                args.project,
+                args.industry,
+                output_dir,
+                industry_metadata=industry_meta,
+                architecture_path=arch_path,
+                write_file=True,
+            )
+            print(f"  ✓ Site manifest generated: {len(site_manifest.get('pages', []))} pages (default)")
+
     # ── Common Pipeline ─────────────────────────────────────────────
+
+    # ── Initialize Supabase build cache (if --industry mode) ──
+    build_cache = None
+    _build_start_time = _time.time()  # Track build duration for all modes
+    if args.industry and SUPABASE_AVAILABLE and BuildCache:
+        build_cache = BuildCache(industry=args.industry, page_type=args.page).load()
+        if not build_cache.section_sequence:
+            print(f"  ⚠ No section sequence found in database for industry '{args.industry}', page '{args.page}'")
+            print(f"    Falling back to --preset mode with preset '{preset}'")
+            build_cache = None
+    elif args.industry and not SUPABASE_AVAILABLE:
+        print("  ⚠ --industry flag requires Supabase credentials in .env")
+        print("    Falling back to --preset mode")
 
     # Resolve extraction_dir from previous runs if not set (e.g. --skip-to mode)
     if extraction_dir is None:
@@ -2403,6 +3015,73 @@ def main():
             except (json.JSONDecodeError, OSError):
                 pass
 
+    # ── Layer 6: Multi-page pipeline (when site_manifest is set) ─────
+    if site_manifest:
+        industry = site_manifest.get("industry") or args.industry or preset
+        if not industry:
+            print("  ⚠ Site manifest has no industry; multipage requires --industry. Skipping multipage.")
+            site_manifest = None
+        elif not get_section_sequence:
+            print("  ⚠ Supabase not available; multipage requires database. Skipping multipage.")
+            site_manifest = None
+
+    if site_manifest:
+        industry = site_manifest.get("industry", args.industry or preset)
+        if args.skip_to not in (None, "deploy"):
+            print("  ⚠ --skip-to is not supported for multipage; running full multipage pipeline.")
+        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache)
+        save_checkpoint(output_dir, "shared_components", args.project)
+        site_manifest = stage_scaffold_multipage(site_manifest, args.project, industry)
+        save_checkpoint(output_dir, "scaffold_mp", args.project)
+        section_files_by_page = stage_sections_multipage(
+            site_manifest, preset, args.project,
+            build_cache=build_cache, identification=identification,
+        )
+        save_checkpoint(output_dir, "sections_mp", args.project, {"section_files_by_page_keys": list(section_files_by_page.keys())})
+        stage_assemble_multipage(site_manifest, section_files_by_page, args.project)
+        save_checkpoint(output_dir, "assemble", args.project)
+        deploy_ran = False
+        if args.deploy or args.skip_to == "deploy":
+            validation = stage_validate(args.project)  # May have fewer checks for multipage
+            if not validation["passed"] and not args.force:
+                print("\n  ⚠ Pre-flight validation had issues. Use --force to deploy anyway.")
+            if validation["passed"] or args.force:
+                stage_deploy(
+                    sections=[],  # unused when manifest set
+                    section_files=[],
+                    preset=preset,
+                    project_name=args.project,
+                    extraction_dir=extraction_dir,
+                    build_cache=build_cache,
+                    site_manifest=site_manifest,
+                    section_files_by_page=section_files_by_page,
+                )
+                save_checkpoint(output_dir, "deploy", args.project)
+                deploy_ran = True
+        _build_end_time = _time.time()
+        _build_duration_ms = int((_build_end_time - _build_start_time) * 1000)
+        if build_cache and SUPABASE_AVAILABLE:
+            total_sec = sum(len(p.get("sections", [])) for p in site_manifest.get("pages", []))
+            log_build(
+                project_name=args.project,
+                industry=industry,
+                page_type="multipage",
+                sections_from_template=0,
+                sections_from_llm=total_sec,
+                total_sections=total_sec,
+                build_duration_ms=_build_duration_ms,
+                status="completed",
+            )
+            print(f"  📊 Build logged to Supabase (multipage, {len(site_manifest.get('pages', []))} pages)")
+        print(f"\n{'═' * 60}")
+        print(f"  ✅ Layer 6 multi-page complete")
+        print(f"  Output: output/{args.project}/")
+        if deploy_ran:
+            print(f"  Site:   output/{args.project}/site/")
+        print(f"{'═' * 60}\n")
+        return
+
+    # ── Single-page pipeline ────────────────────────────────────────
     if args.skip_to:
         cp = load_checkpoint(args.project)
         if cp:
@@ -2432,7 +3111,7 @@ def main():
             scaffold, sections = stage_scaffold_v2(site_spec, args.project)
             save_checkpoint(output_dir, "scaffold", args.project)
         else:
-            scaffold = stage_scaffold(brief, preset, args.project, args.no_pause, identification)
+            scaffold = stage_scaffold(brief, preset, args.project, args.no_pause, identification, build_cache=build_cache)
             save_checkpoint(output_dir, "scaffold", args.project)
             sections = parse_scaffold(scaffold)
 
@@ -2446,7 +3125,7 @@ def main():
     if args.skip_to in (None, "sections"):
         section_files = stage_sections(
             sections, preset, args.project, section_contexts, extraction_dir, identification,
-            site_spec=site_spec,
+            site_spec=site_spec, build_cache=build_cache,
         )
         save_checkpoint(output_dir, "sections", args.project, {"section_count": len(section_files)})
     else:
@@ -2468,7 +3147,7 @@ def main():
         if site_spec:
             stage_review_v2(section_files, site_spec, args.project)
         else:
-            stage_review(sections, section_files, preset, args.project)
+            stage_review(sections, section_files, preset, args.project, build_cache=build_cache)
         save_checkpoint(output_dir, "review", args.project)
 
     # Stage 5.5: Pre-flight validation (before deploy)
@@ -2480,7 +3159,7 @@ def main():
             if not args.force:
                 print("  Use --force to deploy anyway, or fix the issues above.")
         if validation['passed'] or args.force:
-            stage_deploy(sections, section_files, preset, args.project, extraction_dir)
+            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache)
             save_checkpoint(output_dir, "deploy", args.project)
             deploy_ran = True
 
@@ -2488,7 +3167,32 @@ def main():
     if args.from_url:
         print_gap_summary(args.project)
 
-    mode_label = "URL Clone" if args.from_url else "Pipeline"
+    # ── Build logging (Supabase) ──
+    _build_end_time = _time.time()
+    _build_duration_ms = int((_build_end_time - _build_start_time) * 1000)
+    if build_cache and SUPABASE_AVAILABLE:
+        # Count template vs LLM sections
+        _template_count = 0
+        _llm_count = len(sections)
+        if build_cache:
+            for sec in sections:
+                tpl = check_template_exists(sec["archetype"], sec["variant"])
+                if tpl:
+                    _template_count += 1
+                    _llm_count -= 1
+        log_build(
+            project_name=args.project,
+            industry=args.industry or preset,
+            page_type=getattr(args, "page", "homepage"),
+            sections_from_template=_template_count,
+            sections_from_llm=_llm_count,
+            total_sections=len(sections),
+            build_duration_ms=_build_duration_ms,
+            status="completed",
+        )
+        print(f"  📊 Build logged to Supabase ({_template_count} template / {_llm_count} LLM)")
+
+    mode_label = "URL Clone" if args.from_url else ("Database" if args.industry else "Pipeline")
     print(f"\n{'═' * 60}")
     print(f"  ✅ {mode_label} complete")
     print(f"  Output: output/{args.project}/")
@@ -2497,6 +3201,10 @@ def main():
     if args.from_url:
         print(f"  Preset: skills/presets/{preset}.md")
         print(f"  Brief:  briefs/{args.project}.md")
+    if args.industry:
+        print(f"  Industry: {args.industry}")
+        print(f"  Page: {getattr(args, 'page', 'homepage')}")
+        print(f"  Build time: {_build_duration_ms/1000:.1f}s")
     print(f"{'═' * 60}\n")
 
 

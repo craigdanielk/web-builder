@@ -32,7 +32,7 @@ npx playwright install chromium
 
 - **Purpose:** Screenshots a generated site and compares each section against reference site screenshots using pixel-level diffing
 - **Usage:** `node validate-build.js <project-dir> [--reference-dir <dir>] [--port <port>] [--threshold <0-1>]`
-- **Example:** `node validate-build.js ../../output/turm-kaffee --reference-dir ./refs --threshold 0.25`
+- **Example:** `node validate-build.js ../../output/demo --reference-dir ./refs --threshold 0.25`
 - **Output:** Per-section similarity scores and overall pass/fail verdict
 - **When to use:** After Step 5 (Assembly) and before Step 6 (Consistency Review)
 

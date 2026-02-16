@@ -1,7 +1,7 @@
 # Web Builder — System Context
 
-**Last Updated:** 2026-02-11
-**System Version:** v2.0.2
+**Last Updated:** 2026-02-12
+**System Version:** v3.0.0
 
 ---
 
@@ -14,10 +14,13 @@
 | Runtime | Python 3 + Node.js (hybrid pipeline) |
 | Generated stack | Next.js 16.1.6 / React 19 / Tailwind CSS 4 / TypeScript 5 |
 | Animation engines | GSAP 3.14 + Framer Motion 12 (both can coexist) |
-| Pipeline entry | `scripts/orchestrate.py` (2504 lines) |
+| Pipeline entry | `scripts/orchestrate.py` — single-page or Layer 6 multi-page |
 | API | Anthropic Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) |
 | Deployment | Vercel CLI (`vercel --yes`) |
 | API key | `ANTHROPIC_API_KEY` in `.env` (gitignored) |
+| Preset DB | Supabase `aurelix-presets` (eu-west-1) — 842 presets, 25 industries |
+| DB docs | `DATABASE.md` — schema, usage, adding industries |
+| Templates | `SECTION_TEMPLATES.md` — parameterized TSX templates (1/72 done) |
 
 ---
 
@@ -58,6 +61,7 @@ Stage 4: Consistency Review
     ▼
 Stage 5: Deploy (--deploy flag)
     ├── Creates Next.js project at output/{project}/site/
+    ├── When industry ecommerce + multipage: copies lib/shopify, writes Storefront-wired collection/product pages (Layer 7)
     ├── Installs deps, generates layout/globals/page
     └── Ready for: cd site && vercel --yes
 ```
@@ -85,6 +89,32 @@ extract-reference.js (v2: cookie dismiss + lazy scroll + sectionIndex)
               ├── component_map: { exact import_statements }
               └── confidence_stats + reanalysis prompt
 ```
+
+### Database Integration (v2.1.0)
+
+The `--industry` flag enables Supabase-backed preset selection:
+
+```
+python scripts/orchestrate.py my-project --industry artisan-food --page homepage --deploy
+```
+
+**Data flow:**
+1. `BuildCache` makes exactly 2 Supabase reads at build start (section sequence + industry style)
+2. Data is cached in memory for the entire build
+3. For each section, `check_template_exists()` checks `section-templates/{ARCHETYPE}/{variant}.tsx`
+4. If template found → brand token injection, skip LLM
+5. If no template → fall through to existing LLM pipeline unchanged
+6. Build log written to `build_log` table at build end
+
+**Layer 6 (v3.0.0) — Multi-page generation:** When `--industry` is set (and optionally `--site-manifest`), the pipeline can run in multi-page mode: a site manifest defines pages (homepage, collection, product, content, 404). NAV and FOOTER are generated once as shared layout components; per-page section sequences come from `get_section_sequence(industry, page_type)` with NAV/FOOTER filtered. Output is a full `src/app/` tree with `layout.tsx` (Navigation + Footer), route directories (`collections/[handle]/`, `products/[handle]/`, `pages/[handle]/`), and `not-found.tsx`. See `plans/active/Layer_6_Multi_Page_App_Generation.md`.
+
+**Key files:**
+- `scripts/lib/supabase_client.py` — REST client, `BuildCache`, `get_industry_metadata`, `get_section_sequence`, `get_all_page_sections`
+- `scripts/lib/site_manifest.py` — manifest schema, `generate_site_manifest()`, `load_site_manifest()`, `filter_nav_footer_from_sections()`
+- `section-templates/` — 25 archetype dirs, 1 template (HERO/full-bleed-overlay), `manifest.json`
+- `supabase/migrations/` — 2 migration files for schema
+- `scripts/seed_supabase.py` — Data seeding script
+- `scripts/validate_integration.py` — 70-test validation suite
 
 ### Consistency Mechanisms (v2.0.0)
 
@@ -161,7 +191,7 @@ web-builder/
 │   │   ├── restaurants-cafes.md
 │   │   ├── saas.md
 │   │   ├── sports-fitness.md
-│   │   └── turm-kaffee-v3.md
+│   │   └── {preset}.md
 │   └── components/
 │       ├── cursor-trail.md            ← Mouse-following trail effect
 │       └── image-patterns.md          ← CSS backgroundImage rendering patterns
@@ -184,7 +214,10 @@ web-builder/
 │
 ├── scripts/
 │   ├── generate-docs.js               ← Generates docs/ from source code
-│   ├── orchestrate.py (2417 lines)    ← Main pipeline — v2.0.0 with retry, checkpoints, site-spec path
+│   ├── orchestrate.py                 ← Main pipeline — single-page or Layer 6 multi-page
+│   ├── lib/                           ← Python lib (orchestrator)
+│   │   ├── supabase_client.py         ← BuildCache, get_section_sequence, get_industry_metadata, get_all_page_sections
+│   │   └── site_manifest.py           ← Layer 6: manifest schema, generate/load_site_manifest, filter_nav_footer
 │   └── quality/                       ← URL extraction + validation tools
 │       ├── build-site-spec.js (587)   ← NEW v2.0.0: Deterministic site-spec.json builder (zero AI)
 │       ├── build-unified-registry.js (207) ← NEW v2.0.0: Auto-generates component-registry.json from .tsx files
@@ -229,10 +262,13 @@ web-builder/
 │   │   └── screenshots/
 │   └── {project}/
 │       ├── scaffold.md
-│       ├── sections/*.tsx
+│       ├── sections/*.tsx             ← Single-page: flat. Layer 6: sections/{page_id}/*.tsx
+│       ├── shared/                    ← Layer 6: Navigation.tsx, Footer.tsx
+│       ├── pages/                     ← Layer 6: {page_id}.tsx per route
+│       ├── site-manifest.json         ← Layer 6: site manifest (when --industry multi-page)
 │       ├── page.tsx
 │       ├── review.md
-│       └── site/                     ← Runnable Next.js project
+│       └── site/                      ← Runnable Next.js project
 │
 ├── plans/
 │   ├── _close-checklist.md                    ← Build close protocol template
@@ -252,7 +288,7 @@ web-builder/
 │
 └── retrospectives/                    ← Session documentation
     ├── 2026-02-08-web-builder-first-build-success.md
-    ├── 2026-02-08-turm-kaffee-v2-build-deploy.md
+    ├── (retrospectives — client-specific retros purged)
     ├── 2026-02-08-farm-minerals-rebuild.md
     ├── 2026-02-09-nike-golf-light-theme-rebuild.md
     ├── 2026-02-09-system-docs-automation-success.md
@@ -325,7 +361,7 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 **Input:** All section code concatenated + style header
 **Output:** Consistency report (colors, typography, spacing, radius, animation, buttons)
 
-### Stage 5: Deploy (`stage_deploy`, orchestrate.py:654)
+### Stage 5: Deploy (`stage_deploy`, orchestrate.py)
 
 **No API call.** Creates Next.js project scaffold:
 - `package.json` with engine-specific deps (framer-motion always + GSAP conditional + Lottie conditional + clsx/tailwind-merge always)
@@ -334,6 +370,7 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 - Generates `src/lib/utils.ts` with `cn()` utility (clsx + tailwind-merge)
 - Copies sections to `src/components/sections/`
 - Copies animation components from library to `src/components/animations/` (non-placeholder only, matched by archetype)
+- **Layer 7 (ecommerce):** When `industry == "ecommerce"` and multipage manifest: copies `lib/shopify` into `site/src/lib/shopify`; writes collection and product pages using `_layer7_collection_page_content()` and `_layer7_product_page_content()` (server components, Storefront API). Homepage is rewritten to fetch collections via `COLLECTIONS_LIST` and pass them to the product-showcase section; `04-product_showcase.tsx` is patched to accept optional `collections` prop and merge with preset styling.
 - Downloads verified assets to `public/images/` and `public/lottie/` (via asset-injector + asset-downloader)
 - Runs `npm install`
 
@@ -344,7 +381,6 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 ### Completed Builds
 | Project | Preset | Engine | Deployed |
 |---------|--------|--------|----------|
-| turm-kaffee-v2 | artisan-food | framer-motion | Vercel |
 | farm-minerals-promo | farm-minerals-promo-v2 | gsap | Vercel |
 | bluebird-coffee-roastery | artisan-food | framer-motion | Vercel |
 | nike-golf | nike-golf | gsap | Vercel |
@@ -352,7 +388,6 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 | farm-minerals-v3 | farm-minerals-promo-v2 | gsap | Vercel |
 | nicola-romei | nicola-romei | gsap | Vercel |
 | cascaid-health | health-wellness | gsap+framer | Vercel |
-| turm-kaffee-v3 | artisan-food | framer-motion | Vercel |
 | gsap-homepage | gsap-homepage | gsap | Vercel* |
 | gsap-v9-test | gsap-v9-test | gsap | Vercel** |
 | gsap-v10 | gsap-v10 | gsap | Vercel |
@@ -427,7 +462,7 @@ None — v2.0.0 addresses the 6 root causes from the sofi-health diagnostic (see
 
 **Animation library components broken — 0 of 32 imported** (FIXED v0.7.2)
 - Was: Library components copied by stage_deploy but never validated. 6/9 key components had wrong export names, 4 imported from `motion/react` instead of `framer-motion`, 4 required missing `@/lib/utils.ts`, 1 contained wrong component entirely (hover-lift had ZoomImageUI).
-- Fix: Rewrote 6 key components (word-reveal, count-up, blur-fade, magnetic-button, hover-lift, magnetic-button), created `@/lib/utils.ts`, refactored 8 sections to import from library, added Phase 0 to animation-upgrade skill. 8 unique components now imported across turm-kaffee-v3.
+- Fix: Rewrote 6 key components (word-reveal, count-up, blur-fade, magnetic-button, hover-lift, magnetic-button), created `@/lib/utils.ts`, refactored 8 sections to import from library, added Phase 0 to animation-upgrade skill. 8 unique components now imported across the build.
 - Prevention: Add post-copy `tsc --noEmit` validation to stage_deploy; add registry validator.
 - Resolved: 2026-02-10
 
@@ -554,11 +589,12 @@ vercel --yes --prod             # Production deployment
 
 ## System Version
 
-**Current:** v2.0.0 (2026-02-11)
+**Current:** v3.0.0 (2026-02-14)
 
 ### Changelog
 | Version | Date | Changes |
 |---------|------|---------|
+| v3.0.0 | 2026-02-14 | **Layer 6: Multi-Page App Generation.** With `--industry` (and optional `--site-manifest`), pipeline runs in multi-page mode. New `scripts/lib/site_manifest.py`: manifest schema, `generate_site_manifest()`, `load_site_manifest()`, `filter_nav_footer_from_sections()`. Supabase: `get_industry_metadata(industry)`, `get_all_page_sections(industry)`. Orchestrator: `stage_shared_components()` (Navigation + Footer once), `stage_scaffold_multipage()`, `stage_sections_multipage()`, `stage_assemble_multipage()`. `stage_deploy()` accepts `site_manifest` + `section_files_by_page`; writes layout with Nav/Footer, per-page sections under `src/components/sections/{page_id}/`, route dirs `collections/[handle]/`, `products/[handle]/`, `pages/[handle]/`, `not-found.tsx`. Legacy path (`--preset` only) unchanged. See `plans/active/Layer_6_Multi_Page_App_Generation.md`. |
 | v2.0.2 | 2026-02-11 | **Content Extraction Fix: Recursive Section Detection + DOM-Scoped Content.** Root cause: wrapper `<div>` covering entire page was identified as "Section 0," causing ALL text (96/97 items) and ALL images (19/19) to be assigned to it — leaving all other sections empty. Claude then generated filler instead of real content. **Fix 1 (extract-reference.js):** Recursive `collectSections()` descends into wrapper elements (>80% page height with multiple tall children) instead of treating them as sections. **Fix 2:** Per-section DOM-scoped content extraction — headings, body text, CTAs, images extracted via `querySelectorAll()` inside each section element (DOM containment, not rect overlap). Each section now carries embedded `content: { headings, body_text, ctas, image_count }` and `images[]`. **Fix 3:** Post-filter removes any remaining wrapper sections (>70% page height + zero content). Re-indexes after removal. **Fix 4:** Smallest-first sectionIndex assignment — `sectionsBySize` sort ensures inner sections match before outer wrappers for text/image/DOM elements. **Fix 5 (archetype-mapper.js):** Uses embedded per-section content for classification. New methods: `embedded-heading-keyword`, `embedded-body-keyword`, `structural-images`, `structural-multi-heading`, `structural-cta`. HERO always assigned to first section. **Fix 6 (build-site-spec.js):** Prefers embedded per-section content/images over sectionIndex-based filtering. Falls back to sectionIndex only for legacy extraction data. Validated: sofi-health-v3 build — 10 real sections detected (1 wrapper filtered), text distributed across all sections, real content from sofihealth.com renders in every section. |
 | v2.0.1 | 2026-02-11 | **v2 Pipeline Wiring Fix.** Critical fix: `stage_url_extract()` now actually calls `build-site-spec.js` and returns 5 values (was returning 4, causing crash). `stage_sections()` now uses JSON style tokens from `site-spec.json` when available (was ignoring `site_spec` param entirely). `--skip-to` path now uses rich sections from `site-spec.json` instead of `parse_scaffold()`. Legacy `registry.json` fallback in `stage_deploy` removed. Invalid package name filter added (`@gsap`, `motion` blocked from npm deps). `orchestrate.py` 2417->2504 lines. Validated with sofi-health-v2 build: 11 sections, deterministic scaffold, deterministic review (0 errors), API retry caught 529 overload. |
 | v2.0.0 | 2026-02-11 | **Deterministic Pipeline: Eliminate the Lossy Telephone Game.** 6-phase architectural rewrite. **Phase 0 (Extraction):** Cookie modal dismissal (16 selectors), full-page lazy scroll before measurement, sectionIndex on all images and text content. `extract-reference.js` 706->824 lines. **Phase 1 (Registry):** New `build-unified-registry.js` auto-generates `component-registry.json` (48 components with verified export_name + import_statement). Legacy `registry.json` deleted. `animation-injector.js`, `asset-injector.js`, `pattern-identifier.js` all read from unified registry. 66 test assertions pass. **Phase 2 (JSON Spec):** New `build-site-spec.js` (587 lines) — deterministic style token extraction, section building with sectionIndex, component matching from registry. Produces `site-spec.json` (single source of truth) with zero AI calls. New `stage_scaffold_v2()` reads site-spec directly (no Claude scaffold call). `stage_sections()` gains JSON style tokens path alongside legacy compact header. **Phase 3 (Confidence):** New `confidence-gate.js` (180 lines) — 4-tier confidence system (HIGH/MEDIUM/LOW/NONE), gates sections below 0.5 for re-analysis, builds Claude Vision prompt for low-confidence batches. Wired into build-site-spec.js. **Phase 4 (Deterministic Review):** New `stage_review_v2()` — deterministic checks (use-client, export-default, brace balance, emoji, placeholder URLs, import validity, truncation). Writes both review.json and review.md. Zero Claude calls. **Phase 5 (Resilience):** `call_claude_with_retry()` wrapper (90s timeout, 3 retries with exponential backoff). `save_checkpoint()`/`load_checkpoint()` after every stage. `--clean` flag for directory deletion, `--force` now non-destructive. `orchestrate.py` 1404->2417 lines. |

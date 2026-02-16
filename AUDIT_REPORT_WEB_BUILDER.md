@@ -289,7 +289,7 @@ Based on 15 builds and retrospectives:
 | 21 | `nike-golf.md` | Nike Golf clone | gsap |
 | 22 | `nicola-romei.md` | Portfolio clone | gsap |
 | 23 | `cascaid-health.md` | Health site clone | gsap+framer |
-| 24 | `turm-kaffee-v3.md` | Coffee shop iteration | framer-motion |
+| 24 | (preset example) | Artisan food / coffee | framer-motion |
 | 25 | `farm-minerals-promo-v2.md` | Agricultural tech | gsap |
 | 26 | `farm-minerals-anim.md` | Agricultural + Lottie | gsap |
 | 27 | `farm-minerals-v2.md` | Farm minerals iteration | — |
@@ -417,7 +417,7 @@ After Web Builder deploys to Vercel, the Bulk Importer needs:
 
 | # | Project | Date | Mode | Engine | Deployed To | Notes |
 |---|---------|------|------|--------|------------|-------|
-| 1 | turm-kaffee-v2 | 2026-02-08 | preset | framer-motion | Vercel | First build |
+| 1 | (demo) | 2026-02-08 | preset | framer-motion | Vercel | First build |
 | 2 | bluebird-coffee-roastery | 2026-02-08 | preset | framer-motion | Vercel | |
 | 3 | farm-minerals-promo | 2026-02-08 | preset | gsap | Vercel | |
 | 4 | nike-golf | 2026-02-09 | preset | gsap | Vercel | |
@@ -425,7 +425,7 @@ After Web Builder deploys to Vercel, the Bulk Importer needs:
 | 6 | farm-minerals-v3 | 2026-02-09 | preset | gsap | Vercel | |
 | 7 | nicola-romei | 2026-02-10 | preset | gsap | Vercel | Required manual fixes |
 | 8 | cascaid-health | 2026-02-10 | from-url | gsap+framer | Vercel | |
-| 9 | turm-kaffee-v3 | 2026-02-10 | preset | framer-motion | Vercel | |
+| 9 | (demo v3) | 2026-02-10 | preset | framer-motion | Vercel | |
 | 10 | gsap-homepage | 2026-02-10 | from-url | gsap | Vercel | Stress test, incomplete |
 | 11 | gsap-v9-test | 2026-02-11 | from-url | gsap | Vercel | SSR visibility issue |
 | 12 | gsap-v10 | 2026-02-11 | from-url | gsap | Vercel | |

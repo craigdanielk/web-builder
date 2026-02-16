@@ -162,7 +162,7 @@ web-builder/
 │
 └── retrospectives/                 ← Session documentation and learnings
     ├── 2026-02-08-web-builder-first-build-success.md
-    ├── 2026-02-08-turm-kaffee-v2-build-deploy.md
+    ├── (retrospectives — see retrospectives/)
     ├── 2026-02-08-farm-minerals-rebuild.md
     ├── 2026-02-09-nike-golf-light-theme-rebuild.md
     ├── 2026-02-09-system-docs-automation-success.md
@@ -190,7 +190,7 @@ Follow the pipeline defined in .cursorrules exactly.
 Or more specifically:
 
 ```
-Build the turm-kaffee-v2 site using the web-builder pipeline.
+Build a demo site using the web-builder pipeline (e.g. python run_pipeline.py --from-compiled aurelix-calculator/compiled/opencart-demo/ --industry artisan-food).
 The brief is at briefs/tuem-kaffee-v2.md
 Use the artisan-food preset at skills/presets/artisan-food.md
 Follow the pipeline defined in .cursorrules exactly:

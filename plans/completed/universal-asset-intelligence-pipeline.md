@@ -401,7 +401,7 @@ Expected improvements over gsap-v11:
 - [ ] Features grid uses Lucide icons with descriptive names
 - [ ] Every detected GSAP plugin maps to a library component that renders
 
-### 5b: Rebuild a non-GSAP site (turm-kaffee or cascaid-health)
+### 5b: Rebuild a non-GSAP site (e.g. demo or cascaid-health)
 
 Validate global applicability:
 - [ ] Icons use Lucide React, not emoji

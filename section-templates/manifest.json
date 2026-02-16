@@ -1,0 +1,566 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-02-13",
+  "total_archetypes": 25,
+  "total_variants": 72,
+  "templates_available": 1,
+  "archetypes": {
+    "ABOUT": {
+      "directory": "section-templates/ABOUT/",
+      "variants": [
+        {
+          "name": "editorial-split",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "editorial-split.tsx"
+        },
+        {
+          "name": "inline-blurb",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "inline-blurb.tsx"
+        }
+      ]
+    },
+    "BLOG-PREVIEW": {
+      "directory": "section-templates/BLOG-PREVIEW/",
+      "variants": [
+        {
+          "name": "grid",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "grid.tsx"
+        }
+      ]
+    },
+    "CART-DRAWER": {
+      "directory": "section-templates/CART-DRAWER/",
+      "variants": [
+        {
+          "name": "slide-out",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "slide-out.tsx"
+        }
+      ]
+    },
+    "COMPARISON": {
+      "directory": "section-templates/COMPARISON/",
+      "variants": [
+        {
+          "name": "inline-compare",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "inline-compare.tsx"
+        },
+        {
+          "name": "table",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "table.tsx"
+        }
+      ]
+    },
+    "CONTACT": {
+      "directory": "section-templates/CONTACT/",
+      "variants": [
+        {
+          "name": "split-form",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "split-form.tsx"
+        }
+      ]
+    },
+    "CONTENT": {
+      "directory": "section-templates/CONTENT/",
+      "variants": [
+        {
+          "name": "rich-text",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "rich-text.tsx"
+        }
+      ]
+    },
+    "CTA": {
+      "directory": "section-templates/CTA/",
+      "variants": [
+        {
+          "name": "centered",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "centered.tsx"
+        },
+        {
+          "name": "inline",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "inline.tsx"
+        },
+        {
+          "name": "split-image",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "split-image.tsx"
+        }
+      ]
+    },
+    "FAQ": {
+      "directory": "section-templates/FAQ/",
+      "variants": [
+        {
+          "name": "accordion",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "accordion.tsx"
+        },
+        {
+          "name": "mini-accordion",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "mini-accordion.tsx"
+        }
+      ]
+    },
+    "FEATURES": {
+      "directory": "section-templates/FEATURES/",
+      "variants": [
+        {
+          "name": "goal-navigator",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "goal-navigator.tsx"
+        },
+        {
+          "name": "icon-grid",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "icon-grid.tsx"
+        },
+        {
+          "name": "icon-row",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "icon-row.tsx"
+        },
+        {
+          "name": "impact-metrics",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "impact-metrics.tsx"
+        },
+        {
+          "name": "spec-table",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "spec-table.tsx"
+        }
+      ]
+    },
+    "FOOTER": {
+      "directory": "section-templates/FOOTER/",
+      "variants": [
+        {
+          "name": "mega",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "mega.tsx"
+        },
+        {
+          "name": "minimal",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "minimal.tsx"
+        }
+      ]
+    },
+    "GALLERY": {
+      "directory": "section-templates/GALLERY/",
+      "variants": [
+        {
+          "name": "in-context",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "in-context.tsx"
+        },
+        {
+          "name": "lookbook-banner",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "lookbook-banner.tsx"
+        },
+        {
+          "name": "lookbook-grid",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "lookbook-grid.tsx"
+        },
+        {
+          "name": "masonry",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "masonry.tsx"
+        },
+        {
+          "name": "room-inspiration",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "room-inspiration.tsx"
+        }
+      ]
+    },
+    "HERO": {
+      "directory": "section-templates/HERO/",
+      "variants": [
+        {
+          "name": "animated-gradient",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "animated-gradient.tsx"
+        },
+        {
+          "name": "centered",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "centered.tsx"
+        },
+        {
+          "name": "full-bleed-overlay",
+          "has_template": true,
+          "template_path": "section-templates/HERO/full-bleed-overlay.tsx",
+          "file_name": "full-bleed-overlay.tsx"
+        },
+        {
+          "name": "minimal-text",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "minimal-text.tsx"
+        },
+        {
+          "name": "page-header",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "page-header.tsx"
+        },
+        {
+          "name": "product-hero",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "product-hero.tsx"
+        },
+        {
+          "name": "split-image",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "split-image.tsx"
+        },
+        {
+          "name": "video-background",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "video-background.tsx"
+        }
+      ]
+    },
+    "HOW-IT-WORKS": {
+      "directory": "section-templates/HOW-IT-WORKS/",
+      "variants": [
+        {
+          "name": "horizontal-timeline",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "horizontal-timeline.tsx"
+        },
+        {
+          "name": "numbered-steps",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "numbered-steps.tsx"
+        },
+        {
+          "name": "routine-banner",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "routine-banner.tsx"
+        }
+      ]
+    },
+    "LOGO-BAR": {
+      "directory": "section-templates/LOGO-BAR/",
+      "variants": [
+        {
+          "name": "scrolling-marquee",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "scrolling-marquee.tsx"
+        },
+        {
+          "name": "static-grid",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "static-grid.tsx"
+        }
+      ]
+    },
+    "NAV": {
+      "directory": "section-templates/NAV/",
+      "variants": [
+        {
+          "name": "hamburger-only",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "hamburger-only.tsx"
+        },
+        {
+          "name": "mega-menu",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "mega-menu.tsx"
+        },
+        {
+          "name": "sticky-solid",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "sticky-solid.tsx"
+        },
+        {
+          "name": "sticky-transparent",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "sticky-transparent.tsx"
+        }
+      ]
+    },
+    "NEWSLETTER": {
+      "directory": "section-templates/NEWSLETTER/",
+      "variants": [
+        {
+          "name": "inline",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "inline.tsx"
+        }
+      ]
+    },
+    "PORTFOLIO": {
+      "directory": "section-templates/PORTFOLIO/",
+      "variants": [
+        {
+          "name": "masonry",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "masonry.tsx"
+        }
+      ]
+    },
+    "PRICING": {
+      "directory": "section-templates/PRICING/",
+      "variants": [
+        {
+          "name": "tiered-cards",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "tiered-cards.tsx"
+        }
+      ]
+    },
+    "PRODUCT-DETAIL": {
+      "directory": "section-templates/PRODUCT-DETAIL/",
+      "variants": [
+        {
+          "name": "description-tabs",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "description-tabs.tsx"
+        },
+        {
+          "name": "gallery-sidebar",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "gallery-sidebar.tsx"
+        },
+        {
+          "name": "subscription-upsell",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "subscription-upsell.tsx"
+        },
+        {
+          "name": "variant-selector",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "variant-selector.tsx"
+        }
+      ]
+    },
+    "PRODUCT-SHOWCASE": {
+      "directory": "section-templates/PRODUCT-SHOWCASE/",
+      "variants": [
+        {
+          "name": "accessories",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "accessories.tsx"
+        },
+        {
+          "name": "bestsellers",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "bestsellers.tsx"
+        },
+        {
+          "name": "bundle-builder",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "bundle-builder.tsx"
+        },
+        {
+          "name": "carousel",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "carousel.tsx"
+        },
+        {
+          "name": "complete-the-look",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "complete-the-look.tsx"
+        },
+        {
+          "name": "curated-pairing",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "curated-pairing.tsx"
+        },
+        {
+          "name": "featured-3",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "featured-3.tsx"
+        },
+        {
+          "name": "filtered-grid",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "filtered-grid.tsx"
+        },
+        {
+          "name": "hover-cards",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "hover-cards.tsx"
+        },
+        {
+          "name": "related-products",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "related-products.tsx"
+        },
+        {
+          "name": "routine-builder",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "routine-builder.tsx"
+        },
+        {
+          "name": "stack-builder",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "stack-builder.tsx"
+        },
+        {
+          "name": "trending",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "trending.tsx"
+        }
+      ]
+    },
+    "STATS": {
+      "directory": "section-templates/STATS/",
+      "variants": [
+        {
+          "name": "counter",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "counter.tsx"
+        }
+      ]
+    },
+    "TEAM": {
+      "directory": "section-templates/TEAM/",
+      "variants": [
+        {
+          "name": "grid",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "grid.tsx"
+        }
+      ]
+    },
+    "TESTIMONIALS": {
+      "directory": "section-templates/TESTIMONIALS/",
+      "variants": [
+        {
+          "name": "carousel",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "carousel.tsx"
+        },
+        {
+          "name": "mini-reviews",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "mini-reviews.tsx"
+        },
+        {
+          "name": "single-featured",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "single-featured.tsx"
+        },
+        {
+          "name": "wall",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "wall.tsx"
+        }
+      ]
+    },
+    "TRUST-BADGES": {
+      "directory": "section-templates/TRUST-BADGES/",
+      "variants": [
+        {
+          "name": "horizontal-strip",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "horizontal-strip.tsx"
+        },
+        {
+          "name": "inline-strip",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "inline-strip.tsx"
+        }
+      ]
+    },
+    "VIDEO": {
+      "directory": "section-templates/VIDEO/",
+      "variants": [
+        {
+          "name": "autoplay-hero",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "autoplay-hero.tsx"
+        },
+        {
+          "name": "inline-player",
+          "has_template": false,
+          "template_path": null,
+          "file_name": "inline-player.tsx"
+        }
+      ]
+    }
+  }
+}

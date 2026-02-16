@@ -8,7 +8,7 @@
 
 ## Initial Goal
 
-Extract, understand, and validate the `website-builder` skill package from a tar.gz archive. Run the first end-to-end build (Turm Kaffee) to test the pipeline, then scaffold it into a renderable Next.js project and push to GitHub.
+Extract, understand, and validate the `website-builder` skill package from a tar.gz archive. Run the first end-to-end build (demo/artisan-food) to test the pipeline, then scaffold it into a renderable Next.js project and push to GitHub.
 
 ---
 
@@ -34,10 +34,10 @@ Two execution modes were discussed:
 - Read all 16 files in the package to understand the full system
 - Provided comprehensive analysis of the architecture to the user
 
-### Phase 2: Pipeline Execution (Turm Kaffee Build)
+### Phase 2: Pipeline Execution (First Build)
 
 **Stage 1 — Brief + Preset Match:**
-- Read `briefs/turm-kaffee.md` (Zürich specialty coffee roaster)
+- Read project brief (artisan-food / specialty coffee example)
 - Matched to `artisan-food` preset (exact fit)
 - Identified 5 key brief signals that would modify the default preset sequence
 
@@ -45,7 +45,7 @@ Two execution modes were discussed:
 - Adapted the 8-section preset default to 9 sections
 - Added PRICING (subscription is primary revenue — not in preset default)
 - Repurposed HOW-IT-WORKS as sourcing journey narrative
-- Saved to `output/turm-kaffee/scaffold.md`
+- Saved to `output/demo/scaffold.md`
 
 **Stage 3 — Section Generation (9 sections):**
 - Generated each as an independent React + TypeScript + Tailwind + Framer Motion component
@@ -81,7 +81,7 @@ Two execution modes were discussed:
 ### Phase 5: GitHub Push
 
 - Moved `website-builder/` contents to repo root
-- Removed nested `.git` from `turm-kaffee-site/`
+- Removed nested `.git` from output site directory
 - Cleaned up tar.gz
 - Initialized git, committed 42 files
 - Created public repo: **https://github.com/craigdanielk/web-builder**
@@ -99,17 +99,17 @@ Two execution modes were discussed:
 
 3. **Inline `style={{ fontFamily }}` works with `next/font/google`.** The `next/font` system loads the font files — the inline style references work because the font IS loaded. No need to replace with CSS variable classes. The attempted sed replacement was unnecessary and caused breakage.
 
-4. **The `output/` directory pattern is sound.** Gitignored for raw pipeline output, but the rendered Next.js project (`turm-kaffee-site/`) lives at the root as a demo build.
+4. **The `output/` directory pattern is sound.** Gitignored for raw pipeline output, but the rendered Next.js project (output site directory) lives at the root as a demo build.
 
 5. **`create-next-app` prompts for React Compiler** (new in Next.js 16.x) — needs piped input or the `--no-react-compiler` flag (doesn't exist yet). Workaround: pipe "no" to stdin.
 
 ### Process
 
-6. **Brief quality directly determines build quality.** The Turm Kaffee brief was well-written with specific details (CHF pricing, origin countries, brand personality, specific design requests). Generic briefs would produce generic output.
+6. **Brief quality directly determines build quality.** The project brief was well-written with specific details (CHF pricing, origin countries, brand personality, specific design requests). Generic briefs would produce generic output.
 
 7. **The 20 structured data points identified are the minimum viable input.** First 8 fields drive preset match + scaffold. Fields 9-15 refine style. Fields 16-20 provide content specificity.
 
-8. **Section count sweet spot: 8-10.** Under 6 feels incomplete, over 14 is bloated. The 9-section Turm Kaffee build hits the right density.
+8. **Section count sweet spot: 8-10.** Under 6 feels incomplete, over 14 is bloated. The 9-section build hits the right density.
 
 ---
 
@@ -132,10 +132,10 @@ Two execution modes were discussed:
 | Deliverable | Location | Status |
 |---|---|---|
 | Website builder skill package | Repo root (skills/, templates/, scripts/, etc.) | Complete |
-| Turm Kaffee scaffold | `output/turm-kaffee/scaffold.md` | Complete (gitignored) |
-| Turm Kaffee sections (9 .tsx files) | `output/turm-kaffee/sections/` | Complete (gitignored) |
-| Turm Kaffee review | `output/turm-kaffee/review.md` | Complete (gitignored) |
-| Rendered Next.js site | `turm-kaffee-site/` | Complete, in repo |
+| Scaffold | `output/demo/scaffold.md` | Complete (gitignored) |
+| Sections (9 .tsx files) | `output/demo/sections/` | Complete (gitignored) |
+| Review | `output/demo/review.md` | Complete (gitignored) |
+| Rendered Next.js site | (output site dir) | Complete, in repo |
 | GitHub repo | https://github.com/craigdanielk/web-builder | Pushed, public |
 
 ---
@@ -175,7 +175,7 @@ This traceability is valuable for debugging inconsistencies and for building the
 
 3. **Populate the section taxonomy structural descriptions.** All entries say "[populate on first use]" — after this build, the HERO (full-bleed-overlay), ABOUT (editorial-split), HOW-IT-WORKS (horizontal-timeline), PRODUCT-SHOWCASE (hover-cards), PRICING (two-tier), TESTIMONIALS (single-featured), NEWSLETTER (inline), NAV (sticky-transparent), and FOOTER (minimal) entries should all be updated with structural patterns learned.
 
-4. **Test the SDK scripts** (`orchestrate.py` / `orchestrate_parallel.py`) against the same Turm Kaffee brief. Compare output quality and consistency scores against the agent-generated version. This gives a quality delta between SDK and agent approaches.
+4. **Test the SDK scripts** (`orchestrate.py` / `orchestrate_parallel.py`) against the same project brief. Compare output quality and consistency scores against the agent-generated version. This gives a quality delta between SDK and agent approaches.
 
 5. **Consider auto-handoff mechanism.** Context was nearly full by session end. A structured handoff document (this retro) plus the repo state should enable a new agent to pick up seamlessly.
 
@@ -187,12 +187,12 @@ This traceability is valuable for debugging inconsistencies and for building the
 
 **Repo:** https://github.com/craigdanielk/web-builder
 **Branch:** `main` (single commit)
-**Dev server:** Was running at `localhost:3000` in `turm-kaffee-site/` — may need restart (`npm run dev`)
+**Dev server:** Was running at `localhost:3000` in output site dir — may need restart (`npm run dev`)
 
 **What's done:**
 - Full skill package extracted and organized at repo root
-- First build (Turm Kaffee) complete — 9 sections, 30/34 consistency score
-- Rendered Next.js site in `turm-kaffee-site/`
+- First build complete — 9 sections, 30/34 consistency score
+- Rendered Next.js site in output directory
 - Pushed to GitHub
 
 **What's not done:**
@@ -205,6 +205,6 @@ This traceability is valuable for debugging inconsistencies and for building the
 **Key files to read first:**
 - `README.md` — full system overview
 - `.cursorrules` — agent pipeline instructions
-- `briefs/turm-kaffee.md` — the brief that drove the first build
+- Project brief — the brief that drove the first build
 - `skills/presets/artisan-food.md` — the preset that was used
 - This retrospective
