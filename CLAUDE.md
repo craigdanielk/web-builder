@@ -1,7 +1,7 @@
 # Web Builder — System Context
 
-**Last Updated:** 2026-02-12
-**System Version:** v3.0.0
+**Last Updated:** 2026-02-17
+**System Version:** v3.1.0
 
 ---
 
@@ -427,7 +427,20 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 
 ### Active Issues
 
-None — v2.0.0 addresses the 6 root causes from the sofi-health diagnostic (see Resolved Issues).
+**Content tokens not populated in Supabase templates** (v3.1.0)
+- Supabase `code_template` entries use `{content_token}` syntax (e.g., `{feature_1_title}`, `{testimonial_1_quote}`, `{stat_1_value}`) for placeholder content. When templates are pulled directly (bypassing LLM generation in `--industry` mode), these tokens render as visible text on the deployed site.
+- Brand tokens (`{{brand.accent}}`) are handled by brand token injection, but content tokens have no population mechanism.
+- Fix options: (a) content defaults table per archetype in orchestrate.py, (b) LLM batch content generation per page, (c) Shopify metafield integration
+- Workaround: None. All static sections (features, testimonials, stats, FAQ, comparison, badges, logo bar) show raw tokens.
+
+**Nav links redirect to Shopify store domain** (v3.1.0)
+- Shopify Storefront API `menu(handle: "main-menu")` returns items with absolute URLs (`https://store.myshopify.com/collections/all`). NavigationWrapper passes these through to the Navigation component without rewriting to relative paths.
+- On password-protected dev stores, clicking nav links hits the Shopify password wall and redirects to `/undefined`.
+- Fix: URL rewriting in NavigationWrapper.tsx — strip store domain, convert to relative paths.
+
+**Missing default placeholder assets** (v3.1.0)
+- Generated sites reference `/logo.svg` and `/placeholder.jpg` in public/ but these files are never created.
+- All logo images and fallback product images show as broken.
 
 ### Resolved Issues (Keep for Reference)
 
@@ -589,11 +602,12 @@ vercel --yes --prod             # Production deployment
 
 ## System Version
 
-**Current:** v3.0.0 (2026-02-14)
+**Current:** v3.1.0 (2026-02-17)
 
 ### Changelog
 | Version | Date | Changes |
 |---------|------|---------|
+| v3.1.0 | 2026-02-17 | **Layer 7: RSC Data Flow Wiring.** Wire Shopify Storefront API data into pipeline-generated components. New files: `lib/shopify/NavigationWrapper.tsx` (RSC wrapper for Navigation — fetches SHOP_MENU + SHOP_INFO), `lib/shopify/FooterWrapper.tsx` (RSC wrapper for Footer). New queries in `queries.ts`: SHOP_MENU, SHOP_INFO, COLLECTION_BY_HANDLE, FEATURED_PRODUCTS, SHOP_PAGE + types. Orchestrator: `_inject_nav_props()` / `_inject_footer_props()` (build-time prop injection with displayLinks/displayColumns override pattern), `_patch_showcase_section_props()` (Shopify→template field mapping via `Array.from()`), `_layer7_collections_index_page_content()` (/collections index page), global placeholder token sanitization sweep. Generated routes: `/api/revalidate` (HMAC webhook), `/[page]` (Shopify pages), `/collections` (index). `.env.local` auto-generation from `shopify_config.json`. `next.config.ts` with Shopify CDN `remotePatterns`. **Known issues**: Content tokens (`{feature_1_title}` etc.) not populated, nav URLs are absolute Shopify domain links (need rewriting), no default placeholder assets in public/. |
 | v3.0.0 | 2026-02-14 | **Layer 6: Multi-Page App Generation.** With `--industry` (and optional `--site-manifest`), pipeline runs in multi-page mode. New `scripts/lib/site_manifest.py`: manifest schema, `generate_site_manifest()`, `load_site_manifest()`, `filter_nav_footer_from_sections()`. Supabase: `get_industry_metadata(industry)`, `get_all_page_sections(industry)`. Orchestrator: `stage_shared_components()` (Navigation + Footer once), `stage_scaffold_multipage()`, `stage_sections_multipage()`, `stage_assemble_multipage()`. `stage_deploy()` accepts `site_manifest` + `section_files_by_page`; writes layout with Nav/Footer, per-page sections under `src/components/sections/{page_id}/`, route dirs `collections/[handle]/`, `products/[handle]/`, `pages/[handle]/`, `not-found.tsx`. Legacy path (`--preset` only) unchanged. See `plans/active/Layer_6_Multi_Page_App_Generation.md`. |
 | v2.0.2 | 2026-02-11 | **Content Extraction Fix: Recursive Section Detection + DOM-Scoped Content.** Root cause: wrapper `<div>` covering entire page was identified as "Section 0," causing ALL text (96/97 items) and ALL images (19/19) to be assigned to it — leaving all other sections empty. Claude then generated filler instead of real content. **Fix 1 (extract-reference.js):** Recursive `collectSections()` descends into wrapper elements (>80% page height with multiple tall children) instead of treating them as sections. **Fix 2:** Per-section DOM-scoped content extraction — headings, body text, CTAs, images extracted via `querySelectorAll()` inside each section element (DOM containment, not rect overlap). Each section now carries embedded `content: { headings, body_text, ctas, image_count }` and `images[]`. **Fix 3:** Post-filter removes any remaining wrapper sections (>70% page height + zero content). Re-indexes after removal. **Fix 4:** Smallest-first sectionIndex assignment — `sectionsBySize` sort ensures inner sections match before outer wrappers for text/image/DOM elements. **Fix 5 (archetype-mapper.js):** Uses embedded per-section content for classification. New methods: `embedded-heading-keyword`, `embedded-body-keyword`, `structural-images`, `structural-multi-heading`, `structural-cta`. HERO always assigned to first section. **Fix 6 (build-site-spec.js):** Prefers embedded per-section content/images over sectionIndex-based filtering. Falls back to sectionIndex only for legacy extraction data. Validated: sofi-health-v3 build — 10 real sections detected (1 wrapper filtered), text distributed across all sections, real content from sofihealth.com renders in every section. |
 | v2.0.1 | 2026-02-11 | **v2 Pipeline Wiring Fix.** Critical fix: `stage_url_extract()` now actually calls `build-site-spec.js` and returns 5 values (was returning 4, causing crash). `stage_sections()` now uses JSON style tokens from `site-spec.json` when available (was ignoring `site_spec` param entirely). `--skip-to` path now uses rich sections from `site-spec.json` instead of `parse_scaffold()`. Legacy `registry.json` fallback in `stage_deploy` removed. Invalid package name filter added (`@gsap`, `motion` blocked from npm deps). `orchestrate.py` 2417->2504 lines. Validated with sofi-health-v2 build: 11 sections, deterministic scaffold, deterministic review (0 errors), API retry caught 529 overload. |
