@@ -148,19 +148,24 @@ test("parse_fonts works on synthetic content", fonts["heading"] != "Inter" or fo
 # ═══════════════════════════════════════════════════════════════════
 print("\n═══ Test Suite 4: Template System ═══\n")
 
-# Test check_template_exists
+# Test check_template_exists (returns Path | str | None; optional cache)
 hero_tpl = check_template_exists("HERO", "full-bleed-overlay")
 test("HERO/full-bleed-overlay template exists", hero_tpl is not None)
-test("Template file is readable", hero_tpl.exists() if hero_tpl else False)
-test("Template file has content", hero_tpl.stat().st_size > 100 if hero_tpl else False)
+# Path = local file, str = Supabase code_template
+if hero_tpl is not None:
+    if isinstance(hero_tpl, Path):
+        test("Template file is readable", hero_tpl.exists())
+        test("Template file has content", hero_tpl.stat().st_size > 100)
+    else:
+        test("Template content is non-empty string", isinstance(hero_tpl, str) and len(hero_tpl) > 100)
 
-# Test template doesn't exist for non-template variant
-no_tpl = check_template_exists("FEATURES", "icon-grid")
-test("FEATURES/icon-grid template does NOT exist (expected)", no_tpl is None)
+# Non-existent archetype/variant: both local and DB return None
+no_tpl = check_template_exists("NONEXISTENT", "fake-variant")
+test("NONEXISTENT/fake-variant template does NOT exist (expected)", no_tpl is None)
 
-# Test template has brand token placeholders
-if hero_tpl:
-    content = hero_tpl.read_text()
+# Template content (Path or str) has brand token placeholders
+if hero_tpl is not None:
+    content = hero_tpl.read_text() if isinstance(hero_tpl, Path) else hero_tpl
     test("Template has brand.accent placeholder", "{{brand.accent}}" in content)
     test("Template has brand.heading_font placeholder", "{{brand.heading_font}}" in content)
 
@@ -221,6 +226,7 @@ try:
         industry="artisan-food",
         page_type="homepage",
         sections_from_template=1,
+        db_template_count=0,
         sections_from_llm=6,
         total_sections=7,
         build_duration_ms=12345,
@@ -241,7 +247,7 @@ test("manifest.json exists", (template_base / "manifest.json").is_file())
 manifest = json.loads((template_base / "manifest.json").read_text())
 test("manifest has 25 archetypes", len(manifest.get("archetypes", {})) == 25)
 test("manifest has 72 total variants", manifest.get("total_variants") == 72)
-test("manifest shows 1 template available", manifest.get("templates_available") == 1)
+test("manifest shows templates available (local + db)", manifest.get("templates_available", 0) >= 1)
 
 # Check archetype directories
 for arch in manifest.get("archetypes", {}).keys():

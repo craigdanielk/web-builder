@@ -9,10 +9,14 @@ ONCE at build start and cached for the entire build. Only log_build()
 writes to Supabase (once, at build end). A typical build: 2 reads + 1 write.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re
 import ssl
+import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -164,15 +168,62 @@ def get_all_page_sections(industry: str) -> dict[str, list[dict]]:
     return by_page
 
 
-def check_template_exists(archetype: str, variant: str) -> Path | None:
+def check_template_exists(
+    archetype: str,
+    variant: str,
+    cache: BuildCache | None = None,
+) -> Path | str | None:
     """
     Check if a parameterized TSX template exists for this archetype+variant.
-    Returns the template Path if found, None otherwise.
+    Resolution order: (1) cache, (2) local file, (3) Supabase code_template.
+    Returns Path (local file), str (code from Supabase), or None (LLM fallback).
     """
+    # 1. Check per-build cache
+    if cache is not None:
+        key = (archetype, variant)
+        if key in cache.template_cache:
+            return cache.template_cache[key]
+
+    # 2. Check local filesystem
     template_dir = _ROOT / "section-templates" / archetype
     template_file = template_dir / f"{variant}.tsx"
     if template_file.exists():
-        return template_file
+        result: Path | str | None = template_file
+        if cache is not None:
+            cache.template_cache[(archetype, variant)] = result
+        return result
+
+    # 3. Query Supabase section_archetypes.code_template (fault-tolerant)
+    if not (SUPABASE_URL and SUPABASE_KEY):
+        if cache is not None:
+            cache.template_cache[(archetype, variant)] = None
+        return None
+
+    # Safe for REST query params: alphanumeric, hyphen, underscore only
+    if not re.match(r"^[A-Za-z0-9_-]+$", archetype) or not re.match(r"^[A-Za-z0-9_-]+$", variant):
+        if cache is not None:
+            cache.template_cache[(archetype, variant)] = None
+        return None
+
+    try:
+        params = "&".join([
+            f"archetype=eq.{urllib.parse.quote(archetype)}",
+            f"variant=eq.{urllib.parse.quote(variant)}",
+            "has_template=eq.true",
+            "select=code_template",
+        ])
+        rows = _get("section_archetypes", params)
+        if rows and len(rows) > 0:
+            code = rows[0].get("code_template")
+            if isinstance(code, str) and code.strip():
+                if cache is not None:
+                    cache.template_cache[(archetype, variant)] = code
+                return code
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError, KeyError):
+        pass  # Fall through to LLM
+
+    if cache is not None:
+        cache.template_cache[(archetype, variant)] = None
     return None
 
 
@@ -181,6 +232,7 @@ def log_build(
     industry: str,
     page_type: str,
     sections_from_template: int = 0,
+    db_template_count: int = 0,
     sections_from_llm: int = 0,
     total_sections: int = 0,
     build_duration_ms: int | None = None,
@@ -189,6 +241,7 @@ def log_build(
 ) -> bool:
     """
     Write a build log entry to the build_log table.
+    sections_from_template = local .tsx file count; db_template_count = Supabase code_template count.
     Returns True on success, False on failure.
     """
     row = {
@@ -196,6 +249,7 @@ def log_build(
         "industry": industry,
         "page_type": page_type,
         "sections_from_template": sections_from_template,
+        "db_template_count": db_template_count,
         "sections_from_llm": sections_from_llm,
         "total_sections": total_sections,
         "status": status,
@@ -232,6 +286,7 @@ class BuildCache:
         self.section_sequence: list[dict] = []
         self.industry_style: dict | None = None
         self._loaded = False
+        self.template_cache: dict[tuple[str, str], Path | str | None] = {}
 
     def load(self) -> "BuildCache":
         """Fetch section sequence and industry style from Supabase (2 reads total)."""

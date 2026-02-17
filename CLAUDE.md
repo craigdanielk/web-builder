@@ -20,7 +20,7 @@
 | API key | `ANTHROPIC_API_KEY` in `.env` (gitignored) |
 | Preset DB | Supabase `aurelix-presets` (eu-west-1) — 842 presets, 25 industries |
 | DB docs | `DATABASE.md` — schema, usage, adding industries |
-| Templates | `SECTION_TEMPLATES.md` — parameterized TSX templates (1/72 done) |
+| Templates | `SECTION_TEMPLATES.md` — local + Supabase `code_template` (72 in DB, 1 local HERO) |
 
 ---
 
@@ -101,18 +101,18 @@ python scripts/orchestrate.py my-project --industry artisan-food --page homepage
 **Data flow:**
 1. `BuildCache` makes exactly 2 Supabase reads at build start (section sequence + industry style)
 2. Data is cached in memory for the entire build
-3. For each section, `check_template_exists()` checks `section-templates/{ARCHETYPE}/{variant}.tsx`
-4. If template found → brand token injection, skip LLM
-5. If no template → fall through to existing LLM pipeline unchanged
-6. Build log written to `build_log` table at build end
+3. For each section, `check_template_exists(archetype, variant, cache)` resolves template in order: (1) local file `section-templates/{ARCHETYPE}/{variant}.tsx`, (2) Supabase `section_archetypes.code_template` (when `has_template = true`), (3) else LLM fallback. Results are cached per build in `BuildCache.template_cache`.
+4. If template found (Path or str) → brand token injection, skip LLM
+5. If nothing found → fall through to existing LLM pipeline unchanged
+6. Build log written to `build_log` with three-way counts: `sections_from_template` (local), `db_template_count` (Supabase), `sections_from_llm`
 
 **Layer 6 (v3.0.0) — Multi-page generation:** When `--industry` is set (and optionally `--site-manifest`), the pipeline can run in multi-page mode: a site manifest defines pages (homepage, collection, product, content, 404). NAV and FOOTER are generated once as shared layout components; per-page section sequences come from `get_section_sequence(industry, page_type)` with NAV/FOOTER filtered. Output is a full `src/app/` tree with `layout.tsx` (Navigation + Footer), route directories (`collections/[handle]/`, `products/[handle]/`, `pages/[handle]/`), and `not-found.tsx`. See `plans/active/Layer_6_Multi_Page_App_Generation.md`.
 
 **Key files:**
 - `scripts/lib/supabase_client.py` — REST client, `BuildCache`, `get_industry_metadata`, `get_section_sequence`, `get_all_page_sections`
 - `scripts/lib/site_manifest.py` — manifest schema, `generate_site_manifest()`, `load_site_manifest()`, `filter_nav_footer_from_sections()`
-- `section-templates/` — 25 archetype dirs, 1 template (HERO/full-bleed-overlay), `manifest.json`
-- `supabase/migrations/` — 2 migration files for schema
+- `section-templates/` — 25 archetype dirs, local templates optional; Supabase `section_archetypes.code_template` used when no local file, `manifest.json`
+- `supabase/migrations/` — migration files for schema (incl. `code_template`, `db_template_count`)
 - `scripts/seed_supabase.py` — Data seeding script
 - `scripts/validate_integration.py` — 70-test validation suite
 

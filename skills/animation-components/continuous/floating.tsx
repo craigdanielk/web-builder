@@ -6,12 +6,13 @@ import { motion } from "framer-motion";
 import { Plus } from "lucide-react";
 
 export interface CircularMenuProps extends React.HTMLAttributes<HTMLDivElement> {
-  images: string[];
+  images?: string[];
 }
 
 const CircularMenu = React.forwardRef<HTMLDivElement, CircularMenuProps>(
   ({ images, className, ...props }, ref) => {
     const [active, setActive] = useState(false);
+    const list = Array.isArray(images) ? images : [];
 
     return (
       <div
@@ -39,7 +40,7 @@ const CircularMenu = React.forwardRef<HTMLDivElement, CircularMenuProps>(
             <Plus size={40} strokeWidth={3} className="text-white" />
           </motion.button>
         </motion.div>
-        {images.map((src, index) => (
+        {list.map((src, index) => (
           <motion.img
             key={index}
             src={src}

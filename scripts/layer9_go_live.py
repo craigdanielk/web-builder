@@ -13,11 +13,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 WEB_BUILDER_ROOT = Path(__file__).resolve().parent.parent
+
+# Match Vercel deploy URLs (Production: https://... or Aliased: https://...)
+VERCEL_URL_PATTERN = re.compile(r"https://[a-zA-Z0-9][-a-zA-Z0-9.]*\.vercel\.app(?:\s|$|[\]\)])")
 
 
 def main() -> int:
@@ -85,13 +89,27 @@ def main() -> int:
             ["vercel", "--prod", "--yes"],
             cwd=project_dir,
             timeout=300,
-            capture_output=False,
+            capture_output=True,
             text=True,
         )
+        combined = (r.stdout or "") + "\n" + (r.stderr or "")
         if r.returncode != 0:
+            print(combined, file=sys.stderr)
             print("Deploy failed. Check Vercel CLI and project link.", file=sys.stderr)
             return 1
-        print("Deployed. URL is shown above (or set GATE_D_URL from Vercel dashboard).")
+        # Parse deploy URL for pipeline (Gate D/E)
+        # Prefer the "Aliased:" URL (production alias, no deployment protection)
+        # over the "Production:" URL (deployment-specific, may have protection)
+        deploy_url: str | None = None
+        for line in combined.splitlines():
+            m = VERCEL_URL_PATTERN.search(line)
+            if m:
+                url_candidate = m.group(0).strip().rstrip("]) \t\n")
+                deploy_url = url_candidate  # keep updating — last match wins
+        if deploy_url:
+            deploy_url = deploy_url.strip().rstrip("])")
+            print(f"AURELIX_DEPLOY_URL={deploy_url}")
+        print("Deployed. URL is shown above (or set GATE_D_URL from Vercel dashboard).", file=sys.stderr)
     else:
         print("Env vars set. Run with --deploy or 'vercel --prod' in project dir to deploy.")
 

@@ -1768,9 +1768,10 @@ export function generateStaticParams() {
   return [];
 }
 
-export default async function Page({ params }: { params: { handle: string } }) {
+export default async function Page({ params }: { params: Promise<{ handle: string }> }) {
+  const { handle } = await params;
   const data = await shopifyFetch<CollectionProductsResult>(COLLECTION_PRODUCTS, {
-    handle: params.handle,
+    handle,
     first: 24,
   });
   const collection = data?.collection;
@@ -1869,9 +1870,10 @@ export function generateStaticParams() {
   return [];
 }
 
-export default async function Page({ params }: { params: { handle: string } }) {
+export default async function Page({ params }: { params: Promise<{ handle: string }> }) {
+  const { handle } = await params;
   const data = await shopifyFetch<ProductByHandleResult>(PRODUCT_BY_HANDLE, {
-    handle: params.handle,
+    handle,
   });
   const product = data?.product;
   if (!product) {
