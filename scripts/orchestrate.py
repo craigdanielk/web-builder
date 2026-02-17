@@ -2777,7 +2777,7 @@ export default async function Page({ params }: { params: Promise<{ page: string 
         "badge": {"icon": "Shield", "label": "Certified", "sublabel": "Quality guaranteed", "text": "Trusted"},
         "product": {"name": "Product", "price": "$0.00", "tag": "New", "image_alt": "Product image", "image_url": "/placeholder.svg", "description": "Premium quality crafted for you.", "url": "#", "image": "/placeholder.svg"},
         "column": {"name": "Column", "title": "Column", "description": "More information coming soon."},
-        "col": {"title": "Info", "description": "More details coming soon."},
+        "col": {"title": "Shop", "description": "Browse our collections."},
         "row": {"feature": "Included", "label": "Feature", "value": "Yes"},
         "logo": {"image_url": "/placeholder.svg", "alt": "Partner", "name": "Partner", "src": "/placeholder.svg", "url": "#"},
         "nav": {"label": "Link", "url": "#", "href": "#"},
@@ -2796,18 +2796,77 @@ export default async function Page({ params }: { params: Promise<{ page: string 
         "cta": {"text": "Shop Now", "url": "/collections", "label": "Shop Now"},
     }
 
+    # Per-number variety so repeated items aren't identical
+    _NUMBERED_VARIETY: dict[str, list[dict[str, str]]] = {
+        "feature": [
+            {"title": "Free Shipping", "description": "Complimentary delivery on all orders over $50.", "icon": "Truck"},
+            {"title": "Quality Guarantee", "description": "Every product meets the highest quality standards.", "icon": "ShieldCheck"},
+            {"title": "24/7 Support", "description": "Our team is always available to help you.", "icon": "Headphones"},
+            {"title": "Easy Returns", "description": "Hassle-free 30-day returns with full refund.", "icon": "RefreshCw"},
+            {"title": "Secure Payment", "description": "Shop with confidence using encrypted checkout.", "icon": "CreditCard"},
+            {"title": "Gift Wrapping", "description": "Premium gift wrapping available on any order.", "icon": "Gift"},
+        ],
+        "stat": [
+            {"value": "10K", "label": "Happy Customers", "suffix": "+"},
+            {"value": "500", "label": "Products Available", "suffix": "+"},
+            {"value": "99%", "label": "Satisfaction Rate", "suffix": ""},
+            {"value": "24/7", "label": "Customer Support", "suffix": ""},
+        ],
+        "faq": [
+            {"question": "What is your shipping policy?", "answer": "We offer free standard shipping on orders over $50. Most orders ship within 1-2 business days."},
+            {"question": "How do I return or exchange an item?", "answer": "We accept returns within 30 days of delivery. Items must be in original condition."},
+            {"question": "Do you ship internationally?", "answer": "Yes, we ship to over 50 countries. Rates vary by destination and are calculated at checkout."},
+            {"question": "How can I track my order?", "answer": "Once shipped, you will receive a confirmation email with a tracking number."},
+            {"question": "What payment methods do you accept?", "answer": "We accept all major credit cards, PayPal, Apple Pay, and Google Pay."},
+        ],
+        "testimonial": [
+            {"quote": "The quality exceeded my expectations. Fast shipping and beautiful packaging.", "author": "Sarah M.", "role": "Verified Buyer"},
+            {"quote": "Incredible customer service! They went above and beyond to help me.", "author": "James L.", "role": "Verified Buyer"},
+            {"quote": "Best online shopping experience in years. The product was exactly as described.", "author": "Emily R.", "role": "Verified Buyer"},
+        ],
+        "badge": [
+            {"icon": "ShieldCheck", "label": "Quality Assured", "sublabel": "100% authentic products"},
+            {"icon": "Truck", "label": "Free Shipping", "sublabel": "On orders over $50"},
+            {"icon": "RotateCcw", "label": "Easy Returns", "sublabel": "30-day return policy"},
+            {"icon": "Lock", "label": "Secure Checkout", "sublabel": "SSL encrypted payment"},
+        ],
+        "col": [
+            {"title": "Shop"},
+            {"title": "Help"},
+            {"title": "About"},
+        ],
+        "column": [
+            {"title": "Basic", "name": "Basic"},
+            {"title": "Standard", "name": "Standard"},
+            {"title": "Premium", "name": "Premium"},
+        ],
+        "row": [
+            {"feature": "Free Shipping", "label": "Free Shipping"},
+            {"feature": "Priority Support", "label": "Priority Support"},
+            {"feature": "Extended Warranty", "label": "Extended Warranty"},
+            {"feature": "Gift Wrapping", "label": "Gift Wrapping"},
+            {"feature": "Early Access", "label": "Early Access"},
+        ],
+    }
+
     def _resolve_numbered_token(token_name: str) -> str | None:
         """Resolve a numbered token like 'feature_1_title' to a default value."""
         # Match patterns: prefix_N_field or prefix_N_N_field
         m = re.match(r'^([a-z]+)_(\d+)(?:_(\d+))?_(.+)$', token_name)
         if m:
-            prefix, num, sub_num, field = m.group(1), m.group(2), m.group(3), m.group(4)
+            prefix, num_str, sub_num, field = m.group(1), m.group(2), m.group(3), m.group(4)
+            num = int(num_str)
+            # Try per-number variety first
+            variety = _NUMBERED_VARIETY.get(prefix)
+            if variety and (num - 1) < len(variety) and field in variety[num - 1]:
+                return variety[num - 1][field]
+            # Fall back to base defaults
             defaults = _NUMBERED_TOKEN_DEFAULTS.get(prefix, {})
             if field in defaults:
                 val = defaults[field]
                 # Append number for differentiation (e.g. "Feature 1", "Feature 2")
                 if field in ("title", "name", "label", "question") and val == prefix.title():
-                    return f"{val} {num}"
+                    return f"{val} {num_str}"
                 return val
             # Field not in known defaults — use humanized field name
             return field.replace("_", " ").title()
@@ -2880,12 +2939,39 @@ export default async function Page({ params }: { params: Promise<{ page: string 
 
             # ── Phase 4: Known non-numbered content tokens ──
             # Tokens like {cta_url}, {cta_text}, {hero_title} that aren't numbered
+            # Infer section title from filename archetype
+            _fname = tsx_file.stem.lower()
+            _ARCHETYPE_TITLES: dict[str, tuple[str, str]] = {
+                "hero": ("Discover Our Collection", "Premium quality products crafted with care"),
+                "product_showcase": ("Featured Products", "Handpicked selections from our latest collection"),
+                "features": ("Why Shop With Us", "Everything you need for a seamless experience"),
+                "comparison": ("Compare Our Tiers", "Find the plan that fits your needs"),
+                "logo_bar": ("Trusted By", "Brands that trust us"),
+                "testimonials": ("What Our Customers Say", "Real stories from real customers"),
+                "stats": ("By The Numbers", "Our track record speaks for itself"),
+                "trust_badges": ("Shop With Confidence", "Your satisfaction is guaranteed"),
+                "faq": ("Frequently Asked Questions", "Find answers to common questions"),
+                "newsletter": ("Stay In The Loop", "Subscribe for updates and exclusive offers"),
+                "about": ("About Us", "Learn more about what we do"),
+                "pricing": ("Plans & Pricing", "Choose the plan that works for you"),
+                "how_it_works": ("How It Works", "Simple steps to get started"),
+                "cta": ("Ready To Get Started?", "Take the next step today"),
+            }
+            _section_title = "Discover More"
+            _section_subtitle = "Learn more about what we offer"
+            for archetype_key, (title, subtitle) in _ARCHETYPE_TITLES.items():
+                if archetype_key in _fname:
+                    _section_title = title
+                    _section_subtitle = subtitle
+                    break
+
             _SAFE_TOKEN_REPLACEMENTS = {
                 "cta_url": "/collections", "cta_text": "Shop Now", "cta_label": "Shop Now",
                 "hero_title": "Welcome", "hero_subtitle": "Discover our collection",
                 "hero_description": "Premium quality products crafted with care.",
                 "hero_image": "/placeholder.svg", "hero_image_url": "/placeholder.svg",
-                "section_title": "About Us", "section_subtitle": "Learn more",
+                "section_title": _section_title, "section_subtitle": _section_subtitle,
+                "section_heading": _section_title, "section_subheading": _section_subtitle,
                 "section_description": "We are passionate about delivering exceptional products.",
                 "brand_name": "Brand", "store_name": "Store", "company_name": "Company",
                 "copyright_text": "All rights reserved.", "phone_number": "(555) 000-0000",
