@@ -1518,43 +1518,28 @@ export default function Page() {{
 
 
 def _inject_nav_props(code: str) -> str:
-    """Inject optional menu/logo/shopName props into a Navigation component."""
+    """Inject optional menu/logo/shopName props into a Navigation component.
+    Only modifies the function signature — the wrapper passes pre-formatted data."""
     import re
     prop_type = "{ menu?: { title: string; items: Array<{ title: string; url: string; items?: Array<{ title: string; url: string }> }> }; logo?: { url: string; altText: string | null; width?: number; height?: number }; shopName?: string }"
-    # Inject props into function signature
     code = re.sub(
-        r"export default function Navigation\s*\(\s*\)",
-        f"export default function Navigation({{ menu, logo, shopName }}: {prop_type} = {{}})",
+        r"export default function (\w+)\s*\(\s*\)",
+        rf"export default function \1({{ menu, logo, shopName }}: {prop_type} = {{}})",
         code,
     )
-    # Wrap hardcoded navLinks with menu fallback
-    nav_links_match = re.search(r"(const navLinks\s*=\s*\[[\s\S]*?\];)", code)
-    if nav_links_match:
-        original = nav_links_match.group(1)
-        code = code.replace(
-            original,
-            f"const fallbackLinks = {original.replace('const navLinks = ', '').rstrip(';')};\n  const navLinks = menu?.items?.length ? menu.items.map(i => ({{ label: i.title, url: i.url }})) : fallbackLinks;",
-        )
     return code
 
 
 def _inject_footer_props(code: str) -> str:
-    """Inject optional menu/shopName props into a Footer component."""
+    """Inject optional menu/shopName props into a Footer component.
+    Only modifies the function signature — the wrapper passes pre-formatted data."""
     import re
     prop_type = "{ menu?: { title: string; items: Array<{ title: string; url: string; items?: Array<{ title: string; url: string }> }> }; shopName?: string }"
     code = re.sub(
-        r"export default function Footer\s*\(\s*\)",
-        f"export default function Footer({{ menu, shopName }}: {prop_type} = {{}})",
+        r"export default function (\w+)\s*\(\s*\)",
+        rf"export default function \1({{ menu, shopName }}: {prop_type} = {{}})",
         code,
     )
-    # Wrap hardcoded columns with menu fallback
-    columns_match = re.search(r"(const columns\s*=\s*\[[\s\S]*?\];)", code)
-    if columns_match:
-        original = columns_match.group(1)
-        code = code.replace(
-            original,
-            f"const fallbackColumns = {original.replace('const columns = ', '').rstrip(';')};\n  const columns = menu?.items?.length ? menu.items.map(i => ({{ title: i.title, links: i.items?.map(sub => ({{ label: sub.title, url: sub.url }})) ?? [] }})) : fallbackColumns;",
-        )
     return code
 
 
@@ -1885,33 +1870,49 @@ export default async function Page({ params }: { params: Promise<{ handle: strin
 
 
 def _patch_showcase_section_props(section_code: str, component_name: str) -> str:
-    """Patch a PRODUCT-SHOWCASE section to accept optional products/collections props."""
+    """Patch a PRODUCT-SHOWCASE section to accept optional products/collections props.
+    Handles diverse template structures: module-scope or function-scope product arrays,
+    varied function names (template names like ProductShowcaseHoverCards, not always matching component_name)."""
     if "products?: " in section_code or "collections?: " in section_code:
         return section_code  # already patched
     import re
-    # Rename legacy client-specific names
     section_code = section_code.replace("turmCollections", "presetCollections")
-    # Inject props into the component signature (handles both React.FC and function patterns)
     prop_type = "{ products?: Array<{ title: string; handle: string; priceRange?: { minVariantPrice: { amount: string; currencyCode: string } }; images?: { edges: Array<{ node: { url: string; altText: string | null } }> } }>; collections?: Array<{ handle: string; title: string; description?: string; image?: { url: string } }> }"
-    # Pattern: export default function ComponentName() or const ComponentName: React.FC = () =>
+    # Match ANY export default function name (template names vary)
     section_code = re.sub(
-        rf"(export default function {component_name})\s*\(\s*\)",
+        r"(export default function \w+)\s*\(\s*\)",
         rf"\1({{ products, collections }}: {prop_type} = {{}})",
         section_code,
     )
+    # Also handle React.FC pattern with any name
     section_code = re.sub(
-        rf"(const {component_name}:\s*React\.FC)\s*=\s*\(\s*\)\s*=>",
+        r"(const \w+:\s*React\.FC)\s*=\s*\(\s*\)\s*=>",
         rf"\1<{prop_type}> = ({{ products, collections }}) =>",
         section_code,
     )
-    # Wrap hardcoded products array with prop fallback
+    # Find the function body opening brace
+    func_match = re.search(r"export default function \w+\([^)]*\)\s*\{", section_code)
+    # Handle hardcoded products array — move into function body if at module scope
     products_match = re.search(r"(const products\s*=\s*\[[\s\S]*?\];)", section_code)
     if products_match:
         original = products_match.group(1)
-        section_code = section_code.replace(
-            original,
-            f"const fallbackProducts = {original.replace('const products = ', '').rstrip(';')};\n  const displayProducts = products?.length ? products : fallbackProducts;",
-        )
+        array_literal = original.replace("const products = ", "").rstrip(";")
+        # Check if products array is at module scope (before function) or inside function
+        if func_match and products_match.start() < func_match.start():
+            # Module scope — remove and re-insert inside function body
+            section_code = section_code.replace(original, "")
+            # Re-find function match after removal (position shifted)
+            func_match = re.search(r"export default function \w+\([^)]*\)\s*\{", section_code)
+            if func_match:
+                insert_pos = func_match.end()
+                block = f"\n  const fallbackProducts = {array_literal};\n  const displayProducts = products?.length ? products : fallbackProducts;\n"
+                section_code = section_code[:insert_pos] + block + section_code[insert_pos:]
+        else:
+            # Already inside function — replace in place
+            section_code = section_code.replace(
+                original,
+                f"const fallbackProducts = {array_literal};\n  const displayProducts = products?.length ? products : fallbackProducts;",
+            )
         section_code = section_code.replace("products.map(", "displayProducts.map(")
     return section_code
 
@@ -2080,6 +2081,7 @@ def stage_deploy(
     build_cache: "BuildCache | None" = None,
     site_manifest: dict | None = None,
     section_files_by_page: dict[str, list[Path]] | None = None,
+    shopify_config_path: str | Path | None = None,
 ):
     """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/.
     When site_manifest and section_files_by_page are set (Layer 6), deploys multi-route app
@@ -2465,7 +2467,12 @@ export {{ gsap, ScrollTrigger, {", ".join(plugin_registers)} }};
             for wrapper_name in ("NavigationWrapper.tsx", "FooterWrapper.tsx"):
                 wrapper_src = shopify_lib_src / wrapper_name
                 if wrapper_src.exists():
-                    write_file(wrapper_dest / wrapper_name, read_file(wrapper_src))
+                    wrapper_code = read_file(wrapper_src)
+                    # Fix relative imports: wrappers live in components/layout/ but reference lib/shopify/ modules
+                    wrapper_code = wrapper_code.replace('from "./client"', 'from "@/lib/shopify/client"')
+                    wrapper_code = wrapper_code.replace('from "./queries"', 'from "@/lib/shopify/queries"')
+                    wrapper_code = wrapper_code.replace('from "./types"', 'from "@/lib/shopify/types"')
+                    write_file(wrapper_dest / wrapper_name, wrapper_code)
             print("  ✓ Layer 7: Copied NavigationWrapper + FooterWrapper to layout/")
             # Override next.config.ts with Shopify image patterns
             write_file(
@@ -2934,19 +2941,20 @@ async function downloadOne(url) {{
 
     # ── Layer 7: Generate .env.local with Shopify credentials when commerce routes present ──
     if has_commerce_routes:
-        shopify_config_path = None
-        # Look for shopify_config.json in compiled dir, then output dir
+        resolved_cfg = None
+        # Look for shopify_config.json: function param, output dir, extraction dir, root
         for candidate in [
+            Path(shopify_config_path) if shopify_config_path else None,
             OUTPUT_DIR / project_name / "shopify_config.json",
             (Path(extraction_dir) / "shopify_config.json") if extraction_dir else None,
             ROOT / "shopify_config.json",
         ]:
             if candidate and candidate.exists():
-                shopify_config_path = candidate
+                resolved_cfg = candidate
                 break
-        if shopify_config_path:
+        if resolved_cfg:
             import uuid as _uuid
-            shopify_cfg = json.loads(shopify_config_path.read_text(encoding="utf-8"))
+            shopify_cfg = json.loads(resolved_cfg.read_text(encoding="utf-8"))
             revalidation_secret = str(_uuid.uuid4())
             env_lines = [
                 f'SHOPIFY_STORE_DOMAIN={shopify_cfg.get("store_domain", "")}',
@@ -3359,6 +3367,8 @@ def main():
                         default=None, metavar="PATH")
     parser.add_argument("--set-vercel-env", action="store_true",
                         help="Auto-set Shopify env vars on Vercel + register webhooks after deploy")
+    parser.add_argument("--shopify-config", help="Path to shopify_config.json (from Layer 4 output)",
+                        default=None, metavar="PATH")
 
     args = parser.parse_args()
     if getattr(args, "compiled_dir", None) and not args.industry:
@@ -3597,6 +3607,7 @@ def main():
                     build_cache=build_cache,
                     site_manifest=site_manifest,
                     section_files_by_page=section_files_by_page,
+                    shopify_config_path=getattr(args, "shopify_config", None),
                 )
                 save_checkpoint(output_dir, "deploy", args.project)
                 deploy_ran = True
