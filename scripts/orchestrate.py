@@ -975,9 +975,9 @@ _CONTENT_TOKEN_DEFAULTS: dict[str, str] = {
     "cta_text": "Shop Now",
     "cta_url": "#",
     "price": "$0.00",
-    "product_image_src": "/images/placeholder.jpg",
+    "product_image_src": "/placeholder.svg",
     "product_image_alt": "Product image",
-    "image_url": "/images/placeholder.jpg",
+    "image_url": "/placeholder.svg",
     "image_alt": "Image",
     "section_title": "About Us",
     "section_subtitle": "Learn more about what we do",
@@ -2764,23 +2764,140 @@ export default async function Page({ params }: { params: Promise<{ page: string 
             write_file(comp_dir / filepath.name, code)
 
     # ── Global placeholder token sanitization ──
-    # Sweep all .tsx files and replace href-bearing / image-bearing placeholder tokens
-    # that slipped through template injection. This prevents broken links like {cta_url}.
+    # Sweep all .tsx files and replace ALL remaining placeholder tokens from Supabase
+    # templates. These tokens use {token_name} syntax and render as visible text if not replaced.
     _sanitize_count = 0
+
+    # Archetype-aware content defaults for numbered tokens like {feature_1_title}
+    _NUMBERED_TOKEN_DEFAULTS: dict[str, dict[str, str]] = {
+        "feature": {"icon": "Star", "title": "Feature", "description": "Designed to help you achieve more with less effort.", "label": "Feature", "text": "Feature"},
+        "testimonial": {"quote": "An exceptional experience from start to finish. Highly recommended.", "author": "Happy Customer", "role": "Verified Buyer", "name": "Customer", "company": "Local Business", "image": "/placeholder.svg", "avatar": "/placeholder.svg", "rating": "5"},
+        "stat": {"value": "99%", "label": "Satisfaction", "suffix": "+", "description": "Trusted by thousands of happy customers.", "icon": "TrendingUp", "prefix": ""},
+        "faq": {"question": "How can we help you?", "answer": "We are here to support you every step of the way. Contact us anytime for assistance."},
+        "badge": {"icon": "Shield", "label": "Certified", "sublabel": "Quality guaranteed", "text": "Trusted"},
+        "product": {"name": "Product", "price": "$0.00", "tag": "New", "image_alt": "Product image", "image_url": "/placeholder.svg", "description": "Premium quality crafted for you.", "url": "#", "image": "/placeholder.svg"},
+        "column": {"name": "Column", "title": "Column", "description": "More information coming soon."},
+        "col": {"title": "Info", "description": "More details coming soon."},
+        "row": {"feature": "Included", "label": "Feature", "value": "Yes"},
+        "logo": {"image_url": "/placeholder.svg", "alt": "Partner", "name": "Partner", "src": "/placeholder.svg", "url": "#"},
+        "nav": {"label": "Link", "url": "#", "href": "#"},
+        "social": {"icon_path": "M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z", "url": "#", "label": "Social", "icon": "Globe"},
+        "step": {"title": "Step", "description": "Follow these simple steps to get started.", "icon": "ArrowRight", "number": "1"},
+        "benefit": {"title": "Benefit", "description": "Experience the difference with our approach.", "icon": "Check"},
+        "pricing": {"name": "Plan", "price": "$0", "description": "Everything you need to get started.", "feature": "Included", "cta": "Get Started"},
+        "category": {"name": "Category", "image": "/placeholder.svg", "url": "#", "count": "12"},
+        "breadcrumb": {"label": "Home", "url": "/", "text": "Home"},
+        "link": {"label": "Link", "url": "#", "text": "Link"},
+        "card": {"title": "Card Title", "description": "Discover something new.", "image": "/placeholder.svg", "url": "#"},
+        "item": {"title": "Item", "description": "Quality assured.", "icon": "Package", "label": "Item"},
+        "service": {"title": "Service", "description": "Professional service tailored to your needs.", "icon": "Briefcase"},
+        "team": {"name": "Team Member", "role": "Specialist", "image": "/placeholder.svg", "bio": "Passionate about delivering results."},
+        "value": {"title": "Our Value", "description": "What drives us forward every day.", "icon": "Heart"},
+        "cta": {"text": "Shop Now", "url": "/collections", "label": "Shop Now"},
+    }
+
+    def _resolve_numbered_token(token_name: str) -> str | None:
+        """Resolve a numbered token like 'feature_1_title' to a default value."""
+        # Match patterns: prefix_N_field or prefix_N_N_field
+        m = re.match(r'^([a-z]+)_(\d+)(?:_(\d+))?_(.+)$', token_name)
+        if m:
+            prefix, num, sub_num, field = m.group(1), m.group(2), m.group(3), m.group(4)
+            defaults = _NUMBERED_TOKEN_DEFAULTS.get(prefix, {})
+            if field in defaults:
+                val = defaults[field]
+                # Append number for differentiation (e.g. "Feature 1", "Feature 2")
+                if field in ("title", "name", "label", "question") and val == prefix.title():
+                    return f"{val} {num}"
+                return val
+            # Field not in known defaults — use humanized field name
+            return field.replace("_", " ").title()
+        # Match non-numbered patterns: prefix_field (e.g. hero_title, section_heading)
+        m2 = re.match(r'^([a-z]+)_(.+)$', token_name)
+        if m2:
+            prefix, field = m2.group(1), m2.group(2)
+            defaults = _NUMBERED_TOKEN_DEFAULTS.get(prefix, {})
+            if field in defaults:
+                return defaults[field]
+        return None
+
     for tsx_file in (src_dir).rglob("*.tsx"):
         try:
             _raw = tsx_file.read_text(encoding="utf-8")
             _cleaned = _raw
-            # Replace href-bearing placeholder tokens with safe defaults
+
+            # ── Phase 1: Structural replacements (href, src, url, alt) ──
             _cleaned = _cleaned.replace('href="{cta_url}"', 'href="/collections"')
             _cleaned = re.sub(r"href:\s*'\{[^}]+_href\}'", "href: '#'", _cleaned)
             _cleaned = re.sub(r'href="\{[^}]+_href\}"', 'href="#"', _cleaned)
-            # Replace image src placeholder tokens
-            _cleaned = re.sub(r"image:\s*'\{[^}]+_image(?:_url)?\}'", "image: '/placeholder.jpg'", _cleaned)
-            _cleaned = re.sub(r'src="\{[^}]+_(?:src|url)\}"', 'src="/placeholder.jpg"', _cleaned)
+            _cleaned = re.sub(r"image:\s*'\{[^}]+_image(?:_url)?\}'", "image: '/placeholder.svg'", _cleaned)
+            _cleaned = re.sub(r'src="\{[^}]+_(?:src|url|image)\}"', 'src="/placeholder.svg"', _cleaned)
             _cleaned = re.sub(r'alt="\{[^}]+_alt\}"', 'alt="Image"', _cleaned)
-            # Replace product URL/image placeholders in arrays
             _cleaned = re.sub(r"url:\s*'\{[^}]+_url\}'", "url: '#'", _cleaned)
+            _cleaned = re.sub(r'href="\{[^}]+_url\}"', 'href="#"', _cleaned)
+
+            # ── Phase 2: Content tokens inside single-quoted strings ──
+            # e.g. title: '{feature_1_title}' → title: 'Feature 1'
+            def _replace_single_quoted(m: re.Match) -> str:
+                key_part = m.group(1)  # e.g. "title"
+                token = m.group(2)     # e.g. "feature_1_title"
+                resolved = _resolve_numbered_token(token)
+                if resolved is None:
+                    resolved = token.replace("_", " ").title()
+                return f"{key_part}'{resolved}'"
+            _cleaned = re.sub(
+                r"(\w+:\s*)'\{([a-z][a-z_0-9]+)\}'",
+                _replace_single_quoted,
+                _cleaned,
+            )
+
+            # ── Phase 3: Remaining numbered content tokens ──
+            # Targets clearly identifiable content tokens: {prefix_N_field} patterns
+            # These are always template placeholders, never JS variables.
+            # Order matters: handle quoted tokens FIRST (to avoid double-quoting)
+
+            # 3a: Double-quoted tokens: "{feature_1_title}" → "Feature 1"
+            _cleaned = re.sub(
+                r'"\{([a-z]+_\d+(?:_\d+)?_[a-z_]+)\}"',
+                lambda m: '"' + (_resolve_numbered_token(m.group(1)) or m.group(1).replace("_", " ").title()) + '"',
+                _cleaned,
+            )
+            # 3b: Bare tokens NOT already inside quotes: {feature_1_title} → "Feature 1"
+            def _replace_numbered_token(m: re.Match) -> str:
+                token = m.group(1)
+                resolved = _resolve_numbered_token(token)
+                if resolved is None:
+                    return m.group(0)
+                # Check if already inside quotes (char before { is " or ')
+                start = m.start()
+                if start > 0 and _cleaned[start - 1] in ('"', "'"):
+                    return resolved  # Inside quotes — return without wrapping
+                return f'"{resolved}"'
+            _cleaned = re.sub(
+                r'\{([a-z]+_\d+(?:_\d+)?_[a-z_]+)\}',
+                _replace_numbered_token,
+                _cleaned,
+            )
+
+            # ── Phase 4: Known non-numbered content tokens ──
+            # Tokens like {cta_url}, {cta_text}, {hero_title} that aren't numbered
+            _SAFE_TOKEN_REPLACEMENTS = {
+                "cta_url": "/collections", "cta_text": "Shop Now", "cta_label": "Shop Now",
+                "hero_title": "Welcome", "hero_subtitle": "Discover our collection",
+                "hero_description": "Premium quality products crafted with care.",
+                "hero_image": "/placeholder.svg", "hero_image_url": "/placeholder.svg",
+                "section_title": "About Us", "section_subtitle": "Learn more",
+                "section_description": "We are passionate about delivering exceptional products.",
+                "brand_name": "Brand", "store_name": "Store", "company_name": "Company",
+                "copyright_text": "All rights reserved.", "phone_number": "(555) 000-0000",
+                "email_address": "hello@example.com", "address_text": "123 Main St",
+                "logo_url": "/logo.svg", "logo_src": "/logo.svg", "logo_alt": "Logo",
+                "placeholder_text": "Enter your email", "button_text": "Subscribe",
+            }
+            for tok, val in _SAFE_TOKEN_REPLACEMENTS.items():
+                _cleaned = _cleaned.replace(f"'{{{tok}}}'", f"'{val}'")
+                _cleaned = _cleaned.replace(f'"{{{tok}}}"', f'"{val}"')
+                _cleaned = _cleaned.replace(f'{{{tok}}}', f'"{val}"')
+
             if _cleaned != _raw:
                 tsx_file.write_text(_cleaned, encoding="utf-8")
                 _sanitize_count += 1
@@ -3059,6 +3176,47 @@ async function downloadOne(url) {{
                         print(f"  ⚠ Lottie download error: {lottie_result.stderr[-200:]}")
             except (json.JSONDecodeError, OSError):
                 pass
+
+    # ── Generate default placeholder assets ──
+    public_dir = site_dir / "public"
+    public_dir.mkdir(parents=True, exist_ok=True)
+
+    # placeholder.svg — neutral grey rectangle with subtle icon
+    placeholder_svg = public_dir / "placeholder.svg"
+    if not placeholder_svg.exists():
+        placeholder_svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">'
+            '<rect width="800" height="600" fill="#e5e7eb"/>'
+            '<g transform="translate(400,300)" opacity="0.4">'
+            '<rect x="-40" y="-30" width="80" height="60" rx="4" fill="none" stroke="#9ca3af" stroke-width="2"/>'
+            '<circle cx="-18" cy="-10" r="7" fill="#9ca3af"/>'
+            '<path d="M-30 20 L-10 0 L10 12 L30-5 L30 20Z" fill="#9ca3af"/>'
+            '</g></svg>',
+            encoding="utf-8",
+        )
+
+    # logo.svg — minimal text-based logo
+    logo_svg = public_dir / "logo.svg"
+    if not logo_svg.exists():
+        _display_name = project_name.replace("-", " ").replace("_", " ").title()
+        logo_svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="40" viewBox="0 0 160 40">'
+            f'<text x="80" y="26" text-anchor="middle" font-family="system-ui,sans-serif" '
+            f'font-size="18" font-weight="600" fill="#111827">{_display_name}</text></svg>',
+            encoding="utf-8",
+        )
+
+    # placeholder.jpg fallback — symlink or copy for code that references .jpg
+    placeholder_jpg = public_dir / "placeholder.jpg"
+    if not placeholder_jpg.exists():
+        try:
+            placeholder_jpg.symlink_to("placeholder.svg")
+        except OSError:
+            # Symlinks may fail on some systems; copy the SVG content instead
+            import shutil
+            shutil.copy2(placeholder_svg, placeholder_jpg)
+
+    print("  ✓ Generated default placeholder assets (placeholder.svg, logo.svg)")
 
     # ── Install dependencies ──
     print("  Installing dependencies (npm install)...")
