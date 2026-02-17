@@ -36,6 +36,7 @@ export interface Product {
   variants: { edges: Array<{ node: ProductVariant }> };
   tags: string[];
   availableForSale: boolean;
+  seo?: { title?: string; description?: string };
 }
 
 export interface Collection {
@@ -43,10 +44,29 @@ export interface Collection {
   title: string;
   description: string;
   image?: Image | null;
+  seo?: { title?: string; description?: string };
   products: {
     edges: Array<{ node: Product }>;
     pageInfo?: { hasNextPage: boolean; endCursor: string | null };
   };
+}
+
+export interface MenuItem {
+  title: string;
+  url: string;
+  items?: MenuItem[];
+}
+
+export interface Menu {
+  title: string;
+  items: MenuItem[];
+}
+
+export interface ShopPage {
+  title: string;
+  body: string;
+  bodySummary: string;
+  seo?: { title?: string; description?: string } | null;
 }
 
 export interface CartLine {

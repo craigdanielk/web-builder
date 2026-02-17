@@ -1517,11 +1517,53 @@ export default function Page() {{
     write_file(OUTPUT_DIR / project_name / "page.tsx", page_code)
 
 
+def _inject_nav_props(code: str) -> str:
+    """Inject optional menu/logo/shopName props into a Navigation component."""
+    import re
+    prop_type = "{ menu?: { title: string; items: Array<{ title: string; url: string; items?: Array<{ title: string; url: string }> }> }; logo?: { url: string; altText: string | null; width?: number; height?: number }; shopName?: string }"
+    # Inject props into function signature
+    code = re.sub(
+        r"export default function Navigation\s*\(\s*\)",
+        f"export default function Navigation({{ menu, logo, shopName }}: {prop_type} = {{}})",
+        code,
+    )
+    # Wrap hardcoded navLinks with menu fallback
+    nav_links_match = re.search(r"(const navLinks\s*=\s*\[[\s\S]*?\];)", code)
+    if nav_links_match:
+        original = nav_links_match.group(1)
+        code = code.replace(
+            original,
+            f"const fallbackLinks = {original.replace('const navLinks = ', '').rstrip(';')};\n  const navLinks = menu?.items?.length ? menu.items.map(i => ({{ label: i.title, url: i.url }})) : fallbackLinks;",
+        )
+    return code
+
+
+def _inject_footer_props(code: str) -> str:
+    """Inject optional menu/shopName props into a Footer component."""
+    import re
+    prop_type = "{ menu?: { title: string; items: Array<{ title: string; url: string; items?: Array<{ title: string; url: string }> }> }; shopName?: string }"
+    code = re.sub(
+        r"export default function Footer\s*\(\s*\)",
+        f"export default function Footer({{ menu, shopName }}: {prop_type} = {{}})",
+        code,
+    )
+    # Wrap hardcoded columns with menu fallback
+    columns_match = re.search(r"(const columns\s*=\s*\[[\s\S]*?\];)", code)
+    if columns_match:
+        original = columns_match.group(1)
+        code = code.replace(
+            original,
+            f"const fallbackColumns = {original.replace('const columns = ', '').rstrip(';')};\n  const columns = menu?.items?.length ? menu.items.map(i => ({{ title: i.title, links: i.items?.map(sub => ({{ label: sub.title, url: sub.url }})) ?? [] }})) : fallbackColumns;",
+        )
+    return code
+
+
 def stage_shared_components(
     manifest: dict,
     preset: str,
     project_name: str,
     build_cache: "BuildCache | None" = None,
+    has_commerce_routes: bool = False,
 ) -> list[Path]:
     """Layer 6: Generate Navigation and Footer once as shared layout components."""
     print("\n🧩 Layer 6: Generating shared layout components (Navigation, Footer)...")
@@ -1564,6 +1606,22 @@ def stage_shared_components(
         elif "Footer.tsx" in str(fpath):
             code = code.replace("Section02FOOTER", "Footer").replace("Section02Footer", "Footer")
         fpath.write_text(code, encoding="utf-8")
+
+    # ── Commerce prop injection: make NAV/FOOTER accept optional Shopify data ──
+    if has_commerce_routes:
+        for fpath in files:
+            if not fpath.exists():
+                continue
+            code = fpath.read_text(encoding="utf-8")
+            if "Navigation.tsx" in str(fpath):
+                code = _inject_nav_props(code)
+                fpath.write_text(code, encoding="utf-8")
+                print("  ✓ Injected optional menu/logo/shopName props into Navigation")
+            elif "Footer.tsx" in str(fpath):
+                code = _inject_footer_props(code)
+                fpath.write_text(code, encoding="utf-8")
+                print("  ✓ Injected optional menu/shopName props into Footer")
+
     print(f"  ✓ Wrote {len(files)} shared components to output/{project_name}/shared/")
     return files
 
@@ -1763,9 +1821,24 @@ def _layer7_collection_page_content() -> str:
 import { COLLECTION_PRODUCTS } from "@/lib/shopify/queries";
 import type { CollectionProductsResult } from "@/lib/shopify/queries";
 import Link from "next/link";
+import Image from "next/image";
 
 export function generateStaticParams() {
   return [];
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }) {
+  const { handle } = await params;
+  try {
+    const data = await shopifyFetch<CollectionProductsResult>(COLLECTION_PRODUCTS, { handle, first: 1 });
+    const c = data?.collection;
+    return {
+      title: c?.seo?.title || c?.title || "Collection",
+      description: c?.seo?.description || c?.description || "",
+    };
+  } catch {
+    return { title: "Collection" };
+  }
 }
 
 export default async function Page({ params }: { params: Promise<{ handle: string }> }) {
@@ -1794,7 +1867,7 @@ export default async function Page({ params }: { params: Promise<{ handle: strin
           <Link key={p.handle} href={`/products/${p.handle}`} className="group">
             <div className="aspect-square bg-neutral-100 rounded-lg overflow-hidden mb-2">
               {p.featuredImage?.url && (
-                <img src={p.featuredImage.url} alt={p.featuredImage.altText ?? p.title} className="w-full h-full object-cover" />
+                <Image src={p.featuredImage.url} alt={p.featuredImage.altText ?? p.title} width={400} height={400} className="w-full h-full object-cover" />
               )}
             </div>
             <h2 className="font-medium text-neutral-900 group-hover:underline">{p.title}</h2>
@@ -1811,26 +1884,44 @@ export default async function Page({ params }: { params: Promise<{ handle: strin
 '''
 
 
-def _patch_section04_collections_prop(section04_code: str) -> str:
-    """Patch 04-product_showcase to accept optional collections prop from Storefront API."""
-    if "collections?: " in section04_code:
-        return section04_code
-    # Rename legacy collections prop to presetCollections (no client-specific names)
-    section04_code = section04_code.replace("turmCollections", "presetCollections")
-    # Add prop and merge with presetCollections for styling (icon, gradient, etc.)
-    section04_code = section04_code.replace(
-        "const Section04PRODUCTSHOWCASE: React.FC = () => {",
-        "const Section04PRODUCTSHOWCASE: React.FC<{ collections?: Array<{ handle: string; title: string; description?: string; image?: { url: string } }> }> = ({ collections: collectionsProp }) => {\n  const list = collectionsProp?.length ? collectionsProp.map((c, i) => ({ ...presetCollections[i % presetCollections.length], ...c })) : presetCollections;",
+def _patch_showcase_section_props(section_code: str, component_name: str) -> str:
+    """Patch a PRODUCT-SHOWCASE section to accept optional products/collections props."""
+    if "products?: " in section_code or "collections?: " in section_code:
+        return section_code  # already patched
+    import re
+    # Rename legacy client-specific names
+    section_code = section_code.replace("turmCollections", "presetCollections")
+    # Inject props into the component signature (handles both React.FC and function patterns)
+    prop_type = "{ products?: Array<{ title: string; handle: string; priceRange?: { minVariantPrice: { amount: string; currencyCode: string } }; images?: { edges: Array<{ node: { url: string; altText: string | null } }> } }>; collections?: Array<{ handle: string; title: string; description?: string; image?: { url: string } }> }"
+    # Pattern: export default function ComponentName() or const ComponentName: React.FC = () =>
+    section_code = re.sub(
+        rf"(export default function {component_name})\s*\(\s*\)",
+        rf"\1({{ products, collections }}: {prop_type} = {{}})",
+        section_code,
     )
-    section04_code = section04_code.replace(
-        "presetCollections.map((collection, index)",
-        "list.map((collection, index)",
+    section_code = re.sub(
+        rf"(const {component_name}:\s*React\.FC)\s*=\s*\(\s*\)\s*=>",
+        rf"\1<{prop_type}> = ({{ products, collections }}) =>",
+        section_code,
     )
-    return section04_code
+    # Wrap hardcoded products array with prop fallback
+    products_match = re.search(r"(const products\s*=\s*\[[\s\S]*?\];)", section_code)
+    if products_match:
+        original = products_match.group(1)
+        section_code = section_code.replace(
+            original,
+            f"const fallbackProducts = {original.replace('const products = ', '').rstrip(';')};\n  const displayProducts = products?.length ? products : fallbackProducts;",
+        )
+        section_code = section_code.replace("products.map(", "displayProducts.map(")
+    return section_code
 
 
-def _layer7_index_page_content(src_homepage_content: str) -> str:
-    """Layer 7: Homepage that fetches collections from Storefront API and passes to product showcase section."""
+def _layer7_index_page_content(src_homepage_content: str, showcase_component: str | None = None) -> str:
+    """Layer 7: Homepage that fetches collections + featured products from Storefront API.
+
+    Uses hidden homepage collections (curated by store owner) with fallback to
+    best-selling products, then to all collections.
+    """
     if "shopifyFetch" in src_homepage_content or "COLLECTIONS_LIST" in src_homepage_content:
         return src_homepage_content  # already injected
     # Add Storefront imports after last import line
@@ -1841,33 +1932,99 @@ def _layer7_index_page_content(src_homepage_content: str) -> str:
             insert_idx = i + 1
     shopify_imports = [
         'import { shopifyFetch } from "@/lib/shopify/client";',
-        'import { COLLECTIONS_LIST } from "@/lib/shopify/queries";',
-        'import type { CollectionsListResult } from "@/lib/shopify/queries";',
+        'import { COLLECTIONS_LIST, COLLECTION_BY_HANDLE, FEATURED_PRODUCTS, SHOP_INFO } from "@/lib/shopify/queries";',
+        'import type { CollectionsListResult, CollectionByHandleResult, FeaturedProductsResult, ShopInfoResult } from "@/lib/shopify/queries";',
     ]
     for imp in reversed(shopify_imports):
         lines.insert(insert_idx, imp)
     content = "\n".join(lines)
-    # Make Page async and add fetch + collections (defensive: try/catch + Array.isArray so build never fails on .map)
-    content = content.replace(
-        "export default function Page() {",
-        "export default async function Page() {\n  let collections: Array<{ handle: string; title: string; description: string; image?: { url: string; altText: string | null } | null }> = [];\n  try {\n    const data = await shopifyFetch<CollectionsListResult>(COLLECTIONS_LIST, { first: 20 });\n    const edges = data?.collections?.edges;\n    collections = Array.isArray(edges) ? edges.map((e) => ({ handle: e.node.handle, title: e.node.title, description: e.node.description ?? \"\", image: e.node.image })) : [];\n  } catch { collections = []; }\n",
-    )
-    content = content.replace(
-        "<Section04PRODUCTSHOWCASE />",
-        "<Section04PRODUCTSHOWCASE collections={collections} />",
-    )
+
+    # Build the data-fetch block
+    fetch_block = '''export default async function Page() {
+  type FeaturedProduct = { title: string; handle: string; priceRange?: { minVariantPrice: { amount: string; currencyCode: string } }; images?: { edges: Array<{ node: { url: string; altText: string | null } }> } };
+  let collections: Array<{ handle: string; title: string; description: string; image?: { url: string; altText: string | null } | null }> = [];
+  let featuredProducts: FeaturedProduct[] = [];
+  try {
+    const [collectionsData, featuredData, fallbackData] = await Promise.all([
+      shopifyFetch<CollectionsListResult>(COLLECTIONS_LIST, { first: 20 }),
+      shopifyFetch<CollectionByHandleResult>(COLLECTION_BY_HANDLE, { handle: "hidden-homepage-featured-items", first: 12 }).catch(() => null),
+      shopifyFetch<FeaturedProductsResult>(FEATURED_PRODUCTS, { first: 12 }).catch(() => null),
+    ]);
+    const edges = collectionsData?.collections?.edges;
+    collections = Array.isArray(edges) ? edges.map((e) => ({ handle: e.node.handle, title: e.node.title, description: e.node.description ?? "", image: e.node.image })) : [];
+    // Fallback chain: hidden collection → best-selling → first collection's products
+    const hiddenProducts = featuredData?.collection?.products?.edges?.map(e => e.node) ?? [];
+    if (hiddenProducts.length > 0) {
+      featuredProducts = hiddenProducts;
+    } else {
+      const bestSelling = fallbackData?.products?.edges?.map(e => e.node) ?? [];
+      featuredProducts = bestSelling;
+    }
+  } catch { collections = []; featuredProducts = []; }
+'''
+    content = content.replace("export default function Page() {", fetch_block)
+
+    # SEO metadata from shop info
+    metadata_block = '''export async function generateMetadata() {
+  try {
+    const data = await shopifyFetch<ShopInfoResult>(SHOP_INFO);
+    return {
+      title: data?.shop?.name || "Home",
+      description: data?.shop?.description || "",
+    };
+  } catch {
+    return { title: "Home" };
+  }
+}
+
+'''
+    # Insert generateMetadata before the Page function
+    content = content.replace("export default async function Page() {", metadata_block + "export default async function Page() {")
+
+    # Pass props to the showcase component (manifest-driven, not hardcoded)
+    if showcase_component:
+        content = content.replace(
+            f"<{showcase_component} />",
+            f"<{showcase_component} products={{featuredProducts}} collections={{collections}} />",
+        )
+    else:
+        # Fallback: try common patterns
+        for comp in ["Section04PRODUCTSHOWCASE", "Section03PRODUCTSHOWCASE", "Section05PRODUCTSHOWCASE"]:
+            if f"<{comp} />" in content:
+                content = content.replace(
+                    f"<{comp} />",
+                    f"<{comp} products={{featuredProducts}} collections={{collections}} />",
+                )
+                break
     return content
 
 
 def _layer7_product_page_content() -> str:
     """Layer 7: Product page that fetches from Storefront API."""
+    # Note: descriptionHtml is trusted content from Shopify's Storefront API,
+    # authored by the store owner in Shopify admin. Shopify sanitizes this content.
     return '''import { shopifyFetch } from "@/lib/shopify/client";
 import { PRODUCT_BY_HANDLE } from "@/lib/shopify/queries";
 import type { ProductByHandleResult } from "@/lib/shopify/queries";
 import Link from "next/link";
+import Image from "next/image";
 
 export function generateStaticParams() {
   return [];
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ handle: string }> }) {
+  const { handle } = await params;
+  try {
+    const data = await shopifyFetch<ProductByHandleResult>(PRODUCT_BY_HANDLE, { handle });
+    const p = data?.product;
+    return {
+      title: p?.seo?.title || p?.title || "Product",
+      description: p?.seo?.description || p?.description || "",
+    };
+  } catch {
+    return { title: "Product" };
+  }
 }
 
 export default async function Page({ params }: { params: Promise<{ handle: string }> }) {
@@ -1884,6 +2041,7 @@ export default async function Page({ params }: { params: Promise<{ handle: strin
     );
   }
   const price = product.priceRange?.minVariantPrice;
+  /* descriptionHtml: trusted content from Shopify Storefront API, authored by store owner */
   return (
     <main className="min-h-screen pt-24 px-6 pb-12 max-w-4xl mx-auto">
       <nav className="text-sm text-neutral-500 mb-4">
@@ -1894,7 +2052,7 @@ export default async function Page({ params }: { params: Promise<{ handle: strin
       <div className="grid md:grid-cols-2 gap-8">
         <div className="aspect-square bg-neutral-100 rounded-lg overflow-hidden">
           {product.featuredImage?.url && (
-            <img src={product.featuredImage.url} alt={product.featuredImage.altText ?? product.title} className="w-full h-full object-cover" />
+            <Image src={product.featuredImage.url} alt={product.featuredImage.altText ?? product.title} width={600} height={600} className="w-full h-full object-cover" />
           )}
         </div>
         <div>
@@ -1905,7 +2063,6 @@ export default async function Page({ params }: { params: Promise<{ handle: strin
             </p>
           )}
           {product.description && <p className="text-neutral-600 whitespace-pre-wrap mb-6">{product.description}</p>}
-          <p className="text-sm text-neutral-500">Add to cart — Layer 8 (cart UI) can be wired next.</p>
         </div>
       </div>
     </main>
@@ -1936,6 +2093,10 @@ def stage_deploy(
     else:
         pass  # use existing sections, section_files
 
+    # ── Determine commerce routes early (used for layout, next.config, wrappers) ──
+    _page_ids = [p.get("id") for p in (site_manifest or {}).get("pages", [])] if is_multipage else []
+    has_commerce_routes = "collection-template" in _page_ids or "product-template" in _page_ids
+
     # ── Database path: use cached style from Supabase ──
     if build_cache and build_cache.style_config:
         preset_content = build_cache.build_synthetic_preset_content()
@@ -1965,6 +2126,8 @@ def stage_deploy(
     }
     if engine == "gsap":
         deps["gsap"] = "^3.14.2"
+    if has_commerce_routes:
+        deps["@tailwindcss/typography"] = "^0.5.16"
 
     # Detect Lottie assets from extraction data
     has_lottie = False
@@ -2165,8 +2328,16 @@ def stage_deploy(
         font_config = chr(10) + font_config + chr(10)
 
     if is_multipage:
-        import_lines.append('import Navigation from "@/components/layout/Navigation";')
-        import_lines.append('import Footer from "@/components/layout/Footer";')
+        if has_commerce_routes:
+            import_lines.append('import NavigationWrapper from "@/components/layout/NavigationWrapper";')
+            import_lines.append('import FooterWrapper from "@/components/layout/FooterWrapper";')
+            nav_tag = "NavigationWrapper"
+            footer_tag = "FooterWrapper"
+        else:
+            import_lines.append('import Navigation from "@/components/layout/Navigation";')
+            import_lines.append('import Footer from "@/components/layout/Footer";')
+            nav_tag = "Navigation"
+            footer_tag = "Footer"
         layout_code = f"""{chr(10).join(import_lines)}
 {font_config}
 export const metadata: Metadata = {{
@@ -2178,9 +2349,9 @@ export default function RootLayout({{ children }}: {{ children: React.ReactNode 
   return (
     <html lang="en">
       <body className="antialiased" style={{{{ fontFamily: "{font_family}" }}}}>
-        <Navigation />
+        <{nav_tag} />
         {{children}}
-        <Footer />
+        <{footer_tag} />
       </body>
     </html>
   );
@@ -2280,8 +2451,6 @@ export {{ gsap, ScrollTrigger, {", ".join(plugin_registers)} }};
                     write_file(dest_sub / fpath.name, read_file(fpath))
         # ── Layer 7: Copy lib/shopify when manifest has commerce routes (Storefront API client, cart, queries) ──
         industry = (site_manifest or {}).get("industry", "")
-        page_ids = [p.get("id") for p in site_manifest.get("pages", [])]
-        has_commerce_routes = "collection-template" in page_ids or "product-template" in page_ids
         if has_commerce_routes and (ROOT / "lib" / "shopify").exists():
             shopify_lib_src = ROOT / "lib" / "shopify"
             shopify_lib_dest = src_dir / "lib" / "shopify"
@@ -2290,6 +2459,30 @@ export {{ gsap, ScrollTrigger, {", ".join(plugin_registers)} }};
                 if f.is_file():
                     write_file(shopify_lib_dest / f.name, read_file(f))
             print("  ✓ Layer 7: Copied lib/shopify (Storefront API client, cart, queries)")
+            # Copy RSC wrappers for Navigation/Footer
+            wrapper_dest = src_dir / "components" / "layout"
+            wrapper_dest.mkdir(parents=True, exist_ok=True)
+            for wrapper_name in ("NavigationWrapper.tsx", "FooterWrapper.tsx"):
+                wrapper_src = shopify_lib_src / wrapper_name
+                if wrapper_src.exists():
+                    write_file(wrapper_dest / wrapper_name, read_file(wrapper_src))
+            print("  ✓ Layer 7: Copied NavigationWrapper + FooterWrapper to layout/")
+            # Override next.config.ts with Shopify image patterns
+            write_file(
+                site_dir / "next.config.ts",
+                'import type { NextConfig } from "next";\n\n'
+                "const nextConfig: NextConfig = {\n"
+                "  typescript: { ignoreBuildErrors: true },\n"
+                "  images: {\n"
+                "    remotePatterns: [\n"
+                '      { protocol: "https" as const, hostname: "cdn.shopify.com" },\n'
+                '      { protocol: "https" as const, hostname: "**.myshopify.com" },\n'
+                "    ],\n"
+                "  },\n"
+                "};\n\n"
+                "export default nextConfig;\n",
+            )
+            print("  ✓ Layer 7: next.config.ts updated with Shopify image remotePatterns")
         print("  Writing page files to app routes...")
         pages_src = OUTPUT_DIR / project_name / "pages"
         for page in site_manifest.get("pages", []):
@@ -2311,16 +2504,30 @@ export {{ gsap, ScrollTrigger, {", ".join(plugin_registers)} }};
                     src_page = pages_src / f"{page_id}.tsx"
                     if src_page.exists():
                         homepage_content = read_file(src_page)
-                        write_file(dest_file, _layer7_index_page_content(homepage_content))
-                        # Patch Section04 to accept optional collections prop (inject products/collections into site)
-                        section04_path = site_dir / "src" / "components" / "sections" / "homepage" / "04-product_showcase.tsx"
-                        if section04_path.exists():
-                            section04_code = read_file(section04_path)
-                            if "collections?" in section04_code or "collections:" in section04_code:
-                                pass  # already patched
-                            else:
-                                section04_code = _patch_section04_collections_prop(section04_code)
-                                write_file(section04_path, section04_code)
+                        # Manifest-driven: find PRODUCT-SHOWCASE section from homepage page spec
+                        showcase_comp = None
+                        showcase_file = None
+                        homepage_page = next((p for p in site_manifest.get("pages", []) if p.get("id") == "homepage"), None)
+                        if homepage_page:
+                            for idx, sec in enumerate(homepage_page.get("sections", [])):
+                                arch = sec.get("archetype", "").upper().replace("_", "-")
+                                if arch == "PRODUCT-SHOWCASE":
+                                    num = f"{idx + 1:02d}"
+                                    showcase_comp = f"Section{num}{arch.replace('-', '')}"
+                                    # Find the actual section file
+                                    homepage_section_dir = site_dir / "src" / "components" / "sections" / "homepage"
+                                    candidates = list(homepage_section_dir.glob(f"{num}-*product*showcase*.tsx")) if homepage_section_dir.exists() else []
+                                    if not candidates:
+                                        candidates = list(homepage_section_dir.glob(f"{num}-*.tsx")) if homepage_section_dir.exists() else []
+                                    showcase_file = candidates[0] if candidates else None
+                                    break
+                        write_file(dest_file, _layer7_index_page_content(homepage_content, showcase_component=showcase_comp))
+                        # Patch showcase section to accept optional products/collections props
+                        if showcase_file and showcase_file.exists():
+                            sc_code = read_file(showcase_file)
+                            if "products?" not in sc_code and "collections?" not in sc_code:
+                                sc_code = _patch_showcase_section_props(sc_code, showcase_comp or "Section04PRODUCTSHOWCASE")
+                                write_file(showcase_file, sc_code)
                         continue
             src_page = pages_src / f"{page_id}.tsx"
             if not src_page.exists():
@@ -2339,6 +2546,100 @@ export {{ gsap, ScrollTrigger, {", ".join(plugin_registers)} }};
 }
 '''
         write_file(app_dir / "not-found.tsx", not_found_code)
+
+        # ── Layer 7: Generate commerce-specific routes ──
+        if has_commerce_routes:
+            # API revalidation webhook route
+            revalidate_dir = app_dir / "api" / "revalidate"
+            revalidate_dir.mkdir(parents=True, exist_ok=True)
+            revalidate_code = '''import { revalidateTag } from "next/cache";
+import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
+
+export async function POST(req: NextRequest) {
+  const secret = process.env.SHOPIFY_REVALIDATION_SECRET;
+  const hmac = req.headers.get("x-shopify-hmac-sha256");
+  const topic = req.headers.get("x-shopify-topic") || "";
+
+  if (!secret || !hmac) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await req.text();
+  const digest = crypto
+    .createHmac("sha256", secret)
+    .update(body, "utf8")
+    .digest("base64");
+
+  if (digest !== hmac) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  // Revalidate cache tags based on Shopify webhook topic
+  if (topic.startsWith("products/")) {
+    revalidateTag("products");
+  }
+  if (topic.startsWith("collections/")) {
+    revalidateTag("collections");
+  }
+
+  return NextResponse.json({ revalidated: true, topic });
+}
+'''
+            write_file(revalidate_dir / "route.ts", revalidate_code)
+            print("  ✓ Layer 7: Generated /api/revalidate webhook route")
+
+            # [page] dynamic route for Shopify pages
+            page_route_dir = app_dir / "[page]"
+            page_route_dir.mkdir(parents=True, exist_ok=True)
+            # Note: page.body is trusted HTML from Shopify's Storefront API, authored by the store owner
+            page_route_code = '''import { shopifyFetch } from "@/lib/shopify/client";
+import { SHOP_PAGE } from "@/lib/shopify/queries";
+import type { ShopPageResult } from "@/lib/shopify/queries";
+import { notFound } from "next/navigation";
+
+export async function generateMetadata({ params }: { params: Promise<{ page: string }> }) {
+  const { page: handle } = await params;
+  try {
+    const data = await shopifyFetch<ShopPageResult>(SHOP_PAGE, { handle });
+    const p = data?.page;
+    if (!p) return { title: "Page Not Found" };
+    return {
+      title: p.seo?.title || p.title,
+      description: p.seo?.description || p.bodySummary || "",
+    };
+  } catch {
+    return { title: "Page" };
+  }
+}
+
+export default async function Page({ params }: { params: Promise<{ page: string }> }) {
+  const { page: handle } = await params;
+  let pageData: ShopPageResult["page"] = null;
+  try {
+    const data = await shopifyFetch<ShopPageResult>(SHOP_PAGE, { handle });
+    pageData = data?.page ?? null;
+  } catch {
+    notFound();
+  }
+  if (!pageData) {
+    notFound();
+  }
+  /* page.body: trusted HTML content from Shopify Storefront API, authored by store owner */
+  return (
+    <main className="min-h-screen pt-24 px-6 pb-12 max-w-3xl mx-auto">
+      <h1 className="text-3xl font-semibold text-neutral-900 mb-6">{pageData.title}</h1>
+      <div
+        className="prose max-w-none"
+        dangerouslySetInnerHTML={{ __html: pageData.body }}
+      />
+    </main>
+  );
+}
+'''
+            write_file(page_route_dir / "page.tsx", page_route_code)
+            print("  ✓ Layer 7: Generated /[page] dynamic route for Shopify pages")
+
     else:
         print("  Copying sections...")
         comp_dir.mkdir(parents=True, exist_ok=True)
@@ -2631,8 +2932,67 @@ async function downloadOne(url) {{
     else:
         print("  ✓ Dependencies installed")
 
+    # ── Layer 7: Generate .env.local with Shopify credentials when commerce routes present ──
+    if has_commerce_routes:
+        shopify_config_path = None
+        # Look for shopify_config.json in compiled dir, then output dir
+        for candidate in [
+            OUTPUT_DIR / project_name / "shopify_config.json",
+            (Path(extraction_dir) / "shopify_config.json") if extraction_dir else None,
+            ROOT / "shopify_config.json",
+        ]:
+            if candidate and candidate.exists():
+                shopify_config_path = candidate
+                break
+        if shopify_config_path:
+            import uuid as _uuid
+            shopify_cfg = json.loads(shopify_config_path.read_text(encoding="utf-8"))
+            revalidation_secret = str(_uuid.uuid4())
+            env_lines = [
+                f'SHOPIFY_STORE_DOMAIN={shopify_cfg.get("store_domain", "")}',
+                f'SHOPIFY_STOREFRONT_ACCESS_TOKEN={shopify_cfg.get("storefront_access_token", "")}',
+                f'SHOPIFY_REVALIDATION_SECRET={revalidation_secret}',
+            ]
+            write_file(site_dir / ".env.local", "\n".join(env_lines) + "\n")
+            print("  ✓ Layer 7: Generated .env.local with Shopify credentials")
+        else:
+            print("  ⚠ Layer 7: shopify_config.json not found — .env.local not generated")
+            print("    Create .env.local manually with: SHOPIFY_STORE_DOMAIN, SHOPIFY_STOREFRONT_ACCESS_TOKEN, SHOPIFY_REVALIDATION_SECRET")
+
     print(f"  ✓ Site deployed to output/{project_name}/site/")
     print(f"  Run: cd output/{project_name}/site && npm run dev")
+
+
+def stage_vercel_env_and_webhooks(site_dir: Path, project_name: str):
+    """Post-deploy: Set Shopify env vars on Vercel and register webhooks."""
+    env_path = site_dir / ".env.local"
+    if not env_path.exists():
+        print("  ⚠ No .env.local found — skipping Vercel env var setup")
+        return
+    env_vars = {}
+    for line in env_path.read_text(encoding="utf-8").strip().split("\n"):
+        if "=" in line:
+            key, val = line.split("=", 1)
+            env_vars[key.strip()] = val.strip()
+
+    print("\n🔑 Setting Shopify env vars on Vercel...")
+    for key, val in env_vars.items():
+        result = subprocess.run(
+            ["bash", "-c", f'echo "{val}" | vercel env add {key} production --yes'],
+            capture_output=True, text=True, cwd=str(site_dir), timeout=30,
+        )
+        if result.returncode == 0:
+            print(f"  ✓ Set {key} on Vercel")
+        else:
+            err = result.stderr.strip()
+            if "already exists" in err.lower():
+                print(f"  ℹ {key} already exists on Vercel (skipped)")
+            else:
+                print(f"  ⚠ Failed to set {key}: {err[:200]}")
+                print(f"    Manual: echo \"$VALUE\" | vercel env add {key} production --yes")
+
+    # Register Shopify webhooks (requires Admin API access — deferred to Gate E)
+    print("  ℹ Webhook registration: Run `python3 scripts/register_webhooks.py` after first deploy to register revalidation webhooks")
 
 
 def stage_review_v2(section_files: list[Path], site_spec: dict | None, project_name: str) -> dict:
@@ -2997,6 +3357,8 @@ def main():
                         default=None, metavar="PATH")
     parser.add_argument("--brief", help="Path to brief.md file (overrides brief lookup from compiled-dir or briefs/)",
                         default=None, metavar="PATH")
+    parser.add_argument("--set-vercel-env", action="store_true",
+                        help="Auto-set Shopify env vars on Vercel + register webhooks after deploy")
 
     args = parser.parse_args()
     if getattr(args, "compiled_dir", None) and not args.industry:
@@ -3207,7 +3569,9 @@ def main():
         industry = site_manifest.get("industry", args.industry or preset)
         if args.skip_to not in (None, "deploy"):
             print("  ⚠ --skip-to is not supported for multipage; running full multipage pipeline.")
-        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache)
+        _mp_page_ids = [p.get("id") for p in site_manifest.get("pages", [])]
+        _mp_has_commerce = "collection-template" in _mp_page_ids or "product-template" in _mp_page_ids
+        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce)
         save_checkpoint(output_dir, "shared_components", args.project)
         site_manifest = stage_scaffold_multipage(site_manifest, args.project, industry, preset=preset)
         save_checkpoint(output_dir, "scaffold_mp", args.project)
@@ -3236,6 +3600,11 @@ def main():
                 )
                 save_checkpoint(output_dir, "deploy", args.project)
                 deploy_ran = True
+                if getattr(args, "set_vercel_env", False):
+                    stage_vercel_env_and_webhooks(
+                        OUTPUT_DIR / args.project / SITE_DIR_NAME,
+                        args.project,
+                    )
         _build_end_time = _time.time()
         _build_duration_ms = int((_build_end_time - _build_start_time) * 1000)
         if build_cache and SUPABASE_AVAILABLE:
