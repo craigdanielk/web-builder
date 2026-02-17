@@ -1519,7 +1519,8 @@ export default function Page() {{
 
 def _inject_nav_props(code: str) -> str:
     """Inject optional menu/logo/shopName props into a Navigation component.
-    Only modifies the function signature — the wrapper passes pre-formatted data."""
+    Modifies function signature AND injects prop consumption inside the function body.
+    Leaves module-scope arrays as fallbacks; overrides inside function body when props exist."""
     import re
     prop_type = "{ menu?: { title: string; items: Array<{ title: string; url: string; items?: Array<{ title: string; url: string }> }> }; logo?: { url: string; altText: string | null; width?: number; height?: number }; shopName?: string }"
     code = re.sub(
@@ -1527,12 +1528,44 @@ def _inject_nav_props(code: str) -> str:
         rf"export default function \1({{ menu, logo, shopName }}: {prop_type} = {{}})",
         code,
     )
+    # Inject displayLinks override inside function body (safe: module-scope array stays as fallback)
+    if "displayLinks" not in code:  # guard against double injection
+        func_match = re.search(r"export default function \w+\([^)]*\)\s*\{", code)
+        if func_match:
+            # Detect which variable name the template uses for its links array
+            links_var = "navLinks"  # default
+            for candidate in ["navLinks", "links", "menuItems", "menuLinks", "navigationLinks"]:
+                if re.search(rf"\b{candidate}\.map\(", code):
+                    links_var = candidate
+                    break
+            insert_pos = func_match.end()
+            override_block = f"\n  const displayLinks = menu?.items?.length ? menu.items.map(i => ({{ label: i.title, url: i.url }})) : {links_var};\n"
+            code = code[:insert_pos] + override_block + code[insert_pos:]
+            # Replace original .map( → displayLinks.map( in JSX (both desktop and mobile menu)
+            code = code.replace(f"{links_var}.map(", "displayLinks.map(")
+    # Make logo dynamic: replace hardcoded placeholder src/alt with prop fallback
+    code = re.sub(
+        r'src="(\{logo_url\}|\{logo_src\})"',
+        r'src={logo?.url || "/logo.svg"}',
+        code,
+    )
+    code = re.sub(
+        r'alt="(\{logo_alt\})"',
+        r'alt={logo?.altText || shopName || "Logo"}',
+        code,
+    )
+    # Replace placeholder CTA URL with /collections (safe default for e-commerce)
+    code = code.replace('href="{cta_url}"', 'href="/collections"')
+    # Sanitize fallback nav link placeholder URLs to prevent broken links
+    import re as _re
+    code = _re.sub(r"url:\s*'\{nav_\d+_url\}'", "url: '#'", code)
     return code
 
 
 def _inject_footer_props(code: str) -> str:
     """Inject optional menu/shopName props into a Footer component.
-    Only modifies the function signature — the wrapper passes pre-formatted data."""
+    Modifies function signature AND injects prop consumption inside the function body.
+    Leaves module-scope arrays as fallbacks; overrides inside function body when props exist."""
     import re
     prop_type = "{ menu?: { title: string; items: Array<{ title: string; url: string; items?: Array<{ title: string; url: string }> }> }; shopName?: string }"
     code = re.sub(
@@ -1540,6 +1573,30 @@ def _inject_footer_props(code: str) -> str:
         rf"export default function \1({{ menu, shopName }}: {prop_type} = {{}})",
         code,
     )
+    # Inject displayColumns override inside function body (safe: module-scope array stays as fallback)
+    if "displayColumns" not in code:  # guard against double injection
+        func_match = re.search(r"export default function \w+\([^)]*\)\s*\{", code)
+        if func_match:
+            # Detect which variable name the template uses for its columns array
+            cols_var = "columns"  # default
+            for candidate in ["columns", "footerColumns", "footerLinks", "footerSections", "linkGroups"]:
+                if re.search(rf"\b{candidate}\.map\(", code):
+                    cols_var = candidate
+                    break
+            insert_pos = func_match.end()
+            override_block = f"\n  const displayColumns = menu?.items?.length ? menu.items.map(i => ({{ title: i.title, links: i.items?.map(sub => ({{ label: sub.title, href: sub.url }})) ?? [] }})) : {cols_var};\n"
+            code = code[:insert_pos] + override_block + code[insert_pos:]
+            # Replace original .map( → displayColumns.map( in JSX
+            code = code.replace(f"{cols_var}.map(", "displayColumns.map(")
+    # Make logo dynamic in footer
+    code = re.sub(
+        r'src="(\{logo_src\}|\{logo_url\})"',
+        r'src={shopName ? "/logo.svg" : "/logo.svg"}',
+        code,
+    )
+    # Sanitize fallback footer placeholder URLs to prevent broken links
+    code = re.sub(r"href:\s*'\{col_\d+_link_\d+_href\}'", "href: '#'", code)
+    code = re.sub(r'href="\{social_\d+_href\}"', 'href="#"', code)
     return code
 
 
@@ -1869,6 +1926,51 @@ export default async function Page({ params }: { params: Promise<{ handle: strin
 '''
 
 
+def _layer7_collections_index_page_content() -> str:
+    """Layer 7: Collections index page that lists all collections from Storefront API."""
+    return '''import { shopifyFetch } from "@/lib/shopify/client";
+import { COLLECTIONS_LIST } from "@/lib/shopify/queries";
+import type { CollectionsListResult } from "@/lib/shopify/queries";
+import Link from "next/link";
+import Image from "next/image";
+
+export const metadata = {
+  title: "Collections",
+  description: "Browse all collections",
+};
+
+export default async function CollectionsPage() {
+  let collections: Array<{ handle: string; title: string; description: string; image?: { url: string; altText: string | null } | null }> = [];
+  try {
+    const data = await shopifyFetch<CollectionsListResult>(COLLECTIONS_LIST, { first: 50 });
+    const edges = data?.collections?.edges;
+    collections = Array.isArray(edges) ? edges.map((e) => ({ handle: e.node.handle, title: e.node.title, description: e.node.description ?? "", image: e.node.image })) : [];
+  } catch {
+    collections = [];
+  }
+  return (
+    <main className="min-h-screen pt-24 px-6 pb-12">
+      <h1 className="text-3xl font-semibold text-neutral-900 mb-8">Collections</h1>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+        {collections.map((c) => (
+          <Link key={c.handle} href={`/collections/${c.handle}`} className="group block">
+            <div className="aspect-[4/3] bg-neutral-100 rounded-lg overflow-hidden mb-3">
+              {c.image?.url && (
+                <Image src={c.image.url} alt={c.image.altText ?? c.title} width={600} height={450} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+              )}
+            </div>
+            <h2 className="text-lg font-medium text-neutral-900 group-hover:underline">{c.title}</h2>
+            {c.description && <p className="text-sm text-neutral-600 mt-1 line-clamp-2">{c.description}</p>}
+          </Link>
+        ))}
+      </div>
+      {collections.length === 0 && <p className="text-neutral-500">No collections found.</p>}
+    </main>
+  );
+}
+'''
+
+
 def _patch_showcase_section_props(section_code: str, component_name: str) -> str:
     """Patch a PRODUCT-SHOWCASE section to accept optional products/collections props.
     Handles diverse template structures: module-scope or function-scope product arrays,
@@ -1905,15 +2007,18 @@ def _patch_showcase_section_props(section_code: str, component_name: str) -> str
             func_match = re.search(r"export default function \w+\([^)]*\)\s*\{", section_code)
             if func_match:
                 insert_pos = func_match.end()
-                block = f"\n  const fallbackProducts = {array_literal};\n  const displayProducts = products?.length ? products : fallbackProducts;\n"
+                block = f"\n  const fallbackProducts = {array_literal};\n  const mappedProducts = products?.length ? Array.from(products, p => ({{ name: p.title, price: `${{parseFloat(p.priceRange?.minVariantPrice?.amount || '0').toFixed(2)}} ${{p.priceRange?.minVariantPrice?.currencyCode || ''}}`.trim(), image: p.images?.edges?.[0]?.node?.url || '/placeholder.jpg', alt: p.images?.edges?.[0]?.node?.altText || p.title, url: `/products/${{p.handle}}`, tag: '' }})) : null;\n  const displayProducts = mappedProducts || fallbackProducts;\n"
                 section_code = section_code[:insert_pos] + block + section_code[insert_pos:]
         else:
             # Already inside function — replace in place
             section_code = section_code.replace(
                 original,
-                f"const fallbackProducts = {array_literal};\n  const displayProducts = products?.length ? products : fallbackProducts;",
+                f"const fallbackProducts = {array_literal};\n  const mappedProducts = products?.length ? Array.from(products, p => ({{ name: p.title, price: `${{parseFloat(p.priceRange?.minVariantPrice?.amount || '0').toFixed(2)}} ${{p.priceRange?.minVariantPrice?.currencyCode || ''}}`.trim(), image: p.images?.edges?.[0]?.node?.url || '/placeholder.jpg', alt: p.images?.edges?.[0]?.node?.altText || p.title, url: `/products/${{p.handle}}`, tag: '' }})) : null;\n  const displayProducts = mappedProducts || fallbackProducts;",
             )
         section_code = section_code.replace("products.map(", "displayProducts.map(")
+    # Sanitize fallback product placeholder URLs to prevent broken links on deployed site
+    section_code = re.sub(r"url:\s*'\{product_\d+_url\}'", "url: '#'", section_code)
+    section_code = re.sub(r"image:\s*'\{product_\d+_image_url\}'", "image: '/placeholder.jpg'", section_code)
     return section_code
 
 
@@ -2503,6 +2608,10 @@ export {{ gsap, ScrollTrigger, {", ".join(plugin_registers)} }};
             if has_commerce_routes and (ROOT / "lib" / "shopify").exists():
                 if page_id == "collection-template":
                     write_file(dest_file, _layer7_collection_page_content())
+                    # Also generate /collections index page (lists all collections)
+                    collections_index = site_dir / "src" / "app" / "collections" / "page.tsx"
+                    collections_index.parent.mkdir(parents=True, exist_ok=True)
+                    write_file(collections_index, _layer7_collections_index_page_content())
                     continue
                 if page_id == "product-template":
                     write_file(dest_file, _layer7_product_page_content())
@@ -2653,6 +2762,32 @@ export default async function Page({ params }: { params: Promise<{ page: string 
         for filepath in section_files:
             code = read_file(filepath)
             write_file(comp_dir / filepath.name, code)
+
+    # ── Global placeholder token sanitization ──
+    # Sweep all .tsx files and replace href-bearing / image-bearing placeholder tokens
+    # that slipped through template injection. This prevents broken links like {cta_url}.
+    _sanitize_count = 0
+    for tsx_file in (src_dir).rglob("*.tsx"):
+        try:
+            _raw = tsx_file.read_text(encoding="utf-8")
+            _cleaned = _raw
+            # Replace href-bearing placeholder tokens with safe defaults
+            _cleaned = _cleaned.replace('href="{cta_url}"', 'href="/collections"')
+            _cleaned = re.sub(r"href:\s*'\{[^}]+_href\}'", "href: '#'", _cleaned)
+            _cleaned = re.sub(r'href="\{[^}]+_href\}"', 'href="#"', _cleaned)
+            # Replace image src placeholder tokens
+            _cleaned = re.sub(r"image:\s*'\{[^}]+_image(?:_url)?\}'", "image: '/placeholder.jpg'", _cleaned)
+            _cleaned = re.sub(r'src="\{[^}]+_(?:src|url)\}"', 'src="/placeholder.jpg"', _cleaned)
+            _cleaned = re.sub(r'alt="\{[^}]+_alt\}"', 'alt="Image"', _cleaned)
+            # Replace product URL/image placeholders in arrays
+            _cleaned = re.sub(r"url:\s*'\{[^}]+_url\}'", "url: '#'", _cleaned)
+            if _cleaned != _raw:
+                tsx_file.write_text(_cleaned, encoding="utf-8")
+                _sanitize_count += 1
+        except (OSError, UnicodeDecodeError):
+            pass
+    if _sanitize_count > 0:
+        print(f"  ✓ Sanitized placeholder tokens in {_sanitize_count} file(s)")
 
     # ── Copy animation components from library ──
     anim_components_dir = SKILLS_DIR / "animation-components"
