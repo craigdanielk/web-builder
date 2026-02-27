@@ -2820,9 +2820,12 @@ export default async function Page({ params }: { params: Promise<{ page: string 
             {"question": "What payment methods do you accept?", "answer": "We accept all major credit cards, PayPal, Apple Pay, and Google Pay."},
         ],
         "testimonial": [
-            {"quote": "The quality exceeded my expectations. Fast shipping and beautiful packaging.", "author": "Sarah M.", "role": "Verified Buyer"},
-            {"quote": "Incredible customer service! They went above and beyond to help me.", "author": "James L.", "role": "Verified Buyer"},
-            {"quote": "Best online shopping experience in years. The product was exactly as described.", "author": "Emily R.", "role": "Verified Buyer"},
+            {"quote": "The quality exceeded my expectations. Fast shipping and beautiful packaging.", "author": "Sarah M.", "role": "Verified Buyer", "rating": "5"},
+            {"quote": "Incredible customer service! They went above and beyond to help me.", "author": "James L.", "role": "Verified Buyer", "rating": "5"},
+            {"quote": "Best online shopping experience in years. The product was exactly as described.", "author": "Emily R.", "role": "Verified Buyer", "rating": "5"},
+            {"quote": "Love the attention to detail. Will definitely be ordering again soon.", "author": "Michael T.", "role": "Verified Buyer", "rating": "5"},
+            {"quote": "Perfect gift for my partner. The presentation was stunning.", "author": "Anna K.", "role": "Verified Buyer", "rating": "4"},
+            {"quote": "Smooth checkout, fast delivery, and excellent product quality.", "author": "David W.", "role": "Verified Buyer", "rating": "5"},
         ],
         "badge": [
             {"icon": "ShieldCheck", "label": "Quality Assured", "sublabel": "100% authentic products"},
@@ -2983,6 +2986,103 @@ export default async function Page({ params }: { params: Promise<{ page: string 
                 _cleaned = _cleaned.replace(f"'{{{tok}}}'", f"'{val}'")
                 _cleaned = _cleaned.replace(f'"{{{tok}}}"', f'"{val}"')
                 _cleaned = _cleaned.replace(f'{{{tok}}}', f'"{val}"')
+
+            # ── Phase 5: Literal default string replacements ──
+            # Supabase templates use literal strings like {"About Us"} instead
+            # of {section_title} tokens. Replace these with archetype-aware values.
+            # Only replace "About Us" when the section is NOT the about archetype.
+            if "about" not in _fname:
+                _cleaned = _cleaned.replace('{"About Us"}', f'{{{json.dumps(_section_title)}}}')
+                _cleaned = _cleaned.replace('{"Learn more about what we do"}', f'{{{json.dumps(_section_subtitle)}}}')
+            _cleaned = _cleaned.replace('{"Company Description"}', '{"Premium quality products for every occasion."}')
+            _cleaned = _cleaned.replace('{"Copyright Text"}', f'{{"\\u00a9 {datetime.now().year} All rights reserved."}}')
+            _cleaned = _cleaned.replace('{"Body Text"}', '{"Discover our curated collection of premium products designed to elevate your everyday experience."}')
+            _cleaned = _cleaned.replace('{"Logo Src"}', '"/logo.svg"')
+            # Fix unsanitized attribute tokens
+            _cleaned = _cleaned.replace('poster="{poster_url}"', 'poster="/placeholder.svg"')
+            _cleaned = _cleaned.replace('poster="{Poster Url}"', 'poster="/placeholder.svg"')
+            # Fix redundant ternaries where both branches are identical
+            _cleaned = re.sub(
+                r'\{shopName\s*\?\s*"(/[^"]+)"\s*:\s*"\1"\}',
+                r'"\1"',
+                _cleaned,
+            )
+
+            # ── Phase 6: Fix identical nav fallback links ──
+            if "nav" in _fname.lower():
+                _NAV_FALLBACK_LINKS = [
+                    ("Shop", "/collections"),
+                    ("New Arrivals", "/collections"),
+                    ("About", "/pages/about"),
+                    ("Contact", "/pages/contact"),
+                ]
+                # Replace consecutive identical link entries
+                identical_links_pattern = re.compile(
+                    r"(const\s+navLinks\s*=\s*\[)\s*"
+                    r"(?:\{\s*label:\s*'Link',\s*url:\s*'#'\s*\},?\s*){2,}",
+                    re.DOTALL,
+                )
+                if identical_links_pattern.search(_cleaned):
+                    links_str = ",\n  ".join(
+                        f"{{ label: '{lbl}', url: '{url}' }}"
+                        for lbl, url in _NAV_FALLBACK_LINKS
+                    )
+                    _cleaned = identical_links_pattern.sub(
+                        f"\\1\n  {links_str},\n",
+                        _cleaned,
+                    )
+
+            # ── Phase 7: Fix features icon text rendering ──
+            # Replace string-based icon rendering with Lucide React icon components
+            if "feature" in _fname.lower():
+                _ICON_NAMES = ["Truck", "ShieldCheck", "Headphones", "RefreshCw", "CreditCard", "Gift", "Zap", "Star", "Heart", "Package"]
+                # Check if icons are rendered as text (e.g. <span>{feature.icon}</span>)
+                if '<span className="text-2xl">{feature.icon}</span>' in _cleaned or "<span>{feature.icon}</span>" in _cleaned:
+                    # Find icons referenced in the features array
+                    icon_refs = set(re.findall(r"icon:\s*'(\w+)'", _cleaned))
+                    if icon_refs:
+                        lucide_import = "import { " + ", ".join(sorted(icon_refs)) + " } from 'lucide-react';"
+                        # Add import after framer-motion import or at top of imports
+                        if "from 'framer-motion'" in _cleaned:
+                            _cleaned = _cleaned.replace(
+                                "from 'framer-motion';",
+                                "from 'framer-motion';\n" + lucide_import,
+                            )
+                        elif "from 'react'" in _cleaned:
+                            _cleaned = _cleaned.replace(
+                                "from 'react';",
+                                "from 'react';\n" + lucide_import,
+                            )
+                        # Build icon lookup
+                        icon_lookup = "const IconMap: Record<string, React.ElementType> = { " + ", ".join(sorted(icon_refs)) + " };"
+                        # Insert before the features array
+                        _cleaned = re.sub(
+                            r"(const features\s*=)",
+                            icon_lookup + "\n\n\\1",
+                            _cleaned,
+                        )
+                        # Replace text rendering with component rendering
+                        _cleaned = _cleaned.replace(
+                            '<span className="text-2xl">{feature.icon}</span>',
+                            '{(() => { const Icon = IconMap[feature.icon]; return Icon ? <Icon className="w-6 h-6" /> : null; })()}',
+                        )
+                        _cleaned = _cleaned.replace(
+                            "<span>{feature.icon}</span>",
+                            '{(() => { const Icon = IconMap[feature.icon]; return Icon ? <Icon className="w-6 h-6" /> : null; })()}',
+                        )
+
+            # ── Phase 8: Fix gallery placeholder images ──
+            if "gallery" in _fname.lower():
+                _cleaned = re.sub(
+                    r"url:\s*'#'",
+                    "url: '/placeholder.svg'",
+                    _cleaned,
+                )
+                _cleaned = re.sub(
+                    r"alt:\s*'Alt'",
+                    "alt: 'Gallery image'",
+                    _cleaned,
+                )
 
             if _cleaned != _raw:
                 tsx_file.write_text(_cleaned, encoding="utf-8")
