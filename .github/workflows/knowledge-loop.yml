@@ -1,0 +1,36 @@
+name: Knowledge Loop
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "CLAUDE.md"
+      - "docs/**"
+      - "retrospectives/**"
+      - "plans/**"
+
+jobs:
+  sync-knowledge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed knowledge files
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- CLAUDE.md docs/ retrospectives/ plans/ 2>/dev/null || echo "")
+          if [ -n "$CHANGED" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log knowledge update
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          echo "## Knowledge files updated" >> "$GITHUB_STEP_SUMMARY"
+          git diff --name-only HEAD~1 HEAD -- CLAUDE.md docs/ retrospectives/ plans/ >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          date -u +%Y-%m-%dT%H:%M:%SZ >> "$GITHUB_STEP_SUMMARY"
