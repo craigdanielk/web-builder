@@ -1978,7 +1978,6 @@ def _patch_showcase_section_props(section_code: str, component_name: str) -> str
     if "products?: " in section_code or "collections?: " in section_code:
         return section_code  # already patched
     import re
-    section_code = section_code.replace("turmCollections", "presetCollections")
     prop_type = "{ products?: Array<{ title: string; handle: string; priceRange?: { minVariantPrice: { amount: string; currencyCode: string } }; images?: { edges: Array<{ node: { url: string; altText: string | null } }> } }>; collections?: Array<{ handle: string; title: string; description?: string; image?: { url: string } }> }"
     # Match ANY export default function name (template names vary)
     section_code = re.sub(
@@ -2794,6 +2793,7 @@ export default async function Page({ params }: { params: Promise<{ page: string 
         "team": {"name": "Team Member", "role": "Specialist", "image": "/placeholder.svg", "bio": "Passionate about delivering results."},
         "value": {"title": "Our Value", "description": "What drives us forward every day.", "icon": "Heart"},
         "cta": {"text": "Shop Now", "url": "/collections", "label": "Shop Now"},
+        "filter": {"label": "All", "text": "All", "title": "All"},
     }
 
     # Per-number variety so repeated items aren't identical
@@ -2849,6 +2849,11 @@ export default async function Page({ params }: { params: Promise<{ page: string 
             {"feature": "Extended Warranty", "label": "Extended Warranty"},
             {"feature": "Gift Wrapping", "label": "Gift Wrapping"},
             {"feature": "Early Access", "label": "Early Access"},
+        ],
+        "filter": [
+            {"label": "All", "text": "All", "title": "All"},
+            {"label": "New", "text": "New", "title": "New"},
+            {"label": "Popular", "text": "Popular", "title": "Popular"},
         ],
     }
 
@@ -2981,6 +2986,7 @@ export default async function Page({ params }: { params: Promise<{ page: string 
                 "email_address": "hello@example.com", "address_text": "123 Main St",
                 "logo_url": "/logo.svg", "logo_src": "/logo.svg", "logo_alt": "Logo",
                 "placeholder_text": "Enter your email", "button_text": "Subscribe",
+                "page_handle": "",
             }
             for tok, val in _SAFE_TOKEN_REPLACEMENTS.items():
                 _cleaned = _cleaned.replace(f"'{{{tok}}}'", f"'{val}'")
