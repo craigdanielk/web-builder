@@ -1,27 +1,65 @@
-name: Issue Closure Loop
+name: Issue Lifecycle Loop
 
 on:
   issues:
-    types: [closed]
+    types: [opened, closed, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      test_issue_title:
+        description: 'Test issue title'
+        default: 'Manual test'
+      test_issue_number:
+        description: 'Test issue number'
+        default: '0'
 
 jobs:
   notify-rag:
-    if: github.event.issue.state_reason == 'completed'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.action == 'opened' ||
+      github.event.action == 'reopened' ||
+      github.event.action == 'labeled' ||
+      (github.event.action == 'closed' && github.event.issue.state_reason == 'completed')
     runs-on: ubuntu-latest
     steps:
       - name: POST to RAG
         env:
           RAG_URL: https://rag-mcp-server-rsc32eci6a-ew.a.run.app/mcp
           RAG_AUTH_TOKEN: ${{ secrets.RAG_AUTH_TOKEN }}
+          ISSUE_TITLE: ${{ github.event.issue.title || github.event.inputs.test_issue_title || 'Manual test' }}
+          ISSUE_NUM: ${{ github.event.issue.number || github.event.inputs.test_issue_number || '0' }}
+          ISSUE_LABELS_JSON: ${{ toJSON(github.event.issue.labels.*.name) }}
+          ACTOR: ${{ github.event.sender.login }}
+          REPO_NAME: ${{ github.repository }}
+          EVENT_ACTION: ${{ github.event.action || 'manual' }}
+          ISSUE_STATE: ${{ github.event.issue.state || 'unknown' }}
         run: |
-          REPO="${{ github.repository }}"
-          ISSUE_NUM="${{ github.event.issue.number }}"
-          ISSUE_TITLE="${{ github.event.issue.title }}"
-          LABELS=$(echo '${{ toJSON(github.event.issue.labels.*.name) }}' | jq -r 'join(", ")')
-          CLOSER="${{ github.event.sender.login }}"
-          SESSION_ID="github-issue-${REPO//\//-}-${ISSUE_NUM}"
+          LABELS=$(echo "$ISSUE_LABELS_JSON" | jq -r 'if type == "array" then join(", ") else "" end' 2>/dev/null || echo "")
+          SESSION_ID="github-issue-${REPO_NAME//\//-}-${ISSUE_NUM}"
 
-          MSG="Issue #${ISSUE_NUM} closed (completed) in ${REPO}. Title: ${ISSUE_TITLE}. Labels: ${LABELS}. Closed by: ${CLOSER}."
+          # Build event-specific message
+          case "$EVENT_ACTION" in
+            opened)
+              MSG="Issue #${ISSUE_NUM} opened in ${REPO_NAME}. Title: ${ISSUE_TITLE}. Labels: ${LABELS}. Created by: ${ACTOR}."
+              TAGS='["github-issue", "opened"]'
+              ;;
+            closed)
+              MSG="Issue #${ISSUE_NUM} closed (completed) in ${REPO_NAME}. Title: ${ISSUE_TITLE}. Labels: ${LABELS}. Closed by: ${ACTOR}."
+              TAGS='["github-issue", "auto-closed"]'
+              ;;
+            reopened)
+              MSG="Issue #${ISSUE_NUM} reopened in ${REPO_NAME}. Title: ${ISSUE_TITLE}. Labels: ${LABELS}. Reopened by: ${ACTOR}."
+              TAGS='["github-issue", "reopened"]'
+              ;;
+            labeled)
+              MSG="Issue #${ISSUE_NUM} labeled in ${REPO_NAME}. Title: ${ISSUE_TITLE}. Labels: ${LABELS}. Updated by: ${ACTOR}."
+              TAGS='["github-issue", "labeled"]'
+              ;;
+            *)
+              MSG="Issue #${ISSUE_NUM} (${EVENT_ACTION}) in ${REPO_NAME}. Title: ${ISSUE_TITLE}. Labels: ${LABELS}. Actor: ${ACTOR}."
+              TAGS='["github-issue", "manual"]'
+              ;;
+          esac
 
           # Build auth header
           AUTH_HEADER=""
@@ -34,11 +72,12 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Accept: application/json, text/event-stream" \
             ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
-            -d "{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"knowledge-loop\",\"version\":\"1.0\"}},\"id\":1}" \
+            -d "{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"knowledge-loop\",\"version\":\"2.0\"}},\"id\":1}" \
             > /dev/null
 
-          SESSION_HEADER=$(grep -i "mcp-session-id" /tmp/headers | tr -d '' | awk '{print $2}')
+          SESSION_HEADER=$(grep -i "mcp-session-id" /tmp/headers | tr -d '\r' | awk '{print $2}')
           echo "MCP Session: $SESSION_HEADER"
+          echo "Event: $EVENT_ACTION | Issue: #$ISSUE_NUM | State: $ISSUE_STATE"
 
           # Step 2: Send initialized notification
           curl -s -X POST "$RAG_URL" \
@@ -53,7 +92,8 @@ jobs:
           PAYLOAD=$(jq -n \
             --arg sid "$SESSION_ID" \
             --arg msg "$MSG" \
-            --arg repo "$REPO" \
+            --arg repo "$REPO_NAME" \
+            --argjson tags "$TAGS" \
             '{
               jsonrpc: "2.0",
               method: "tools/call",
@@ -64,7 +104,7 @@ jobs:
                     session_id: $sid,
                     messages: [{role: "system", content: $msg}],
                     project: ($repo | split("/") | .[-1]),
-                    tags: ["github-issue", "auto-closed"]
+                    tags: $tags
                   }
                 }
               },
