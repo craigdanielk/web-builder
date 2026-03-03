@@ -50,14 +50,14 @@ bulk-graphql-importer repo → Imports 50k products into Shopify in ~120 minutes
 ## MODULE 1: CALCULATOR
 
 ### Purpose
-Analyze a source website or structured data export and output a deterministic architecture specification that defines what needs to be built, how it should be structured, and what content populates it.
+Analyze a source e-commerce store via API integration or URL crawling and output a deterministic architecture specification that defines what needs to be built, how it should be structured, and what content populates it.
 
 ### Current State
-- Framework exists from a prior case study (`aurelix_calculator_real.py`)
-- Proven on one project (265 products, 3 markets, 6 collections, 19 landing pages)
-- Not generalized — hardcoded to a specific CSV format and Magento structure
-- URL crawling and page classification logic validated (379 URLs, 86% classification accuracy)
-- Navigation extraction validated (60-item hierarchical menu)
+- Generalized CLI tool with `analyze` and `validate` commands
+- API-first architecture: uses API2Cart for multi-platform extraction (OpenCart, WooCommerce, Magento) with URL crawling as fallback
+- Validated on opencart-demo dataset (102/102 tests passing)
+- Produces 5-6 output files: architecture.json, products.csv, brief.md, brand.json, media-manifest.json, analysis_report.md
+- Documented interface contract: aurelix-calculator/INTERFACE.md
 
 ### What the Calculator Outputs (4 Artifacts)
 
@@ -69,17 +69,17 @@ Analyze a source website or structured data export and output a deterministic ar
   "source_platform": "magento",
   "collections": [
     {
-      "handle": "kaffee",
-      "title": "Kaffee",
+      "handle": "electronics",
+      "title": "Electronics",
       "type": "main_collection",
       "product_count": 120,
-      "smart_rules": [{ "field": "tag", "condition": "equals", "value": "tag:collection:kaffee" }]
+      "smart_rules": [{ "field": "tag", "condition": "equals", "value": "tag:collection:electronics" }]
     }
   ],
   "pages": [
     {
-      "handle": "kaffee-bohnen",
-      "title": "Kaffeebohnen",
+      "handle": "electronics-headphones",
+      "title": "Headphones",
       "type": "landing_page",
       "template": "collection_landing",
       "sections": ["hero", "collection_grid", "featured_products", "brand_story"]
@@ -92,7 +92,7 @@ Analyze a source website or structured data export and output a deterministic ar
     { "code": "DE", "currency": "EUR", "domain_prefix": "/de/" }
   ],
   "redirects": [
-    { "source": "/kaffee.html", "target": "/ch/collections/kaffee", "type": 301 }
+    { "source": "/electronics.html", "target": "/ch/collections/electronics", "type": 301 }
   ]
 }
 ```
@@ -125,7 +125,7 @@ Analyze a source website or structured data export and output a deterministic ar
     { "product_handle": "example-product", "source_url": "https://...", "position": 1, "alt_text": "..." }
   ],
   "hero_images": [
-    { "page_handle": "kaffee-bohnen", "source_url": "https://...", "usage": "hero_banner", "dimensions": "1920x600" }
+    { "page_handle": "electronics-headphones", "source_url": "https://...", "usage": "hero_banner", "dimensions": "1920x600" }
   ],
   "brand_assets": [
     { "type": "logo", "source_url": "https://...", "deployment": "repo_public_dir" }

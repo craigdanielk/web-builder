@@ -4,7 +4,7 @@
 
 Section templates are parameterized React (TSX) components that replace LLM generation for specific archetype-variant combinations. When a template exists for a section in the build sequence, the orchestrator uses it directly with brand token injection — skipping the Claude API call entirely.
 
-**Status:** 1 of 72 variants templated (HERO/full-bleed-overlay)
+**Status:** 72 code_template entries in Supabase `section_archetypes` table. 1 local template file (HERO/full-bleed-overlay). When building, the orchestrator checks: (1) local file first, (2) Supabase code_template, (3) LLM fallback.
 
 ---
 
@@ -114,7 +114,7 @@ export default function Section01HERO({
 
 ## manifest.json
 
-The manifest tracks all 72 archetype-variant combinations and their template status:
+The manifest tracks all 72 archetype-variant combinations and their template status. Note that `templates_available` in the local manifest reflects only local `.tsx` files. Supabase `section_archetypes` entries with `code_template` populated are an additional source of templates resolved at build time by `check_template_exists()`.
 
 ```json
 {
@@ -139,7 +139,7 @@ The manifest tracks all 72 archetype-variant combinations and their template sta
 }
 ```
 
-Update this file when adding new templates.
+Update this file when adding new local templates. Supabase `code_template` entries are managed separately via `seed_supabase.py` or direct SQL.
 
 ---
 
