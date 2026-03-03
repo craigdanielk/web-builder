@@ -1,0 +1,81 @@
+name: Issue Closure Loop
+
+on:
+  issues:
+    types: [closed]
+
+jobs:
+  notify-rag:
+    if: github.event.issue.state_reason == 'completed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST to RAG
+        env:
+          RAG_URL: https://rag-mcp-server-rsc32eci6a-ew.a.run.app/mcp
+          RAG_AUTH_TOKEN: ${{ secrets.RAG_AUTH_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          ISSUE_NUM="${{ github.event.issue.number }}"
+          ISSUE_TITLE="${{ github.event.issue.title }}"
+          LABELS=$(echo '${{ toJSON(github.event.issue.labels.*.name) }}' | jq -r 'join(", ")')
+          CLOSER="${{ github.event.sender.login }}"
+          SESSION_ID="github-issue-${REPO//\//-}-${ISSUE_NUM}"
+
+          MSG="Issue #${ISSUE_NUM} closed (completed) in ${REPO}. Title: ${ISSUE_TITLE}. Labels: ${LABELS}. Closed by: ${CLOSER}."
+
+          # Build auth header
+          AUTH_HEADER=""
+          if [ -n "$RAG_AUTH_TOKEN" ]; then
+            AUTH_HEADER="Authorization: Bearer $RAG_AUTH_TOKEN"
+          fi
+
+          # Step 1: Initialize MCP session
+          curl -s -D /tmp/headers -X POST "$RAG_URL" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json, text/event-stream" \
+            ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+            -d "{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"knowledge-loop\",\"version\":\"1.0\"}},\"id\":1}" \
+            > /dev/null
+
+          SESSION_HEADER=$(grep -i "mcp-session-id" /tmp/headers | tr -d '' | awk '{print $2}')
+          echo "MCP Session: $SESSION_HEADER"
+
+          # Step 2: Send initialized notification
+          curl -s -X POST "$RAG_URL" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json, text/event-stream" \
+            -H "Mcp-Session-Id: $SESSION_HEADER" \
+            ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+            -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            > /dev/null
+
+          # Step 3: Call memory_store_conversation
+          PAYLOAD=$(jq -n \
+            --arg sid "$SESSION_ID" \
+            --arg msg "$MSG" \
+            --arg repo "$REPO" \
+            '{
+              jsonrpc: "2.0",
+              method: "tools/call",
+              params: {
+                name: "memory_store_conversation",
+                arguments: {
+                  input: {
+                    session_id: $sid,
+                    messages: [{role: "system", content: $msg}],
+                    project: ($repo | split("/") | .[-1]),
+                    tags: ["github-issue", "auto-closed"]
+                  }
+                }
+              },
+              id: 2
+            }')
+
+          RESULT=$(curl -s -X POST "$RAG_URL" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json, text/event-stream" \
+            -H "Mcp-Session-Id: $SESSION_HEADER" \
+            ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+            -d "$PAYLOAD")
+
+          echo "RAG Response: $RESULT"
