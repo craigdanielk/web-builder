@@ -485,26 +485,40 @@ def stage_scaffold(brief: str, preset: str, project_name: str, no_pause: bool, i
     """Stage 1: Generate the page scaffold."""
     print("\n📋 Stage 1: Generating scaffold...")
 
+    # ── Database path: skip LLM entirely when Supabase section sequence exists ──
+    if build_cache and build_cache.section_sequence:
+        scaffold_text = f"Page: {project_name}\nPreset: {preset}\n\n{build_cache.get_preset_sequence_text()}"
+        print(f"  ✓ Using Supabase section sequence directly ({len(build_cache.section_sequence)} sections) — LLM call skipped")
+        output_path = OUTPUT_DIR / project_name / "scaffold.md"
+        write_file(output_path, scaffold_text)
+        if not no_pause:
+            print(f"\n{scaffold_text}\n")
+            print("─" * 60)
+            response = input("Review the scaffold above. Continue? [Y/n/edit]: ").strip().lower()
+            if response == "n":
+                print("Aborted. Edit the scaffold manually and rerun with --no-pause.")
+                sys.exit(0)
+            elif response == "edit":
+                print(f"Edit the scaffold at: {output_path}")
+                input("Press Enter when done editing...")
+                scaffold_text = read_file(output_path)
+        return scaffold_text
+
     # Load resources
     scaffold_template = read_file(TEMPLATES_DIR / "scaffold-prompt.md")
     taxonomy = read_file(SKILLS_DIR / "section-taxonomy.md")
 
-    # ── Database path: use cached section sequence from Supabase ──
-    if build_cache and build_cache.section_sequence:
-        preset_sequence = build_cache.get_preset_sequence_text()
-        print(f"  Using Supabase section sequence ({len(build_cache.section_sequence)} sections)")
-    else:
-        # ── Legacy path: read from .md preset file ──
-        preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
+    # ── Legacy path: read from .md preset file ──
+    preset_content = read_file(SKILLS_DIR / "presets" / f"{preset}.md")
 
-        # Extract section sequence from preset
-        # (Look for the Default Section Sequence block)
-        sequence_match = re.search(
-            r"## Default Section Sequence\n\n```\n(.*?)```",
-            preset_content,
-            re.DOTALL,
-        )
-        preset_sequence = sequence_match.group(1).strip() if sequence_match else "See preset file"
+    # Extract section sequence from preset
+    # (Look for the Default Section Sequence block)
+    sequence_match = re.search(
+        r"## Default Section Sequence\n\n```\n(.*?)```",
+        preset_content,
+        re.DOTALL,
+    )
+    preset_sequence = sequence_match.group(1).strip() if sequence_match else "See preset file"
 
     # Extract just archetype names and variants from taxonomy (keep it concise)
     archetype_lines = []

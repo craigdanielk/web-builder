@@ -19,6 +19,13 @@ export {
   CART_LINES_UPDATE,
   CART_LINES_REMOVE,
 } from "./mutations";
+export type {
+  CartCreateResult,
+  CartGetResult,
+  CartLinesAddResult,
+  CartLinesUpdateResult,
+  CartLinesRemoveResult,
+} from "./mutations";
 export {
   createCart,
   getCart,
@@ -27,8 +34,11 @@ export {
   updateCartLine,
   removeFromCart,
   getCheckoutUrl,
-  getCartIdFromCookie,
-  setCartIdCookie,
+  getCartId,
+  setCartId,
 } from "./cart";
+export { CartProvider, useCart } from "./cart-context";
+export { CartDrawer } from "./CartDrawer";
+export { AddToCartButton } from "./AddToCartButton";
 export { formatPrice, getImageUrl } from "./utils";
 export type { Money, Image, Product, ProductVariant, Collection, Cart, CartLine } from "./types";
