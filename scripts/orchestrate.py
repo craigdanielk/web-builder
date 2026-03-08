@@ -1600,6 +1600,212 @@ def _inject_footer_props(code: str) -> str:
     return code
 
 
+def _build_nav_template(project_name: str) -> str:
+    """Return a complete Navigation.tsx React component with real defaults."""
+    display_name = project_name.replace("-", " ").title()
+    return f'''\
+'use client';
+
+import {{ useState, useEffect }} from 'react';
+import Link from 'next/link';
+
+const defaultLinks = [
+  {{ label: 'Shop', url: '/collections' }},
+  {{ label: 'About', url: '/#about' }},
+  {{ label: 'Contact', url: '/#contact' }},
+  {{ label: 'FAQ', url: '/#faq' }},
+];
+
+export default function Navigation({{ menu, logo, shopName }}: {{
+  menu?: {{ title: string; items: Array<{{ title: string; url: string; items?: Array<{{ title: string; url: string }}> }}> }};
+  logo?: {{ url: string; altText: string | null; width?: number; height?: number }};
+  shopName?: string;
+}} = {{}}) {{
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const displayLinks = menu?.items?.length
+    ? menu.items.map(i => ({{ label: i.title, url: i.url }}))
+    : defaultLinks;
+
+  useEffect(() => {{
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', onScroll, {{ passive: true }});
+    return () => window.removeEventListener('scroll', onScroll);
+  }}, []);
+
+  return (
+    <nav
+      className={{`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${{
+        scrolled ? 'bg-white/95 backdrop-blur shadow-sm' : 'bg-transparent'
+      }}`}}
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 md:h-20">
+          {{/* Logo */}}
+          <Link href="/" className="flex-shrink-0">
+            {{logo?.url ? (
+              <img
+                src={{logo.url}}
+                alt={{logo.altText || shopName || '{display_name}'}}
+                className="h-8 w-auto"
+              />
+            ) : (
+              <span className={{`text-xl font-bold ${{scrolled ? 'text-gray-900' : 'text-white'}}`}}>
+                {{shopName || '{display_name}'}}
+              </span>
+            )}}
+          </Link>
+
+          {{/* Desktop links */}}
+          <div className="hidden md:flex items-center gap-8">
+            {{displayLinks.map((link, i) => (
+              <Link
+                key={{i}}
+                href={{link.url}}
+                className={{`text-sm font-medium transition-colors ${{
+                  scrolled
+                    ? 'text-gray-700 hover:text-gray-900'
+                    : 'text-white/90 hover:text-white'
+                }}`}}
+              >
+                {{link.label}}
+              </Link>
+            ))}}
+          </div>
+
+          {{/* Mobile hamburger */}}
+          <button
+            className="md:hidden p-2"
+            onClick={{() => setMobileOpen(!mobileOpen)}}
+            aria-label="Toggle menu"
+          >
+            <svg
+              className={{`h-6 w-6 ${{scrolled ? 'text-gray-900' : 'text-white'}}`}}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              {{mobileOpen ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={{2}} d="M6 18L18 6M6 6l12 12" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={{2}} d="M4 6h16M4 12h16M4 18h16" />
+              )}}
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {{/* Mobile menu */}}
+      {{mobileOpen && (
+        <div className="md:hidden bg-white border-t shadow-lg">
+          <div className="px-4 py-3 space-y-2">
+            {{displayLinks.map((link, i) => (
+              <Link
+                key={{i}}
+                href={{link.url}}
+                className="block py-2 text-gray-700 hover:text-gray-900 font-medium"
+                onClick={{() => setMobileOpen(false)}}
+              >
+                {{link.label}}
+              </Link>
+            ))}}
+          </div>
+        </div>
+      )}}
+    </nav>
+  );
+}}
+'''
+
+
+def _build_footer_template(project_name: str) -> str:
+    """Return a complete Footer.tsx React component with real defaults."""
+    display_name = project_name.replace("-", " ").title()
+    return f'''\
+'use client';
+
+import Link from 'next/link';
+
+const defaultColumns = [
+  {{
+    title: 'Shop',
+    links: [
+      {{ label: 'Collections', href: '/collections' }},
+      {{ label: 'New Arrivals', href: '/collections' }},
+      {{ label: 'Sale', href: '/collections' }},
+    ],
+  }},
+  {{
+    title: 'Help',
+    links: [
+      {{ label: 'Contact', href: '/#contact' }},
+      {{ label: 'FAQ', href: '/#faq' }},
+      {{ label: 'Returns', href: '/#faq' }},
+    ],
+  }},
+  {{
+    title: 'About',
+    links: [
+      {{ label: 'Our Story', href: '/#about' }},
+      {{ label: 'Blog', href: '#' }},
+      {{ label: 'Careers', href: '#' }},
+    ],
+  }},
+  {{
+    title: 'Legal',
+    links: [
+      {{ label: 'Privacy', href: '#' }},
+      {{ label: 'Terms', href: '#' }},
+    ],
+  }},
+];
+
+export default function Footer({{ menu, shopName }}: {{
+  menu?: {{ title: string; items: Array<{{ title: string; url: string; items?: Array<{{ title: string; url: string }}> }}> }};
+  shopName?: string;
+}} = {{}}) {{
+  const displayColumns = menu?.items?.length
+    ? menu.items.map(i => ({{
+        title: i.title,
+        links: i.items?.map(sub => ({{ label: sub.title, href: sub.url }})) ?? [],
+      }}))
+    : defaultColumns;
+
+  return (
+    <footer className="bg-gray-900 text-gray-300">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          {{displayColumns.map((col, i) => (
+            <div key={{i}}>
+              <h3 className="text-white font-semibold text-sm uppercase tracking-wider mb-4">
+                {{col.title}}
+              </h3>
+              <ul className="space-y-2">
+                {{col.links.map((link, j) => (
+                  <li key={{j}}>
+                    <Link
+                      href={{link.href}}
+                      className="text-sm text-gray-400 hover:text-white transition-colors"
+                    >
+                      {{link.label}}
+                    </Link>
+                  </li>
+                ))}}
+              </ul>
+            </div>
+          ))}}
+        </div>
+        <div className="mt-12 pt-8 border-t border-gray-800 text-center text-sm text-gray-500">
+          &copy; {{new Date().getFullYear()}} {{shopName || '{display_name}'}}. All rights reserved.
+        </div>
+      </div>
+    </footer>
+  );
+}}
+'''
+
+
 def stage_shared_components(
     manifest: dict,
     preset: str,
@@ -1607,47 +1813,28 @@ def stage_shared_components(
     build_cache: "BuildCache | None" = None,
     has_commerce_routes: bool = False,
 ) -> list[Path]:
-    """Layer 6: Generate Navigation and Footer once as shared layout components."""
+    """Layer 6: Generate Navigation and Footer once as shared layout components.
+
+    Uses deterministic templates instead of LLM calls — faster, cheaper, and
+    produces components with real default content (Shop, About, Contact, FAQ)
+    rather than placeholder tokens.
+    """
     print("\n🧩 Layer 6: Generating shared layout components (Navigation, Footer)...")
-    shared = manifest.get("shared_components", {})
-    nav_spec = shared.get("navigation", {"archetype": "NAV", "variant": "sticky-transparent"})
-    footer_spec = shared.get("footer", {"archetype": "FOOTER", "variant": "four-column"})
-    # Include project name so generated logo/nav use correct brand (e.g. demo → Demo, not generic LUXE)
-    nav_content = f"Site navigation with logo and main menu links for project: {project_name}. Use the project name as the logo text (e.g. demo → Demo)."
-    footer_content = f"Site footer with links and contact for project: {project_name}."
-    sections = [
-        {"archetype": nav_spec["archetype"], "variant": nav_spec["variant"], "content": nav_content},
-        {"archetype": footer_spec["archetype"], "variant": footer_spec["variant"], "content": footer_content},
-    ]
-    files = stage_sections(
-        sections,
-        preset,
-        project_name,
-        section_contexts=None,
-        extraction_dir=None,
-        identification=None,
-        site_spec=None,
-        build_cache=build_cache,
-        output_subdir="shared",
-        section_file_names=["Navigation.tsx", "Footer.tsx"],
-    )
-    # Fix default export names so layout can import Navigation and Footer
     shared_dir = OUTPUT_DIR / project_name / "shared"
-    renames = [
-        ("Section01NAV", "Navigation"),
-        ("Section01Nav", "Navigation"),
-        ("Section02FOOTER", "Footer"),
-        ("Section02Footer", "Footer"),
-    ]
-    for fpath in files:
-        if not fpath.exists():
-            continue
-        code = fpath.read_text(encoding="utf-8")
-        if "Navigation.tsx" in str(fpath):
-            code = code.replace("Section01NAV", "Navigation").replace("Section01Nav", "Navigation")
-        elif "Footer.tsx" in str(fpath):
-            code = code.replace("Section02FOOTER", "Footer").replace("Section02Footer", "Footer")
-        fpath.write_text(code, encoding="utf-8")
+    shared_dir.mkdir(parents=True, exist_ok=True)
+
+    nav_path = shared_dir / "Navigation.tsx"
+    footer_path = shared_dir / "Footer.tsx"
+
+    nav_code = _build_nav_template(project_name)
+    footer_code = _build_footer_template(project_name)
+
+    write_file(nav_path, nav_code)
+    print(f"  ✓ Wrote Navigation.tsx (template-driven, no LLM)")
+    write_file(footer_path, footer_code)
+    print(f"  ✓ Wrote Footer.tsx (template-driven, no LLM)")
+
+    files = [nav_path, footer_path]
 
     # ── Commerce prop injection: make NAV/FOOTER accept optional Shopify data ──
     if has_commerce_routes:
@@ -2776,10 +2963,10 @@ export default async function Page({ params }: { params: Promise<{ page: string 
         "badge": {"icon": "Shield", "label": "Certified", "sublabel": "Quality guaranteed", "text": "Trusted"},
         "product": {"name": "Product", "price": "$0.00", "tag": "New", "image_alt": "Product image", "image_url": "/placeholder.svg", "description": "Premium quality crafted for you.", "url": "#", "image": "/placeholder.svg"},
         "column": {"name": "Column", "title": "Column", "description": "More information coming soon."},
-        "col": {"title": "Shop", "description": "Browse our collections."},
+        "col": {"title": "Shop", "description": "Browse our collections.", "name": "Shop"},
         "row": {"feature": "Included", "label": "Feature", "value": "Yes"},
         "logo": {"image_url": "/placeholder.svg", "alt": "Partner", "name": "Partner", "src": "/placeholder.svg", "url": "#"},
-        "nav": {"label": "Link", "url": "#", "href": "#"},
+        "nav": {"label": "Shop", "url": "/collections", "href": "/collections", "text": "Shop"},
         "social": {"icon_path": "M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z", "url": "#", "label": "Social", "icon": "Globe"},
         "step": {"title": "Step", "description": "Follow these simple steps to get started.", "icon": "ArrowRight", "number": "1"},
         "benefit": {"title": "Benefit", "description": "Experience the difference with our approach.", "icon": "Check"},
@@ -2834,9 +3021,16 @@ export default async function Page({ params }: { params: Promise<{ page: string 
             {"icon": "Lock", "label": "Secure Checkout", "sublabel": "SSL encrypted payment"},
         ],
         "col": [
-            {"title": "Shop"},
-            {"title": "Help"},
-            {"title": "About"},
+            {"title": "Shop", "name": "Shop", "description": "Browse our collections."},
+            {"title": "Help", "name": "Help", "description": "Get assistance with your order."},
+            {"title": "About", "name": "About", "description": "Learn more about us."},
+            {"title": "Legal", "name": "Legal", "description": "Privacy and terms."},
+        ],
+        "nav": [
+            {"label": "Shop", "url": "/collections", "href": "/collections", "text": "Shop"},
+            {"label": "About", "url": "/#about", "href": "/#about", "text": "About"},
+            {"label": "Contact", "url": "/#contact", "href": "/#contact", "text": "Contact"},
+            {"label": "FAQ", "url": "/#faq", "href": "/#faq", "text": "FAQ"},
         ],
         "column": [
             {"title": "Basic", "name": "Basic"},
