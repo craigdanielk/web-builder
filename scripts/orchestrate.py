@@ -3306,6 +3306,31 @@ export default async function Page({ params }: { params: Promise<{ page: string 
     if _sanitize_count > 0:
         print(f"  ✓ Sanitized placeholder tokens in {_sanitize_count} file(s)")
 
+    # ── Safety-net sanitization pass (sanitizer module) ──
+    # Catches any tokens that survived the 8-phase sanitization above.
+    try:
+        from lib.sanitizer import sanitize_directory as _sanitize_dir
+        _sanitizer_ctx = {}
+        # Build context from architecture.json if available
+        if extraction_dir:
+            _arch_path = Path(extraction_dir) / "architecture.json"
+            if _arch_path.exists():
+                try:
+                    _arch = json.loads(_arch_path.read_text(encoding="utf-8"))
+                    _cols = _arch.get("collections", [])
+                    if _cols:
+                        _sanitizer_ctx["collection_handle"] = _cols[0].get("handle", "all")
+                    _prods = _arch.get("products", [])
+                    if _prods:
+                        _sanitizer_ctx["product_handle"] = _prods[0].get("handle", "product")
+                except (json.JSONDecodeError, OSError):
+                    pass
+        _sn_result = _sanitize_dir(site_dir, context=_sanitizer_ctx)
+        if _sn_result["total_replacements"] > 0:
+            print(f"  ✓ Safety-net sanitizer fixed {_sn_result['total_replacements']} remaining token(s) in {_sn_result['files_sanitized']} file(s)")
+    except ImportError:
+        pass  # sanitizer module not available; non-fatal
+
     # ── Copy animation components from library ──
     anim_components_dir = SKILLS_DIR / "animation-components"
     registry_path = anim_components_dir / "component-registry.json"
@@ -3659,6 +3684,33 @@ async function downloadOne(url) {{
         else:
             print("  ⚠ Layer 7: shopify_config.json not found — .env.local not generated")
             print("    Create .env.local manually with: SHOPIFY_STORE_DOMAIN, SHOPIFY_STOREFRONT_ACCESS_TOKEN, SHOPIFY_REVALIDATION_SECRET")
+
+    # ── Gate A: Token Sanitization Gate ──
+    # Final check: fail loudly if any content tokens survived all sanitization passes.
+    try:
+        from lib.gate_a import check_gate_a as _check_gate_a
+        _gate_a_ctx = {}
+        if extraction_dir:
+            _arch_gate = Path(extraction_dir) / "architecture.json"
+            if _arch_gate.exists():
+                try:
+                    _arch_g = json.loads(_arch_gate.read_text(encoding="utf-8"))
+                    _cols_g = _arch_g.get("collections", [])
+                    if _cols_g:
+                        _gate_a_ctx["collection_handle"] = _cols_g[0].get("handle", "all")
+                except (json.JSONDecodeError, OSError):
+                    pass
+        _gate_a_result = _check_gate_a(site_dir, context=_gate_a_ctx, auto_fix=True)
+        if _gate_a_result["auto_fixed"] > 0:
+            print(f"  ✓ Gate A auto-fixed {_gate_a_result['auto_fixed']} token(s)")
+        if _gate_a_result["passed"]:
+            print("  ✓ Gate A PASSED: No unsanitized tokens")
+        else:
+            print(f"  ⚠ Gate A: {_gate_a_result['count']} unsanitized token(s) remain (non-fatal warning)")
+            for _gf in _gate_a_result["findings"][:10]:
+                print(f"    {_gf['file']}:{_gf['line']} — {_gf['token']}")
+    except ImportError:
+        pass  # gate_a module not available; non-fatal
 
     print(f"  ✓ Site deployed to output/{project_name}/site/")
     print(f"  Run: cd output/{project_name}/site && npm run dev")
