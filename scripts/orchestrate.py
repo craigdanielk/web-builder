@@ -162,6 +162,7 @@ def main():
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--skip-to", default=None)
     parser.add_argument("--set-vercel-env", action="store_true")
+    parser.add_argument("--no-pause", action="store_true", help="Skip scaffold review checkpoint (no-op in this runner)")
     args = parser.parse_args()
     out_dir = Path(args.output_dir) if args.output_dir else None
     manifest = build(project=args.project, preset_name=args.preset,
