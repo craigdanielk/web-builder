@@ -212,7 +212,7 @@ async function extractReference(url, outputDir) {
     } catch (e) {
       if (e.message.includes('Timeout')) {
         console.log(`[extract] networkidle timed out, falling back to domcontentloaded`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
         await sleep(5000); // extra settle time for JS-heavy sites
       } else {
         throw e;
