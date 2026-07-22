@@ -241,12 +241,15 @@ def log_build(
     target_platform: str | None = None,
     bos_line_items: int | None = None,
     sections_reconciled: dict | None = None,
+    tenant_id: str | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
     sections_from_template = local .tsx file count; db_template_count = Supabase code_template count.
     target_platform records the deploy adapter used ('shopify' or 'vercel').
     bos_line_items records the number of Bill of Sale line items addressed in this build.
+    tenant_id records the tenant coordinate (UUID) when the build was driven by a
+    tenant capture; omitted entirely when absent so non-tenant builds are unchanged.
     Returns True on success, False on failure.
     """
     row = {
@@ -269,6 +272,8 @@ def log_build(
         row["bos_line_items"] = bos_line_items
     if sections_reconciled is not None:
         row["sections_reconciled"] = sections_reconciled
+    if tenant_id is not None:
+        row["tenant_id"] = tenant_id
 
     try:
         _post("build_log", [row])
