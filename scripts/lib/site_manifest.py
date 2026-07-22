@@ -7,7 +7,7 @@ Single source of truth for scaffold, sections, assembly, and deploy stages.
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Union
 
 # Default pages when no architecture file is provided
 DEFAULT_PAGES = [
@@ -57,7 +57,7 @@ DEFAULT_PAGES = [
 def get_default_shared_components(
     nav_variant: str = "sticky-transparent",
     footer_variant: str = "four-column",
-) -> dict[str, dict[str, str]]:
+) -> Dict[str, Dict[str, str]]:
     """Return default shared_components dict for manifest."""
     return {
         "navigation": {"archetype": "NAV", "variant": nav_variant},
@@ -69,10 +69,10 @@ def generate_site_manifest(
     project: str,
     industry: str,
     output_dir: Path,
-    industry_metadata: dict | None = None,
-    architecture_path: Path | None = None,
+    industry_metadata: Optional[dict] = None,
+    architecture_path: Optional[Path] = None,
     write_file: bool = True,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """
     Generate a site manifest for multi-page generation.
 
@@ -116,7 +116,7 @@ def generate_site_manifest(
     return manifest
 
 
-def load_site_manifest(path: Path | str) -> dict[str, Any]:
+def load_site_manifest(path: Union[Path, str]) -> Dict[str, Any]:
     """Load a site manifest from a JSON file."""
     path = Path(path)
     if not path.exists():
@@ -124,7 +124,7 @@ def load_site_manifest(path: Path | str) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def filter_nav_footer_from_sections(sections: list[dict]) -> list[dict]:
+def filter_nav_footer_from_sections(sections: List[dict]) -> List[dict]:
     """Remove NAV and FOOTER from a section sequence (they become shared components)."""
     return [
         s for s in sections
