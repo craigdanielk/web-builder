@@ -37,9 +37,17 @@ from typing import Any
 
 @dataclass
 class LineItem:
-    """One unit of build work (typically one page + its sections)."""
+    """One unit of build work (typically one page + its sections).
+
+    Two provenances are supported on the same model:
+      * pipeline-native items  (from_manifest / from_sections) — page/section units;
+      * DAG bill items         (from_dag) — one audit finding per line item, carrying
+        a ``disposition`` (built-fresh / gen+wire / carried-into-unified-app / …) and
+        a ``verified_against`` rule_id that the re-audit loop re-checks to prove the
+        finding closed.
+    """
     item_id: str
-    type: str                     # "page" | "section"
+    type: str                     # "page" | "section" | "finding"
     page_type: str                # "homepage" | "collection-template" | …
     position: int = 0
     archetype: str = ""
@@ -47,6 +55,12 @@ class LineItem:
     content_direction: str = ""
     sections: list[dict] = field(default_factory=list)  # nested sections (for page type)
     build_trace: dict | None = None
+    # ── DAG bill provenance (uiux-bill-of-sale-dag-v1) ────────────────────────
+    disposition: str = ""         # built-fresh | gen+wire | carried-into-unified-app | …
+    verified_against: str = ""    # rule_id the re-audit re-checks to prove closure
+    page: str = ""                # property/page the finding lives on (e.g. "exchange")
+    section: str = ""             # build_role / build_target the fix lands in
+    fix_locus: str = ""           # source_code | content | config | …
 
 
 @dataclass
@@ -165,8 +179,17 @@ class BillOfSale:
 
     @classmethod
     def load(cls, path: str | Path) -> "BillOfSale":
-        """Load a Bill of Sale from a JSON file."""
+        """Load a Bill of Sale from a JSON file.
+
+        Schema-aware: an external ``uiux-bill-of-sale-dag-v1`` bill (line items
+        keyed by ``id`` + ``disposition``, e.g. the tenant audit Bill of Sale) is
+        routed to :meth:`from_dag`; the pipeline-native format (line items keyed by
+        ``item_id``) is loaded directly.  This lets ``--bill-of-sale`` consume the
+        real audit bill without a converter step.
+        """
         data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if cls._is_dag_schema(data):
+            return cls.from_dag(data, project_name=str(path))
         items = [LineItem(**it) for it in data.get("line_items", [])]
         return cls(
             bill_of_sale_id=data.get("bill_of_sale_id", ""),
@@ -176,6 +199,60 @@ class BillOfSale:
             version=data.get("version", "1.0"),
             line_items=items,
         )
+
+    @staticmethod
+    def _is_dag_schema(data: dict) -> bool:
+        """Detect the external DAG bill schema (uiux-bill-of-sale-dag-v1)."""
+        schema = str((data.get("meta") or {}).get("schema", ""))
+        if schema.startswith("uiux-bill-of-sale-dag"):
+            return True
+        # Fallback heuristic: DAG items are keyed by ``id`` + ``disposition``,
+        # never by the pipeline-native ``item_id``.
+        items = data.get("line_items", [])
+        if items and isinstance(items[0], dict):
+            first = items[0]
+            return "item_id" not in first and ("disposition" in first or "id" in first)
+        return False
+
+    @classmethod
+    def from_dag(cls, data: dict, project_name: str | None = None) -> "BillOfSale":
+        """Build a BoS from an external ``uiux-bill-of-sale-dag-v1`` bill.
+
+        Each DAG ``line_item`` (one audit finding) becomes one :class:`LineItem`
+        keyed by its stable ``id`` (e.g. ``BOS-034``).  Its ``disposition`` and
+        ``verified_against`` rule_id are preserved so the build orchestration can
+        drive the right deliverable and the re-audit loop can re-check closure.
+
+        The mapping is deterministic — the same bill always yields the same set of
+        line items in the same order — which underpins idempotent trace writeback.
+        """
+        meta = data.get("meta") or {}
+        bos = cls.new(
+            project_name=project_name or meta.get("tenant", "") or "",
+            industry=meta.get("industry", ""),
+        )
+        bos.version = str(meta.get("schema", "uiux-bill-of-sale-dag-v1"))
+        for di in data.get("line_items", []):
+            finding = di.get("finding") or {}
+            bt = di.get("build_trace") or {}
+            rule_id = (
+                bt.get("verified_against")
+                or finding.get("rule_id")
+                or di.get("id", "")
+            )
+            bos.line_items.append(LineItem(
+                item_id=di.get("id", ""),
+                type="finding",
+                page_type=di.get("build_target", "") or di.get("stack", ""),
+                content_direction=(di.get("fix") or {}).get("action", "") if isinstance(di.get("fix"), dict) else "",
+                disposition=di.get("disposition", ""),
+                verified_against=rule_id,
+                page=di.get("property", "") or (di.get("page") or ""),
+                section=di.get("build_role", "") or (di.get("section") or "") or di.get("build_target", ""),
+                fix_locus=di.get("fix_locus", ""),
+                build_trace=None,
+            ))
+        return bos
 
     def save(self, path: str | Path | None = None) -> str:
         """Write the BoS (including build_traces) back to JSON.  Returns the path used."""
@@ -276,6 +353,90 @@ class BillOfSale:
     @property
     def completed_count(self) -> int:
         return len(self.completed_line_items())
+
+
+# ─── DAG disposition → build lane mapping ─────────────────────────────────────
+#
+# Deterministic, side-effect-free mapping from a line item's *disposition* to the
+# build lane + action that drives its deliverable.  Same disposition → same lane,
+# always — this is what keeps the trace writeback idempotent.
+
+DISPOSITION_ACTIONS: dict[str, tuple[str, str]] = {
+    "built-fresh":               ("build", "build-fresh-section"),
+    "built-fresh+wired":         ("build", "build-fresh-and-wire"),
+    "gen+wire":                  ("build", "generate-and-wire"),
+    "carried-into-unified-app":  ("carry", "carry-into-unified-app"),
+    "auto-resolved-by-rebuild":  ("auto", "auto-resolved-by-rebuild"),
+    "retained":                  ("retain", "retain-existing"),
+    "foundation":                ("foundation", "foundation-scaffold"),
+    "copy-findings":             ("copy", "route-to-copy-gate"),
+    "copy":                      ("copy", "route-to-copy-gate"),
+}
+
+# Lane → the trace status recorded at the orchestration layer.  A full billed build
+# fills real statuses/commits later; at the orchestration layer we record intent.
+_LANE_STATUS: dict[str, str] = {
+    "copy": "routed-to-copy-gate",
+}
+
+
+def map_disposition(disposition: str) -> tuple[str, str]:
+    """Map a disposition string to ``(lane, action)`` deterministically.
+
+    Unknown dispositions fall back to the ``build`` lane so nothing is silently
+    dropped from the audit — the finding still gets a trace and stays visible.
+    """
+    return DISPOSITION_ACTIONS.get((disposition or "").strip(), ("build", "build-deliverable"))
+
+
+def build_dag_trace(item: LineItem, commit: str | None = None,
+                    files: list[str] | None = None) -> dict:
+    """Produce the deterministic build_trace dict for one DAG line item.
+
+    Keyed by ``id`` and ``verified_against`` so the re-audit loop can re-check the
+    exact rule that raised the finding.  Re-running over the same bill reproduces
+    an identical dict — no timestamps, no randomness — so the writeback is a pure
+    replace-in-place, never an append.
+    """
+    lane, action = map_disposition(item.disposition)
+    status = _LANE_STATUS.get(lane, "planned")
+    return {
+        "id": item.item_id,
+        "disposition": item.disposition,
+        "lane": lane,
+        "build_action": action,
+        "status": status,
+        "page": item.page,
+        "section": item.section,
+        "fix_locus": item.fix_locus,
+        "files": list(files or []),
+        "commit": commit,
+        "verified_against": item.verified_against,
+    }
+
+
+def write_build_trace_artifact(output_dir: Path, traces: list[dict]) -> str:
+    """Write ``output_dir/build-trace.json`` idempotently (replace-in-place).
+
+    The artifact is rebuilt from scratch each call and keyed by line-item id, so a
+    re-run over the same Bill of Sale leaves the trace count equal to the line-item
+    count (N, never 2N).  Returns the path written.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # De-dupe by id defensively — last write wins, so the count can never exceed
+    # the number of distinct line items even if a caller passes duplicates.
+    by_id: dict[str, dict] = {}
+    for t in traces:
+        by_id[t.get("id", "")] = t
+    out = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "count": len(by_id),
+        "traces": list(by_id.values()),
+    }
+    path = output_dir / "build-trace.json"
+    path.write_text(json.dumps(out, indent=2, default=str), encoding="utf-8")
+    return str(path)
 
 
 # ─── Convenience helpers used by orchestrate.py ───────────────────────────────
