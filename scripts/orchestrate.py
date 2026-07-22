@@ -160,7 +160,7 @@ def save_checkpoint(output_dir: Path, stage: str, project_name: str, data: dict 
 
 def load_checkpoint(project_name: str) -> dict | None:
     """Load checkpoint for a project if it exists."""
-    checkpoint_file = ROOT / "output" / project_name / "checkpoint.json"
+    checkpoint_file = OUTPUT_DIR / project_name / "checkpoint.json"
     if checkpoint_file.exists():
         return json.loads(checkpoint_file.read_text(encoding="utf-8"))
     return None
@@ -749,7 +749,7 @@ def stage_scaffold_v2(site_spec: dict, project_name: str) -> tuple:
     scaffold_text = "\n".join(scaffold_lines)
 
     # Save scaffold for reference
-    output_dir = Path(f"output/{project_name}")
+    output_dir = OUTPUT_DIR / project_name
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "scaffold.md").write_text(
         f"# Scaffold (v2 - from site-spec.json)\n\n{scaffold_text}\n"
@@ -4298,8 +4298,30 @@ def main():
                         "{section_index_or_filename: {rule_id, detail}} — flagged slots switch from "
                         "reproduce to revise-from-source",
                         default=None, metavar="PATH")
+    parser.add_argument("--output-root", help="Override the base output directory. Default: <web-builder>/output. "
+                        "When set, all build artifacts write under <output-root>/{project}/... "
+                        "(re-rooted, same subtree layout). Accepts absolute or relative paths.",
+                        default=None, metavar="PATH")
 
     args = parser.parse_args()
+
+    # ── Output-root injection: re-root the base output directory ──
+    # Default (flag absent) is a no-op — OUTPUT_DIR stays <web-builder>/output.
+    # When provided, resolve to absolute, create the tree, and validate writability,
+    # then rebind the module-level OUTPUT_DIR so every path builder inherits it.
+    if getattr(args, "output_root", None):
+        global OUTPUT_DIR
+        resolved_root = Path(args.output_root).expanduser().resolve()
+        try:
+            resolved_root.mkdir(parents=True, exist_ok=True)
+        except OSError as _e:
+            print(f"\n❌ --output-root cannot be created: {resolved_root}\n   {_e}")
+            sys.exit(1)
+        if not os.access(resolved_root, os.W_OK):
+            print(f"\n❌ --output-root is not writable: {resolved_root}")
+            sys.exit(1)
+        OUTPUT_DIR = resolved_root
+        print(f"  ✓ Output root overridden: {OUTPUT_DIR}")
 
     # ── Copy Fidelity Node (Phase 2): load optional weakness findings ──
     copy_findings = None

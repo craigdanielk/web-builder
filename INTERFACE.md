@@ -35,6 +35,7 @@ python scripts/orchestrate.py <project-name> [OPTIONS]
 | `--clean` | flag | Delete existing output and start fresh |
 | `--force` | flag | Ignore warnings (low confidence, validation issues) |
 | `--set-vercel-env` | flag | Auto-set Shopify env vars on Vercel + register webhooks after deploy |
+| `--output-root <path>` | string | Override the base output directory. Default: `<web-builder>/output`. When set, all build artifacts write under `<output-root>/{project}/...` (same subtree layout, re-rooted). Accepts absolute or relative paths (resolved to absolute); the tree is created if missing and validated for writability. Absent = no-op (default behavior). |
 
 ---
 
@@ -134,6 +135,12 @@ python scripts/orchestrate.py <project-name> [OPTIONS]
 ---
 
 ## Output Structure
+
+> **Base directory is overridable.** By default all output is rooted at
+> `output/` (i.e. `<web-builder>/output/{project}/...`). Passing
+> `--output-root <path>` re-roots the entire subtree below to
+> `<output-root>/{project}/...` — the layout shown is identical, only the base
+> changes. The paths below use the default `output/` base.
 
 ### Single-Page Build
 ```
