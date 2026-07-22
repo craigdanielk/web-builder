@@ -890,9 +890,10 @@ def load_injection_data(extraction_dir: Path | None) -> tuple[dict | None, dict 
 
 def call_injector(script: str, args_json: str) -> dict | None:
     """Call a Node.js injection module and return parsed JSON result."""
+    _escaped = args_json.replace("'", "\\'")
     node_script = f"""
 const mod = require('./lib/{script}');
-const args = JSON.parse('{args_json.replace("'", "\\'")}');
+const args = JSON.parse('{_escaped}');
 const result = mod.fn(args);
 console.log(JSON.stringify(result));
 """
@@ -1775,9 +1776,16 @@ def _inject_footer_props(code: str) -> str:
     return code
 
 
-def _build_nav_template(project_name: str) -> str:
-    """Return a complete Navigation.tsx React component with real defaults."""
+def _build_nav_template(project_name: str, adapter: DeployAdapter | None = None) -> str:
+    """Return a complete Navigation.tsx React component with real defaults.
+    When adapter is set, platform-specific default links are used."""
+    _adapter = adapter or ShopifyAdapter()
     display_name = project_name.replace("-", " ").title()
+    _nav_links = _adapter.get_nav_default_links()
+    _nav_links_str = ",\n  ".join(
+        f"{{ label: '{lbl}', url: '{url}' }}"
+        for lbl, url in _nav_links
+    )
     return f'''\
 'use client';
 
@@ -1785,10 +1793,7 @@ import {{ useState, useEffect }} from 'react';
 import Link from 'next/link';
 
 const defaultLinks = [
-  {{ label: 'Shop', url: '/collections' }},
-  {{ label: 'About', url: '/#about' }},
-  {{ label: 'Contact', url: '/#contact' }},
-  {{ label: 'FAQ', url: '/#faq' }},
+  {_nav_links_str},
 ];
 
 export default function Navigation({{ menu, logo, shopName }}: {{
@@ -1894,46 +1899,31 @@ export default function Navigation({{ menu, logo, shopName }}: {{
 '''
 
 
-def _build_footer_template(project_name: str) -> str:
-    """Return a complete Footer.tsx React component with real defaults."""
+def _build_footer_template(project_name: str, adapter: DeployAdapter | None = None) -> str:
+    """Return a complete Footer.tsx React component with real defaults.
+    When adapter is set, platform-specific default columns are used."""
+    _adapter = adapter or ShopifyAdapter()
     display_name = project_name.replace("-", " ").title()
+    _footer_cols = _adapter.get_footer_default_columns()
+    _nl = "\n"
+    _nl = "\n"
+    _comma_nl = ",\n"
+    _footer_cols_str = _nl.join(
+        '  {' + _nl + "    title: '" + col["title"] + "'," + _nl + "    links: [" + _nl
+        + _comma_nl.join(
+            "      { label: '" + link["label"] + "', href: '" + link["href"] + "' }"
+            for link in col["links"]
+        )
+        + _nl + "    ]," + _nl + "  }"
+        for col in _footer_cols
+    )
     return f'''\
 'use client';
 
 import Link from 'next/link';
 
 const defaultColumns = [
-  {{
-    title: 'Shop',
-    links: [
-      {{ label: 'Collections', href: '/collections' }},
-      {{ label: 'New Arrivals', href: '/collections' }},
-      {{ label: 'Sale', href: '/collections' }},
-    ],
-  }},
-  {{
-    title: 'Help',
-    links: [
-      {{ label: 'Contact', href: '/#contact' }},
-      {{ label: 'FAQ', href: '/#faq' }},
-      {{ label: 'Returns', href: '/#faq' }},
-    ],
-  }},
-  {{
-    title: 'About',
-    links: [
-      {{ label: 'Our Story', href: '/#about' }},
-      {{ label: 'Blog', href: '#' }},
-      {{ label: 'Careers', href: '#' }},
-    ],
-  }},
-  {{
-    title: 'Legal',
-    links: [
-      {{ label: 'Privacy', href: '#' }},
-      {{ label: 'Terms', href: '#' }},
-    ],
-  }},
+{_footer_cols_str},
 ];
 
 export default function Footer({{ menu, shopName }}: {{
@@ -1987,22 +1977,26 @@ def stage_shared_components(
     project_name: str,
     build_cache: "BuildCache | None" = None,
     has_commerce_routes: bool = False,
+    adapter: DeployAdapter | None = None,
 ) -> list[Path]:
     """Layer 6: Generate Navigation and Footer once as shared layout components.
 
     Uses deterministic templates instead of LLM calls — faster, cheaper, and
     produces components with real default content (Shop, About, Contact, FAQ)
     rather than placeholder tokens.
+    When adapter is provided, platform-specific nav/footer defaults are used.
     """
     print("\n🧩 Layer 6: Generating shared layout components (Navigation, Footer)...")
+    if adapter and adapter.name != "shopify":
+        print(f"  Using {adapter.name} platform defaults for Navigation/Footer")
     shared_dir = OUTPUT_DIR / project_name / "shared"
     shared_dir.mkdir(parents=True, exist_ok=True)
 
     nav_path = shared_dir / "Navigation.tsx"
     footer_path = shared_dir / "Footer.tsx"
 
-    nav_code = _build_nav_template(project_name)
-    footer_code = _build_footer_template(project_name)
+    nav_code = _build_nav_template(project_name, adapter=adapter)
+    footer_code = _build_footer_template(project_name, adapter=adapter)
 
     write_file(nav_path, nav_code)
     print(f"  ✓ Wrote Navigation.tsx (template-driven, no LLM)")
@@ -2538,6 +2532,131 @@ export default async function Page({ params }: { params: Promise<{ handle: strin
 '''
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Deploy Adapters: platform-specific deploy behavior
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DeployAdapter:
+    """Base adapter for deploy platform behavior.
+    Subclasses override methods to control what gets written into the Next.js site dir."""
+
+    @property
+    def name(self) -> str:
+        return "base"
+
+    @property
+    def should_inject_commerce(self) -> bool:
+        """Whether to copy Shopify lib, wrappers, and generate Layer 7 pages."""
+        return False
+
+    @property
+    def should_write_env(self) -> bool:
+        """Whether to generate .env.local from shopify_config.json."""
+        return False
+
+    def get_next_config_extras(self) -> str:
+        """Extra next.config.ts fields (e.g. Shopify image remotePatterns)."""
+        return ""
+
+    def get_nav_default_links(self) -> list[tuple[str, str]]:
+        """Default navigation links for the Navigation template."""
+        return [
+            ("Home", "/"),
+            ("About", "/#about"),
+            ("Services", "/#services"),
+            ("Contact", "/#contact"),
+        ]
+
+    def get_footer_default_columns(self) -> list[dict]:
+        """Default footer columns."""
+        return [
+            {"title": "About", "links": [{"label": "Our Story", "href": "/#about"}, {"label": "Blog", "href": "#"}, {"label": "Careers", "href": "#"}]},
+            {"title": "Services", "links": [{"label": "What We Do", "href": "#"}, {"label": "Process", "href": "#"}, {"label": "FAQ", "href": "/#faq"}]},
+            {"title": "Legal", "links": [{"label": "Privacy", "href": "#"}, {"label": "Terms", "href": "#"}]},
+        ]
+
+    def get_cta_url_default(self) -> str:
+        """Default CTA href for buttons."""
+        return "#"
+
+    def should_generate_l7_pages(self) -> bool:
+        """Whether to generate Layer 7 Storefront-wired pages (collection, product, homepage)."""
+        return False
+
+    def log_label(self) -> str:
+        return self.name
+
+    def get_package_extra_deps(self) -> dict[str, str]:
+        """Extra npm dependencies for this platform."""
+        return {}
+
+
+class ShopifyAdapter(DeployAdapter):
+    """Shopify deploy adapter — current behavior unchanged."""
+
+    @property
+    def name(self) -> str:
+        return "shopify"
+
+    @property
+    def should_inject_commerce(self) -> bool:
+        return True
+
+    @property
+    def should_write_env(self) -> bool:
+        return True
+
+    def get_next_config_extras(self) -> str:
+        return (
+            "  images: {\n"
+            "    remotePatterns: [\n"
+            '      { protocol: "https" as const, hostname: "cdn.shopify.com" },\n'
+            '      { protocol: "https" as const, hostname: "**.myshopify.com" },\n'
+            "    ],\n"
+            "  },\n"
+        )
+
+    def get_nav_default_links(self) -> list[tuple[str, str]]:
+        return [
+            ("Shop", "/collections"),
+            ("New Arrivals", "/collections"),
+            ("About", "/pages/about"),
+            ("Contact", "/pages/contact"),
+        ]
+
+    def get_cta_url_default(self) -> str:
+        return "/collections"
+
+    def should_generate_l7_pages(self) -> bool:
+        return True
+
+
+class VercelAdapter(DeployAdapter):
+    """Vercel deploy adapter — clean Next.js app with no Shopify injection."""
+
+    @property
+    def name(self) -> str:
+        return "vercel"
+
+    def get_nav_default_links(self) -> list[tuple[str, str]]:
+        return [
+            ("Home", "/"),
+            ("About", "/#about"),
+            ("Services", "/#services"),
+            ("Contact", "/#contact"),
+        ]
+
+    def get_cta_url_default(self) -> str:
+        return "#"
+
+
+def _resolve_adapter(target_platform: str) -> DeployAdapter:
+    """Resolve the deploy adapter for the given platform string."""
+    if target_platform == "shopify":
+        return ShopifyAdapter()
+    return VercelAdapter()
+
+
 def stage_deploy(
     sections: list[dict],
     section_files: list[Path],
@@ -2548,11 +2667,14 @@ def stage_deploy(
     site_manifest: dict | None = None,
     section_files_by_page: dict[str, list[Path]] | None = None,
     shopify_config_path: str | Path | None = None,
+    target_platform: str | None = "shopify",
 ):
     """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/.
     When site_manifest and section_files_by_page are set (Layer 6), deploys multi-route app
-    with shared layout components and per-page sections."""
-    print("\n🚀 Stage 5: Deploying to Next.js project...")
+    with shared layout components and per-page sections.
+    target_platform selects the deploy adapter ('shopify' or 'vercel')."""
+    adapter = _resolve_adapter(target_platform or "shopify")
+    print(f"\n🚀 Stage 5: Deploying to Next.js project ({adapter.log_label()} adapter)...")
     is_multipage = bool(site_manifest and section_files_by_page is not None)
     if is_multipage:
         # Flatten for has_lottie and used_archetypes
@@ -2563,7 +2685,8 @@ def stage_deploy(
 
     # ── Determine commerce routes early (used for layout, next.config, wrappers) ──
     _page_ids = [p.get("id") for p in (site_manifest or {}).get("pages", [])] if is_multipage else []
-    has_commerce_routes = "collection-template" in _page_ids or "product-template" in _page_ids
+    _has_commerce_in_manifest = "collection-template" in _page_ids or "product-template" in _page_ids
+    has_commerce_routes = _has_commerce_in_manifest and adapter.should_inject_commerce()
 
     # ── Database path: use cached style from Supabase ──
     if build_cache and build_cache.style_config:
@@ -3278,7 +3401,8 @@ export default async function Page({ params }: { params: Promise<{ page: string 
             _file_has_real_copy = any(_t in _lc for _t in _harvested_copy)
 
             # ── Phase 1: Structural replacements (href, src, url, alt) ──
-            _cleaned = _cleaned.replace('href="{cta_url}"', 'href="/collections"')
+            _cta_url = adapter.get_cta_url_default()
+            _cleaned = _cleaned.replace('href="{cta_url}"', f'href="{_cta_url}"')
             _cleaned = re.sub(r"href:\s*'\{[^}]+_href\}'", "href: '#'", _cleaned)
             _cleaned = re.sub(r'href="\{[^}]+_href\}"', 'href="#"', _cleaned)
             _cleaned = re.sub(r"image:\s*'\{[^}]+_image(?:_url)?\}'", "image: '/placeholder.svg'", _cleaned)
@@ -3359,7 +3483,7 @@ export default async function Page({ params }: { params: Promise<{ page: string 
                     break
 
             _SAFE_TOKEN_REPLACEMENTS = {
-                "cta_url": "/collections", "cta_text": "Shop Now", "cta_label": "Shop Now",
+                "cta_url": _cta_url, "cta_text": "Shop Now", "cta_label": "Shop Now",
                 "hero_title": "Welcome", "hero_subtitle": "Discover our collection",
                 "hero_description": "Premium quality products crafted with care.",
                 "hero_image": "/placeholder.svg", "hero_image_url": "/placeholder.svg",
@@ -3404,12 +3528,7 @@ export default async function Page({ params }: { params: Promise<{ page: string 
 
             # ── Phase 6: Fix identical nav fallback links ──
             if "nav" in _fname.lower():
-                _NAV_FALLBACK_LINKS = [
-                    ("Shop", "/collections"),
-                    ("New Arrivals", "/collections"),
-                    ("About", "/pages/about"),
-                    ("Contact", "/pages/contact"),
-                ]
+                _NAV_FALLBACK_LINKS = adapter.get_nav_default_links()
                 # Replace consecutive identical link entries
                 identical_links_pattern = re.compile(
                     r"(const\s+navLinks\s*=\s*\[)\s*"
@@ -4302,6 +4421,8 @@ def main():
                         "When set, all build artifacts write under <output-root>/{project}/... "
                         "(re-rooted, same subtree layout). Accepts absolute or relative paths.",
                         default=None, metavar="PATH")
+    parser.add_argument("--target-platform", choices=["shopify", "vercel"], default="shopify",
+                        help="Deploy target platform (shopify=current behavior, vercel=clean Next.js app). Default: shopify")
 
     args = parser.parse_args()
 
@@ -4543,7 +4664,7 @@ def main():
             print("  ⚠ --skip-to is not supported for multipage; running full multipage pipeline.")
         _mp_page_ids = [p.get("id") for p in site_manifest.get("pages", [])]
         _mp_has_commerce = "collection-template" in _mp_page_ids or "product-template" in _mp_page_ids
-        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce)
+        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce, adapter=_resolve_adapter(args.target_platform))
         save_checkpoint(output_dir, "shared_components", args.project)
         site_manifest = stage_scaffold_multipage(site_manifest, args.project, industry, preset=preset)
         save_checkpoint(output_dir, "scaffold_mp", args.project)
@@ -4570,6 +4691,7 @@ def main():
                     site_manifest=site_manifest,
                     section_files_by_page=section_files_by_page,
                     shopify_config_path=getattr(args, "shopify_config", None),
+                    target_platform=args.target_platform,
                 )
                 save_checkpoint(output_dir, "deploy", args.project)
                 deploy_ran = True
@@ -4604,6 +4726,7 @@ def main():
                 total_sections=len(all_sections),
                 build_duration_ms=_build_duration_ms,
                 status="completed",
+                target_platform=args.target_platform,
             )
             print(f"  📊 Build logged to Supabase (multipage, {len(site_manifest.get('pages', []))} pages — {_local_count} local / {_db_count} db / {_llm_count} LLM)")
         print(f"\n{'═' * 60}")
@@ -4693,7 +4816,7 @@ def main():
             if not args.force:
                 print("  Use --force to deploy anyway, or fix the issues above.")
         if validation['passed'] or args.force:
-            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache)
+            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform)
             save_checkpoint(output_dir, "deploy", args.project)
             deploy_ran = True
 
@@ -4725,6 +4848,7 @@ def main():
             total_sections=len(sections),
             build_duration_ms=_build_duration_ms,
             status="completed",
+            target_platform=args.target_platform,
         )
         print(f"  📊 Build logged to Supabase ({_local_count} local / {_db_count} db / {_llm_count} LLM)")
 

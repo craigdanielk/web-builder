@@ -238,10 +238,12 @@ def log_build(
     build_duration_ms: int | None = None,
     api_cost_usd: float | None = None,
     status: str = "completed",
+    target_platform: str | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
     sections_from_template = local .tsx file count; db_template_count = Supabase code_template count.
+    target_platform records the deploy adapter used ('shopify' or 'vercel').
     Returns True on success, False on failure.
     """
     row = {
@@ -258,6 +260,8 @@ def log_build(
         row["build_duration_ms"] = build_duration_ms
     if api_cost_usd is not None:
         row["api_cost_usd"] = api_cost_usd
+    if target_platform is not None:
+        row["target_platform"] = target_platform
 
     try:
         _post("build_log", [row])
