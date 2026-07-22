@@ -240,6 +240,7 @@ def log_build(
     status: str = "completed",
     target_platform: str | None = None,
     bos_line_items: int | None = None,
+    sections_reconciled: dict | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
@@ -266,6 +267,8 @@ def log_build(
         row["target_platform"] = target_platform
     if bos_line_items is not None:
         row["bos_line_items"] = bos_line_items
+    if sections_reconciled is not None:
+        row["sections_reconciled"] = sections_reconciled
 
     try:
         _post("build_log", [row])

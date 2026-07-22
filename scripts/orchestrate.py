@@ -722,6 +722,229 @@ def parse_preset_section_sequence(preset_name: str) -> list[dict]:
     return result
 
 
+def reconcile_sections(
+    registry_sections: list[dict],
+    harvested_sections: list[dict],
+) -> tuple[list[dict], dict]:
+    """
+    Section Reconciliation Node — merge registry-required sections with
+    harvested sections into one per-page list, normalizing variants and
+    resolving duplicates/gaps.
+
+    This is the authoritative reconciliation step that runs before any
+    section generation. It guarantees:
+      - Every section has a non-null variant string (normalized)
+      - Registry-required sections always take precedence by position
+      - Harvested sections fill gaps and extend beyond the required list
+      - Duplicate archetype+position entries are resolved (registry wins)
+      - The returned metadata is suitable for build_log.sections_reconciled
+
+    Parameters
+    ----------
+    registry_sections : list[dict]
+        Sections from the preset/Supabase (the "should have" list).
+        Each dict must have at least 'archetype', 'variant', and may have
+        'position', 'priority', 'content_direction'.
+    harvested_sections : list[dict]
+        Sections found on the reference page (the "has" list).
+        Each dict must have at least 'archetype', 'variant'. May have
+        additional fields like 'confidence', 'content', 'images', etc.
+
+    Returns
+    -------
+    tuple[list[dict], dict]
+        (reconciled_sections, reconciliation_meta)
+        reconciled_sections: ordered list of merged section dicts with
+            normalized variants (never None, never empty string).
+        reconciliation_meta: dict with keys:
+            total, registry_count, harvest_count, gap_filled_count,
+            duplicates_resolved
+    """
+    # ── Normalize inputs: ensure variant is never None/empty ──
+    _DEFAULT_VARIANT = "icon-grid"
+
+    def _normalize_variant(sec: dict) -> str:
+        var = sec.get("variant")
+        if not var or not isinstance(var, str) or not var.strip():
+            # Fall back to archetype-based default
+            _ARCH_VARIANTS = {
+                "HERO": "full-bleed-overlay",
+                "NAV": "sticky-transparent",
+                "FEATURES": "icon-grid",
+                "ABOUT": "two-column",
+                "CTA": "centered",
+                "FOOTER": "mega",
+                "FAQ": "accordion",
+                "TESTIMONIALS": "carousel",
+                "STATS": "grid",
+                "PRICING": "three-tier",
+                "PRODUCT-SHOWCASE": "hover-cards",
+                "GALLERY": "masonry",
+                "HOW-IT-WORKS": "numbered-steps",
+                "NEWSLETTER": "inline-form",
+                "LOGO-BAR": "carousel",
+                "TRUST-BADGES": "icon-grid",
+                "CONTACT": "split",
+                "COMPARISON": "table",
+                "PORTFOLIO": "grid",
+                "BLOG": "card-grid",
+            }
+            return _ARCH_VARIANTS.get(sec.get("archetype", "").upper(), _DEFAULT_VARIANT)
+        return var.strip()
+
+    # 1. Build lookup keys: (position, archetype) for deduplication
+    registry_by_key: dict[tuple, dict] = {}
+    for sec in registry_sections:
+        pos = sec.get("position", len(registry_by_key) + 1)
+        arch = sec.get("archetype", "").upper()
+        normalized = dict(sec)
+        normalized["variant"] = _normalize_variant(sec)
+        normalized["position"] = pos
+        normalized["_source"] = "registry"
+        key = (pos, arch)
+        if key not in registry_by_key:
+            registry_by_key[key] = normalized
+
+    harvest_by_key: dict[tuple, dict] = {}
+    for sec in harvested_sections:
+        pos = sec.get("position", len(harvest_by_key) + 1)
+        arch = sec.get("archetype", "").upper()
+        normalized = dict(sec)
+        normalized["variant"] = _normalize_variant(sec)
+        normalized["position"] = pos
+        normalized["_source"] = "harvest"
+        key = (pos, arch)
+        if key not in harvest_by_key:
+            harvest_by_key[key] = normalized
+
+    # 2. Merge: registry sections take precedence at their positions
+    duplicates_resolved = 0
+    reconciled: list[dict] = []
+
+    # Collect all unique positions
+    all_positions = sorted(set(
+        [k[0] for k in registry_by_key.keys()]
+        + [k[0] for k in harvest_by_key.keys()]
+    ))
+
+    for pos in all_positions:
+        reg = registry_by_key.get((pos,))
+        hvst = harvest_by_key.get((pos,))
+
+        if reg and hvst:
+            # Both exist at same position — check if same archetype
+            if reg["archetype"] == hvst["archetype"]:
+                # Registry wins; merge harvested content fields into it
+                merged = dict(reg)
+                for key in ("content", "images", "icons", "animations",
+                            "confidence", "components", "generation_guidance"):
+                    if key in hvst and hvst[key]:
+                        merged[key] = hvst[key]
+                # Mark as reconciled from both sources
+                merged["_merged"] = True
+                reconciled.append(merged)
+            else:
+                # Different archetype at same position — prefer registry
+                reconciled.append(reg)
+                duplicates_resolved += 1
+        elif reg:
+            reconciled.append(reg)
+        elif hvst:
+            reconciled.append(hvst)
+
+    # 3. Append any registry-required sections that weren't covered by position
+    seen_keys = set()
+    for sec in reconciled:
+        key = (sec.get("position", 0), sec.get("archetype", "").upper())
+        seen_keys.add(key)
+
+    gap_filled_count = 0
+    for sec in registry_sections:
+        key = (sec.get("position", 0), sec.get("archetype", "").upper())
+        if key not in seen_keys:
+            normalized = dict(sec)
+            normalized["variant"] = _normalize_variant(sec)
+            normalized["_source"] = "registry"
+            normalized["_gap_filled"] = True
+            reconciled.append(normalized)
+            seen_keys.add(key)
+            gap_filled_count += 1
+
+    # 4. Append any harvested sections not already covered
+    for sec in harvested_sections:
+        key = (sec.get("position", 0), sec.get("archetype", "").upper())
+        if key not in seen_keys:
+            normalized = dict(sec)
+            normalized["variant"] = _normalize_variant(sec)
+            normalized["_source"] = "harvest"
+            normalized["_gap_filled"] = True
+            reconciled.append(normalized)
+            seen_keys.add(key)
+            gap_filled_count += 1
+
+    # 5. Final normalization: strip internal metadata from output, ensure
+    #    every section has variant set, no empties, no duplicates
+    seen_archetypes: set[str] = set()
+    final_sections: list[dict] = []
+    for sec in reconciled:
+        arch = sec.get("archetype", "").upper()
+        var = _normalize_variant(sec)
+
+        # Skip truly empty sections (no archetype at all)
+        if not arch:
+            continue
+
+        # If same archetype appears twice, keep the one with more content
+        if arch in seen_archetypes:
+            duplicates_resolved += 1
+            existing_idx = next(
+                (i for i, s in enumerate(final_sections)
+                 if s.get("archetype", "").upper() == arch),
+                None,
+            )
+            if existing_idx is not None:
+                existing = final_sections[existing_idx]
+                existing_content = existing.get("content", {})
+                new_content = sec.get("content", {})
+                if isinstance(existing_content, dict) and isinstance(new_content, dict):
+                    existing_keys = [k for k in existing_content if existing_content[k]]
+                    new_keys = [k for k in new_content if new_content[k]]
+                    if len(new_keys) > len(existing_keys):
+                        final_sections[existing_idx] = sec
+            continue
+        seen_archetypes.add(arch)
+
+        clean = dict(sec)
+        clean["variant"] = var
+        # Remove internal metadata before output
+        clean.pop("_source", None)
+        clean.pop("_merged", None)
+        clean.pop("_gap_filled", None)
+        final_sections.append(clean)
+
+    # 6. Build metadata
+    registry_count = sum(
+        1 for sec in registry_sections
+        if sec.get("archetype", "").upper()
+        in {s.get("archetype", "").upper() for s in final_sections}
+    )
+    harvest_count = sum(
+        1 for sec in harvested_sections
+        if sec.get("archetype", "").upper()
+        in {s.get("archetype", "").upper() for s in final_sections}
+    )
+
+    reconciliation_meta = {
+        "total": len(final_sections),
+        "registry_count": registry_count,
+        "harvest_count": harvest_count,
+        "gap_filled_count": gap_filled_count,
+        "duplicates_resolved": duplicates_resolved,
+    }
+
+    return final_sections, reconciliation_meta
+
+
 def stage_scaffold_v2(site_spec: dict, project_name: str) -> tuple:
     """Stage 1 (v2): Produce section list from site-spec.json. No Claude call needed."""
     print("\n  Stage 1 (v2): Building scaffold from site-spec.json...")
@@ -4837,6 +5060,45 @@ def main():
         save_checkpoint(output_dir, "shared_components", args.project)
         site_manifest = stage_scaffold_multipage(site_manifest, args.project, industry, preset=preset)
         save_checkpoint(output_dir, "scaffold_mp", args.project)
+
+        # ── Section Reconciliation Node (multi-page) ──────────────────
+        # For each page in the manifest, reconcile the registry-required
+        # sections (from Supabase) with any harvested sections (none yet
+        # in multi-page mode, but the node normalizes variants and
+        # resolves duplicates/empties regardless).
+        _reconciliation_meta = None
+        _recon_total_registry = 0
+        _recon_total_harvest = 0
+        _recon_total_gaps = 0
+        _recon_total_dups = 0
+        for _page in site_manifest.get("pages", []):
+            _raw = _page.get("sections", [])
+            if _raw:
+                _reconciled, _meta = reconcile_sections(_raw, [])
+                _page["sections"] = _reconciled
+                _recon_total_registry += _meta["registry_count"]
+                _recon_total_harvest += _meta["harvest_count"]
+                _recon_total_gaps += _meta["gap_filled_count"]
+                _recon_total_dups += _meta["duplicates_resolved"]
+        _recon_total = sum(
+            len(p.get("sections", []))
+            for p in site_manifest.get("pages", [])
+        )
+        _reconciliation_meta = {
+            "total": _recon_total,
+            "registry_count": _recon_total_registry,
+            "harvest_count": _recon_total_harvest,
+            "gap_filled_count": _recon_total_gaps,
+            "duplicates_resolved": _recon_total_dups,
+        }
+        if _recon_total > 0:
+            print(
+                f"\n  🔄 Section reconciliation ({len(site_manifest.get('pages', []))} pages): "
+                f"{_recon_total} total "
+                f"({_recon_total_registry} registry, {_recon_total_harvest} harvested, "
+                f"{_recon_total_gaps} gap-filled, {_recon_total_dups} duplicates resolved)"
+            )
+
         section_files_by_page = stage_sections_multipage(
             site_manifest, preset, args.project,
             build_cache=build_cache, identification=identification, brief=brief,
@@ -4909,8 +5171,17 @@ def main():
                 status="completed",
                 target_platform=args.target_platform,
                 bos_line_items=_bos_line_items,
+                sections_reconciled=_reconciliation_meta,
             )
-            print(f"  📊 Build logged to Supabase (multipage, {len(site_manifest.get('pages', []))} pages — {_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0})")
+            _recon_str = ""
+            if _reconciliation_meta:
+                _recon_str = (
+                    f", recon: {_reconciliation_meta['total']} total "
+                    f"({_reconciliation_meta['registry_count']} reg / "
+                    f"{_reconciliation_meta['harvest_count']} hvst / "
+                    f"{_reconciliation_meta['gap_filled_count']} gaps)"
+                )
+            print(f"  📊 Build logged to Supabase (multipage, {len(site_manifest.get('pages', []))} pages — {_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str})")
         print(f"\n{'═' * 60}")
         print(f"  ✅ Layer 6 multi-page complete")
         print(f"  Output: output/{args.project}/")
@@ -4952,6 +5223,29 @@ def main():
             scaffold = stage_scaffold(brief, preset, args.project, args.no_pause, identification, build_cache=build_cache)
             save_checkpoint(output_dir, "scaffold", args.project)
             sections = parse_scaffold(scaffold)
+
+    # ── Section Reconciliation Node ──────────────────────────────────
+    # Merge registry-required sections with harvested sections into the
+    # true per-page section list, normalizing variants and resolving
+    # gaps/duplicates. Records reconciliation metadata for build_log.
+    _reconciliation_meta = None
+    if site_spec:
+        _registry_for_recon = []
+        if build_cache and build_cache.section_sequence:
+            _registry_for_recon = build_cache.section_sequence
+        elif preset:
+            _registry_for_recon = parse_preset_section_sequence(preset)
+        _harvested_for_recon = site_spec.get("sections", [])
+        if _registry_for_recon or _harvested_for_recon:
+            sections, _reconciliation_meta = reconcile_sections(
+                _registry_for_recon, _harvested_for_recon,
+            )
+            _rc = _reconciliation_meta
+            print(
+                f"\n  🔄 Section reconciliation: {_rc['total']} total "
+                f"({_rc['registry_count']} registry, {_rc['harvest_count']} harvested, "
+                f"{_rc['gap_filled_count']} gap-filled, {_rc['duplicates_resolved']} duplicates resolved)"
+            )
 
     if not sections:
         print("Error: Could not parse any sections from scaffold.")
@@ -5044,8 +5338,17 @@ def main():
             status="completed",
             target_platform=args.target_platform,
             bos_line_items=_bos_line_items,
+            sections_reconciled=_reconciliation_meta,
         )
-        print(f"  📊 Build logged to Supabase ({_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0})")
+        _recon_str = ""
+        if _reconciliation_meta:
+            _recon_str = (
+                f", recon: {_reconciliation_meta['total']} total "
+                f"({_reconciliation_meta['registry_count']} reg / "
+                f"{_reconciliation_meta['harvest_count']} hvst / "
+                f"{_reconciliation_meta['gap_filled_count']} gaps)"
+            )
+        print(f"  📊 Build logged to Supabase ({_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str})")
 
     mode_label = "URL Clone" if args.from_url else ("Database" if args.industry else "Pipeline")
     print(f"\n{'═' * 60}")
