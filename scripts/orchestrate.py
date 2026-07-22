@@ -762,6 +762,95 @@ def stage_scaffold_v2(site_spec: dict, project_name: str) -> tuple:
     return scaffold_text, sections
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy Fidelity Node (Phase 1) — reproduce source copy verbatim
+# ─────────────────────────────────────────────────────────────────────────────
+def _normalize_ctas(ctas) -> list[str]:
+    """Normalize harvested CTAs (strings or {text, href} dicts) to a text list."""
+    out: list[str] = []
+    for c in (ctas or []):
+        if isinstance(c, str) and c.strip():
+            out.append(c.strip())
+        elif isinstance(c, dict) and c.get("text") and str(c["text"]).strip():
+            out.append(str(c["text"]).strip())
+    return out
+
+
+def harvested_copy_strings(content: dict) -> list[str]:
+    """Return all harvested copy strings (headings + body_text + ctas) for a section.
+
+    Copy Fidelity Node: extract-reference.js harvests real per-section copy into
+    site-spec.json as content.{headings, body_text, ctas}. These strings are the
+    authoritative source copy for the rebuilt section.
+    """
+    if not isinstance(content, dict):
+        return []
+    out: list[str] = []
+    for h in (content.get("headings") or []):
+        if isinstance(h, str) and h.strip():
+            out.append(h.strip())
+    for b in (content.get("body_text") or []):
+        if isinstance(b, str) and b.strip():
+            out.append(b.strip())
+    out.extend(_normalize_ctas(content.get("ctas")))
+    return out
+
+
+def build_source_copy_block(content: dict, finding: dict | None = None) -> str:
+    """Build a verbatim-reproduction (or weakness-gated revision) block for a section.
+
+    Phase 1 — verbatim: harvested headings/body_text/ctas are authoritative. The
+    generated component MUST render them exactly (no paraphrase, shorten, translate,
+    or embellish). Returns '' when no harvested copy exists (net-new slot → generate).
+
+    Phase 2 — weakness gate: when `finding` is provided for this section, the block
+    switches from reproduce → revise-from-source: the LLM is given BOTH the source
+    copy AND the finding and instructed to rewrite FROM the source, not replace it.
+    """
+    if not isinstance(content, dict):
+        return ""
+    headings = [h for h in (content.get("headings") or []) if isinstance(h, str) and h.strip()]
+    body_text = [b for b in (content.get("body_text") or []) if isinstance(b, str) and b.strip()]
+    ctas = _normalize_ctas(content.get("ctas"))
+    if not (headings or body_text or ctas):
+        return ""
+
+    if finding:
+        header = "## SOURCE COPY — REVISE FROM SOURCE (weakness flagged)"
+        rule_id = finding.get("rule_id") or finding.get("id") or "unspecified"
+        detail = finding.get("detail") or finding.get("message") or finding.get("description") or ""
+        instr = (
+            f"An audit finding ({rule_id}) flags the copy in this section as deficient: "
+            f"\"{detail}\". REWRITE the affected copy FROM the source strings below — "
+            "stay anchored to the source meaning and voice; correct only what the finding "
+            "calls out (e.g. quantify a vague claim, add a missing H1, fix length). Do NOT "
+            "invent unrelated new copy and do NOT discard the source. Keep every source "
+            "string that the finding does not target verbatim."
+        )
+    else:
+        header = "## SOURCE COPY — REPRODUCE VERBATIM (authoritative; do NOT invent over this)"
+        instr = (
+            "The text below was harvested from the real source page for THIS section. "
+            "Render each string EXACTLY as written into the matching slot of the component "
+            "(headings -> section titles/subheadings, body -> paragraphs, CTAs -> button/link "
+            "labels). Do NOT paraphrase, shorten, translate, rewrite, or embellish. Preserve "
+            "exact wording, punctuation, and casing. Generate fresh copy ONLY for slots that "
+            "have no source string below."
+        )
+
+    lines = [header, instr]
+    if headings:
+        lines.append("\nHEADINGS (in order):")
+        lines += [f"  - {h}" for h in headings]
+    if body_text:
+        lines.append("\nBODY TEXT (in order):")
+        lines += [f"  - {b}" for b in body_text]
+    if ctas:
+        lines.append("\nCTAS (button / link labels):")
+        lines += [f"  - {c}" for c in ctas]
+    return "\n".join(lines) + "\n"
+
+
 def extract_style_header(preset_content: str) -> str:
     """Extract the compact style header from a preset file."""
     match = re.search(
@@ -1067,6 +1156,7 @@ def stage_sections(
     output_subdir: str | None = None,
     section_file_names: list[str] | None = None,
     brief: str | None = None,
+    copy_findings: dict | None = None,
 ) -> list[Path]:
     """Stage 2: Generate each section component individually with engine-aware injection.
     When output_subdir and section_file_names are set (e.g. Layer 6 shared components),
@@ -1134,6 +1224,10 @@ def stage_sections(
 
     section_files = []
     all_extra_component_files = []  # v1.2.0: collect extra component files for stage_deploy
+
+    # Copy Fidelity Node: per-section copy classification manifest + revision trace
+    _copy_manifest: list[dict] = []
+    _copy_trace: list[dict] = []
 
     for i, section in enumerate(sections):
         num = f"{i + 1:02d}"
@@ -1369,7 +1463,10 @@ SECTION SPEC (structured data — use exact values, do not interpret or paraphra
 IMPORTANT: If the section spec contains "components.matched" with import_statement values,
 use those EXACT import statements. Do not construct your own import paths.
 If images are provided with src URLs, use them as backgroundImage CSS — not <img> tags.
-The generation_guidance field indicates confidence level — follow its instructions."""
+The generation_guidance field indicates confidence level — follow its instructions.
+COPY FIDELITY: The SECTION SPEC "content" field and the SOURCE COPY block below carry the
+REAL copy harvested from the source page. Reproduce those strings verbatim in the matching
+slots. Do NOT paraphrase, shorten, translate, or invent placeholder copy over them."""
 
         else:
             # Legacy --preset mode: use compact style header
@@ -1393,11 +1490,53 @@ Content Direction: {section['content']}"""
 {brief}
 """
 
+        # ── Copy Fidelity Node: verbatim source-copy block (Phase 1) ──
+        # Threads the harvested content.{headings, body_text, ctas} into the prompt as
+        # authoritative copy. When a finding targets this section, switches that section to
+        # revise-from-source (Phase 2). '' when the section has no harvested copy → generate.
+        _sec_content = section.get("content", {})
+        _finding = None
+        if copy_findings:
+            _finding = (
+                copy_findings.get(str(section.get("index", i)))
+                or copy_findings.get(str(i))
+                or copy_findings.get(filename)
+            )
+        source_copy_block = ""
+        _harvested = harvested_copy_strings(_sec_content) if isinstance(_sec_content, dict) else []
+        if isinstance(_sec_content, dict):
+            source_copy_block = build_source_copy_block(_sec_content, finding=_finding)
+        if source_copy_block:
+            source_copy_block = "\n" + source_copy_block
+
+        # Classify this section's copy: revised (flagged) > reproduced (harvest) > generated
+        if _harvested and _finding:
+            _copy_status = "revised"
+        elif _harvested:
+            _copy_status = "reproduced"
+        else:
+            _copy_status = "generated"
+        _copy_manifest.append({
+            "index": section.get("index", i),
+            "file": filename,
+            "archetype": section.get("archetype"),
+            "status": _copy_status,
+            "harvested_strings": len(_harvested),
+        })
+        if _copy_status == "revised":
+            _copy_trace.append({
+                "index": section.get("index", i),
+                "file": filename,
+                "finding_id": _finding.get("rule_id") or _finding.get("id"),
+                "source_text": _harvested,
+                "revised_text": f"see generated component {filename}",
+            })
+
         prompt = f"""You are a senior frontend developer generating a single website section
 as a React + Tailwind CSS component.
 {brief_block}
 {style_and_spec_block}
-
+{source_copy_block}
 ## Structural Reference
 {structure_ref}
 {ref_context_block}{animation_context_block}{asset_context_block}{identification_block}{pinned_scroll_block}{plugin_block}{icon_block}{visual_fallback_block}{card_embed_block}{ui_component_block}
@@ -1498,6 +1637,28 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
         manifest_path = OUTPUT_DIR / project_name / "extra-components.json"
         write_file(manifest_path, json.dumps(unique_files, indent=2))
         print(f"  ✓ {len(unique_files)} extra component files queued for stage_deploy")
+
+    # ── Copy Fidelity Node: emit copy manifest + revision trace ──
+    if _copy_manifest:
+        _counts = {"reproduced": 0, "revised": 0, "generated": 0}
+        for _m in _copy_manifest:
+            _counts[_m["status"]] = _counts.get(_m["status"], 0) + 1
+        _cm_dir = OUTPUT_DIR / project_name
+        if output_subdir:
+            # Keep multipage manifests namespaced so pages don't clobber each other.
+            _cm_name = f"copy-manifest-{output_subdir.replace('/', '_')}.json"
+        else:
+            _cm_name = "copy-manifest.json"
+        write_file(_cm_dir / _cm_name, json.dumps({
+            "summary": _counts,
+            "sections": _copy_manifest,
+        }, indent=2))
+        if _copy_trace:
+            write_file(_cm_dir / "copy-trace.json", json.dumps(_copy_trace, indent=2))
+        print(
+            f"  ✓ Copy manifest: {_counts['reproduced']} reproduced, "
+            f"{_counts['revised']} revised, {_counts['generated']} generated"
+        )
 
     return section_files
 
@@ -2968,6 +3129,18 @@ export default async function Page({ params }: { params: Promise<{ page: string 
     # templates. These tokens use {token_name} syntax and render as visible text if not replaced.
     _sanitize_count = 0
 
+    # ── Copy Fidelity Node (Phase 1): defer to harvested copy ──
+    # Token phases below key off {token} syntax, so real copy the LLM reproduced verbatim
+    # is structurally never matched. The one exception is the Phase 5 literal-string
+    # backfill ({"About Us"} etc.), which overwrites real-looking copy with generic
+    # archetype defaults. Collect the harvested strings so that pass can defer when a
+    # section already renders its real source copy.
+    _harvested_copy: set[str] = set()
+    for _s in (sections or []):
+        for _t in harvested_copy_strings(_s.get("content", {}) if isinstance(_s, dict) else {}):
+            if len(_t) > 2:
+                _harvested_copy.add(_t.lower())
+
     # Archetype-aware content defaults for numbered tokens like {feature_1_title}
     _NUMBERED_TOKEN_DEFAULTS: dict[str, dict[str, str]] = {
         "feature": {"icon": "Star", "title": "Feature", "description": "Designed to help you achieve more with less effort.", "label": "Feature", "text": "Feature"},
@@ -3100,6 +3273,10 @@ export default async function Page({ params }: { params: Promise<{ page: string 
             _raw = tsx_file.read_text(encoding="utf-8")
             _cleaned = _raw
 
+            # Copy Fidelity Node: does this file already render harvested source copy?
+            _lc = _raw.lower()
+            _file_has_real_copy = any(_t in _lc for _t in _harvested_copy)
+
             # ── Phase 1: Structural replacements (href, src, url, alt) ──
             _cleaned = _cleaned.replace('href="{cta_url}"', 'href="/collections"')
             _cleaned = re.sub(r"href:\s*'\{[^}]+_href\}'", "href: '#'", _cleaned)
@@ -3205,12 +3382,15 @@ export default async function Page({ params }: { params: Promise<{ page: string 
             # Supabase templates use literal strings like {"About Us"} instead
             # of {section_title} tokens. Replace these with archetype-aware values.
             # Only replace "About Us" when the section is NOT the about archetype.
-            if "about" not in _fname:
-                _cleaned = _cleaned.replace('{"About Us"}', f'{{{json.dumps(_section_title)}}}')
-                _cleaned = _cleaned.replace('{"Learn more about what we do"}', f'{{{json.dumps(_section_subtitle)}}}')
-            _cleaned = _cleaned.replace('{"Company Description"}', '{"Premium quality products for every occasion."}')
+            # Copy Fidelity Node: skip these generic backfills when this section already
+            # renders real harvested source copy — real copy wins over generic defaults.
+            if not _file_has_real_copy:
+                if "about" not in _fname:
+                    _cleaned = _cleaned.replace('{"About Us"}', f'{{{json.dumps(_section_title)}}}')
+                    _cleaned = _cleaned.replace('{"Learn more about what we do"}', f'{{{json.dumps(_section_subtitle)}}}')
+                _cleaned = _cleaned.replace('{"Company Description"}', '{"Premium quality products for every occasion."}')
+                _cleaned = _cleaned.replace('{"Body Text"}', '{"Discover our curated collection of premium products designed to elevate your everyday experience."}')
             _cleaned = _cleaned.replace('{"Copyright Text"}', f'{{"\\u00a9 {datetime.now().year} All rights reserved."}}')
-            _cleaned = _cleaned.replace('{"Body Text"}', '{"Discover our curated collection of premium products designed to elevate your everyday experience."}')
             _cleaned = _cleaned.replace('{"Logo Src"}', '"/logo.svg"')
             # Fix unsanitized attribute tokens
             _cleaned = _cleaned.replace('poster="{poster_url}"', 'poster="/placeholder.svg"')
@@ -4114,8 +4294,23 @@ def main():
                         help="Auto-set Shopify env vars on Vercel + register webhooks after deploy")
     parser.add_argument("--shopify-config", help="Path to shopify_config.json (from Layer 4 output)",
                         default=None, metavar="PATH")
+    parser.add_argument("--copy-findings", help="Path to a findings JSON (Copy Fidelity weakness gate): "
+                        "{section_index_or_filename: {rule_id, detail}} — flagged slots switch from "
+                        "reproduce to revise-from-source",
+                        default=None, metavar="PATH")
 
     args = parser.parse_args()
+
+    # ── Copy Fidelity Node (Phase 2): load optional weakness findings ──
+    copy_findings = None
+    if getattr(args, "copy_findings", None):
+        try:
+            _cf_path = Path(args.copy_findings)
+            copy_findings = json.loads(_cf_path.read_text(encoding="utf-8"))
+            print(f"  ✓ Loaded copy findings for {len(copy_findings)} slot(s) from {_cf_path}")
+        except (OSError, json.JSONDecodeError) as _e:
+            print(f"  ⚠ Could not load --copy-findings ({_e}); proceeding verbatim")
+            copy_findings = None
     if getattr(args, "compiled_dir", None) and not args.industry:
         args.industry = "electronics-tech"
 
@@ -4442,6 +4637,7 @@ def main():
         section_files = stage_sections(
             sections, preset, args.project, section_contexts, extraction_dir, identification,
             site_spec=site_spec, build_cache=build_cache, brief=brief,
+            copy_findings=copy_findings,
         )
         save_checkpoint(output_dir, "sections", args.project, {"section_count": len(section_files)})
     else:

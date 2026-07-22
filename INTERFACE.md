@@ -126,6 +126,7 @@ python scripts/orchestrate.py <project-name> [OPTIONS]
 | 0: URL Extract | `--from-url URL` | `extraction-data.json`, preset, brief, `site-spec.json` | Playwright + Claude |
 | 1: Scaffold | brief + preset/industry | `output/{project}/scaffold.md` | 1 Claude call |
 | 2: Sections | scaffold + style header | `output/{project}/sections/{NN}-{name}.tsx` | 1 Claude call per section |
+| 2a: Copy Resolution | harvested `content.{headings,body_text,ctas}` (+ optional `--copy-findings`) | verbatim source copy threaded into each section prompt; `output/{project}/copy-manifest.json` (reproduced/revised/generated), `copy-trace.json` for revised slots | 0 (deterministic; folds into stage 2 calls) |
 | 3: Assembly | all section files | `output/{project}/page.tsx` | 0 (deterministic) |
 | 4: Review | assembled page | `output/{project}/review.md` | 1 Claude call |
 | 5: Deploy | page.tsx + sections | `output/{project}/site/` (Next.js project) | 0 (npm install) |
