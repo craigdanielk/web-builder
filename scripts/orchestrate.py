@@ -2795,11 +2795,14 @@ def stage_deploy(
         write_file(site_dir / "tsconfig.json", json.dumps(tsconfig, indent=2) + "\n")
 
         # next.config.ts — ignoreBuildErrors for GSAP/Framer Motion type issues
+        # Adapter may inject extra fields (e.g. Shopify image remotePatterns)
+        _next_cfg_extras = adapter.get_next_config_extras()
         write_file(
             site_dir / "next.config.ts",
             'import type { NextConfig } from "next";\n\n'
             "const nextConfig: NextConfig = {\n"
             "  typescript: { ignoreBuildErrors: true },\n"
+            f"{_next_cfg_extras}"
             "};\n\n"
             "export default nextConfig;\n",
         )
