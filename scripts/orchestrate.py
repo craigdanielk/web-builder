@@ -57,6 +57,16 @@ except ImportError:
     get_industry_metadata = None  # type: ignore
     get_section_sequence = None  # type: ignore
 
+# Tenant capture layer (optional) — reads phase0_field_values, creative_assets,
+# competitor_profiles by tenant coordinate. Read-only / idempotent; absence of a
+# --tenant coordinate leaves registry/file builds completely unchanged.
+try:
+    from lib.tenant_context import load_tenant_context
+    TENANT_CONTEXT_AVAILABLE = True
+except ImportError:
+    load_tenant_context = None  # type: ignore
+    TENANT_CONTEXT_AVAILABLE = False
+
 # Layer 6: Site manifest for multi-page generation
 try:
     from lib import site_manifest as site_manifest_lib
@@ -4815,8 +4825,36 @@ def main():
                         default=None, metavar="PATH")
     parser.add_argument("--no-bos", action="store_true",
                         help="Disable Bill of Sale orchestration entirely (skip BoS even if module is available)")
+    parser.add_argument("--tenant", default=None,
+                        help="Tenant coordinate (tenant_id UUID or slug). When provided, loads tenant "
+                             "capture (phase0_field_values / creative_assets / competitor_profiles) and "
+                             "threads brand/palette into the style path. Absent = registry/file behavior.")
 
     args = parser.parse_args()
+
+    # ── Tenant Capture Node (idempotent / read-only) ──────────────
+    # When --tenant is supplied, load the tenant context once. The reader is
+    # pure: it only issues REST GETs and degrades to empty structures on any
+    # missing table/row, so a resolvable-but-empty (or unresolvable) tenant
+    # falls straight back to current registry/file behavior.
+    tenant_context = None
+    if getattr(args, "tenant", None) and TENANT_CONTEXT_AVAILABLE and load_tenant_context:
+        tenant_context = load_tenant_context(args.tenant)
+        _tid = tenant_context.get("tenant_id")
+        if _tid:
+            _p0 = tenant_context.get("phase0_field_values", {})
+            print(f"  🏷  Tenant context loaded: {tenant_context.get('slug') or _tid}")
+            print(f"     phase0_field_values: {len(_p0)} | "
+                  f"creative_assets: {len(tenant_context.get('creative_assets', []))} | "
+                  f"competitor_profiles: {len(tenant_context.get('competitor_profiles', []))}")
+        else:
+            print(f"  ⚠ Tenant coordinate '{args.tenant}' did not resolve — proceeding without tenant capture")
+            tenant_context = None
+    elif getattr(args, "tenant", None) and not TENANT_CONTEXT_AVAILABLE:
+        print("  ⚠ --tenant requires Supabase credentials in .env; proceeding without tenant capture")
+
+    # Resolved tenant UUID threaded into build_log (None = column omitted).
+    tenant_id = tenant_context.get("tenant_id") if tenant_context else None
 
     # ── Output-root injection: re-root the base output directory ──
     # Default (flag absent) is a no-op — OUTPUT_DIR stays <web-builder>/output.
@@ -4998,6 +5036,25 @@ def main():
         print("  ⚠ --industry flag requires Supabase credentials in .env")
         print("    Falling back to --preset mode")
 
+    # ── Tenant brand/palette threading (guarded) ──────────────────
+    # When a resolved tenant carries phase0 brand/palette capture, thread it
+    # into the style path by merging over the registry palette. Idempotent:
+    # re-running with the same tenant produces the same merged style_config.
+    # Absence of tenant context (or of build_cache) leaves style untouched.
+    if tenant_context and build_cache is not None and build_cache.industry_style is not None:
+        _tenant_palette = tenant_context.get("palette") or {}
+        _tenant_brand = tenant_context.get("brand") or {}
+        _usable_palette = {k: v for k, v in _tenant_palette.items() if k != "description"}
+        if _usable_palette:
+            _style_config = build_cache.industry_style.setdefault("style_config", {})
+            _reg_palette = dict(_style_config.get("palette") or {})
+            _reg_palette.update(_usable_palette)  # tenant capture wins over registry
+            _style_config["palette"] = _reg_palette
+            print(f"  🎨 Tenant palette threaded into style path "
+                  f"({', '.join(sorted(_usable_palette))})")
+        if _tenant_brand.get("name"):
+            print(f"     Brand: {_tenant_brand['name']}")
+
     # Resolve extraction_dir from previous runs if not set (e.g. --skip-to mode)
     if extraction_dir is None:
         extraction_base = OUTPUT_DIR / "extractions"
@@ -5172,6 +5229,7 @@ def main():
                 target_platform=args.target_platform,
                 bos_line_items=_bos_line_items,
                 sections_reconciled=_reconciliation_meta,
+                tenant_id=tenant_id,
             )
             _recon_str = ""
             if _reconciliation_meta:
@@ -5339,6 +5397,7 @@ def main():
             target_platform=args.target_platform,
             bos_line_items=_bos_line_items,
             sections_reconciled=_reconciliation_meta,
+            tenant_id=tenant_id,
         )
         _recon_str = ""
         if _reconciliation_meta:
