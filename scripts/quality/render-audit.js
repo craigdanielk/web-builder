@@ -69,21 +69,50 @@ const PROBE = () => {
     });
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
+  // Canvas-based color parser: resolves ANY CSS color the browser understands
+  // (rgb/rgba, hsl, named, and Tailwind v4's oklch()) to straight {rgb, a}.
+  // A regex that only matched rgb() silently failed on oklch and fell through to
+  // a white default, producing phantom "white-on-white" contrast flags.
+  const _cv = document.createElement("canvas");
+  _cv.width = _cv.height = 1;
+  const _cx = _cv.getContext("2d", { willReadFrequently: true });
   const parseRGB = (s) => {
-    const m = (s || "").match(/rgba?\(([^)]+)\)/);
-    if (!m) return null;
-    const parts = m[1].split(",").map((x) => parseFloat(x));
-    return { rgb: [parts[0], parts[1], parts[2]], a: parts.length > 3 ? parts[3] : 1 };
+    if (!s) return null;
+    try {
+      _cx.clearRect(0, 0, 1, 1);
+      _cx.fillStyle = "#000";      // reset so an invalid value can't inherit prior color
+      _cx.fillStyle = s;
+      if (_cx.fillStyle === "#000" && !/^(#000000|black|rgb\(0, 0, 0\)|oklch\(0)/i.test(s.trim()))
+        return null;               // browser rejected the value
+      _cx.fillRect(0, 0, 1, 1);
+      const d = _cx.getImageData(0, 0, 1, 1).data;
+      return { rgb: [d[0], d[1], d[2]], a: d[3] / 255 };
+    } catch (e) {
+      return null;
+    }
   };
+  // Alpha-composite every background layer from the element up to the first
+  // opaque ancestor, over a white base. Returning a semi-transparent layer's raw
+  // rgb (e.g. a 10%-opacity orange pill) as if opaque produced false "same-color"
+  // contrast flags — the real visual backdrop is that layer composited over what
+  // is behind it.
   const effectiveBg = (el) => {
+    const layers = [];
     let node = el;
     while (node && node !== document.documentElement) {
-      const c = getComputedStyle(node).backgroundColor;
-      const p = parseRGB(c);
-      if (p && p.a > 0.1) return p.rgb;
+      const p = parseRGB(getComputedStyle(node).backgroundColor);
+      if (p && p.a > 0.001) {
+        layers.push(p);
+        if (p.a >= 0.999) break;   // opaque — nothing behind it matters
+      }
       node = node.parentElement;
     }
-    return [255, 255, 255];
+    let base = [255, 255, 255];
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const { rgb, a } = layers[i];
+      base = [0, 1, 2].map((k) => Math.round(rgb[k] * a + base[k] * (1 - a)));
+    }
+    return base;
   };
   const contrast = (fg, bg) => {
     const l1 = lum(fg), l2 = lum(bg);
@@ -145,8 +174,14 @@ const PROBE = () => {
   }
 
   // ── Contrast on prominent text ──
+  // Only measure elements that render their OWN text (a direct non-whitespace
+  // text node). A container like <li> whose text lives in a coloured child <span>
+  // otherwise gets measured with its inherited body colour, producing false
+  // "invisible container" flags even though the visible text is fine.
+  const hasOwnText = (el) =>
+    Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim().length > 3);
   const textEls = Array.from(document.querySelectorAll("h1,h2,h3,p,a,button,li,span"))
-    .filter((e) => (e.innerText || "").trim().length > 4).slice(0, 400);
+    .filter((e) => (e.innerText || "").trim().length > 4 && hasOwnText(e)).slice(0, 400);
   for (const el of textEls) {
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) continue;
@@ -188,6 +223,15 @@ async function auditRoute(context, base, route, outDir, settle) {
   await page.waitForTimeout(800);
   await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
   await page.waitForTimeout(400);
+
+  // Neutralize scroll-entrance animations (framer-motion sets inline opacity/transform).
+  // Without this, below-fold whileInView elements are still opacity:0 at measure time and
+  // read as false-positive "contrast ~1.0". This forces final visible state so the contrast
+  // probe measures real fg/bg colors (genuine fg==bg bugs still surface).
+  await page.addStyleTag({
+    content: '[style*="opacity"]{opacity:1 !important} [style*="transform"]{transform:none !important}',
+  }).catch(() => {});
+  await page.waitForTimeout(150);
 
   const facts = await page.evaluate(PROBE).catch(() => null);
   const shotName = "render-" + (route === "/" ? "home" : route.replace(/[\/]/g, "_").replace(/^_/, "")) + ".png";
