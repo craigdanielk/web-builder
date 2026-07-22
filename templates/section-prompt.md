@@ -48,7 +48,15 @@ Requirements:
    Use `backgroundSize: 'cover'` and `backgroundPosition: 'center'`.
    If NO Reference Images provided, use gradient placeholders instead.
    NEVER use placeholder services like /api/placeholder.
-7. All text content should be realistic for the client — not lorem ipsum
+7. All text content should be realistic for the client — not lorem ipsum.
+   **COPY FIDELITY (highest priority):** When a `SOURCE COPY — REPRODUCE VERBATIM`
+   block is present, it carries the REAL copy harvested from the source page for this
+   section. Render each of those strings EXACTLY as written into the matching slot
+   (headings → titles/subheadings, body → paragraphs, CTAs → button/link labels).
+   Do NOT paraphrase, shorten, translate, rewrite, or embellish; preserve exact
+   wording, punctuation, and casing. Invent fresh copy ONLY for slots with no source
+   string. If the block instead says `REVISE FROM SOURCE`, rewrite only what the cited
+   finding calls out, staying anchored to the provided source strings.
 8. Animation must match the engine and intensity from the style header.
    Check the Motion line in the STYLE CONTEXT:
 
