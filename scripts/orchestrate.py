@@ -216,6 +216,130 @@ def write_file(path: Path, content: str):
     print(f"  → Saved: {path.relative_to(ROOT)}")
 
 
+def scaffold_app_route_seam(
+    app_dir: Path,
+    item_id: str,
+    item: dict,
+    project_name: str
+) -> Path:
+    """
+    Scaffold a stubbed app-route seam for a carried-into-unified-app BoS item.
+
+    Creates a minimal, documented app route that serves as a seam point where
+    the actual business logic can be integrated later. The seam is stubbed and
+    documented, not fully generated.
+
+    Returns the path to the created seam file.
+    """
+    # Extract metadata from the BoS item
+    page_name = item.get("page") or item_id.replace("_", "-").lower()
+    section = item.get("section") or "app-route"
+    verified_against = item.get("verified_against") or ""
+    description = item.get("content_direction") or "App route seam for carried-into-unified-app item"
+
+    # Create route directory
+    route_dir = app_dir / page_name
+    route_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate stubbed app route with clear documentation
+    seam_content = f"""/*
+ * APP-ROUTE SEAM: {item_id}
+ * ═══════════════════════════════════════════════════════════════
+ * This is a STUBBED app-route seam for a carried-into-unified-app item.
+ * It provides a documented integration point where the actual business
+ * logic should be implemented.
+ *
+ * BoS Item ID: {item_id}
+ * Verified Against: {verified_against or "N/A"}
+ * Build Target: {section}
+ * Disposition: carried-into-unified-app
+ *
+ * INTEGRATION NOTES:
+ * - This seam was scaffolded automatically by the web-builder pipeline
+ * - The actual business logic has NOT been generated (stub only)
+ * - Implement the real functionality based on the verified rule: {verified_against}
+ * - Remove this header and replace with production code
+ * ═══════════════════════════════════════════════════════════════
+ */
+
+import {{ Metadata }} from "next";
+
+export async function generateMetadata(): Promise<Metadata> {{
+  return {{
+    title: "{page_name.replace("-", " ").title()}",
+    description: "{description}",
+  }};
+}}
+
+export default function {page_name.replace("-", "").replace("/", "").title()}Page() {{
+  return (
+    <main className="min-h-screen pt-24 px-6 pb-12 max-w-3xl mx-auto">
+      <div className="text-center mb-12">
+        <h1 className="text-4xl font-bold text-neutral-900 mb-4">
+          {page_name.replace("-", " ").title()}
+        </h1>
+        <p className="text-lg text-neutral-600">
+          {description}
+        </p>
+      </div>
+
+      <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mb-8">
+        <p className="text-amber-800">
+          <strong>⚠️ App-Route Seam:</strong> This is a stubbed integration point.
+          Implement the actual business logic for BoS item <code>{item_id}</code>.
+        </p>
+      </div>
+
+      {/*
+        TODO: Implement business logic for {item_id}
+        - Based on verified rule: {verified_against}
+        - Follow the design specifications from the BoS
+        - Integrate with the unified app shell
+      */}
+
+      <div className="bg-neutral-50 p-6 rounded-lg">
+        <h2 className="text-xl font-semibold text-neutral-900 mb-4">
+          Business Logic Placeholder
+        </h2>
+        <p className="text-neutral-600">
+          This section will contain the actual implementation for the {page_name} feature.
+          Refer to the Bill of Sale item {item_id} for detailed requirements.
+        </p>
+      </div>
+    </main>
+  );
+}}
+"""
+
+    seam_file = route_dir / "page.tsx"
+    write_file(seam_file, seam_content)
+
+    return seam_file
+
+
+def get_carried_items(bos: "BillOfSale | None") -> list[dict]:
+    """
+    Extract BoS items with 'carried-into-unified-app' disposition.
+
+    Returns a list of items that need app-route seams scaffolded.
+    """
+    if not bos:
+        return []
+
+    carried = []
+    for item in bos.line_items:
+        if item.disposition == "carried-into-unified-app":
+            carried.append({
+                "item_id": item.item_id,
+                "page": item.page,
+                "section": item.section,
+                "verified_against": item.verified_against,
+                "content_direction": item.content_direction,
+            })
+
+    return carried
+
+
 def list_presets() -> list[str]:
     """List available preset names."""
     preset_dir = SKILLS_DIR / "presets"
@@ -2904,11 +3028,13 @@ def stage_deploy(
     section_files_by_page: dict[str, list[Path]] | None = None,
     shopify_config_path: str | Path | None = None,
     target_platform: str | None = "shopify",
-):
+    bos: "BillOfSale | None" = None,
+) -> int:
     """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/.
     When site_manifest and section_files_by_page are set (Layer 6), deploys multi-route app
     with shared layout components and per-page sections.
-    target_platform selects the deploy adapter ('shopify' or 'vercel')."""
+    target_platform selects the deploy adapter ('shopify' or 'vercel').
+    Returns the count of app-route seams scaffolded for carried-into-unified-app items."""
     adapter = _resolve_adapter(target_platform or "shopify")
     print(f"\n🚀 Stage 5: Deploying to Next.js project ({adapter.log_label()} adapter)...")
     is_multipage = bool(site_manifest and section_files_by_page is not None)
@@ -4250,8 +4376,28 @@ async function downloadOne(url) {{
     except ImportError:
         pass  # gate_a module not available; non-fatal
 
+    # ── App-Route Seam Scaffolding (BRIEF #33298) ──
+    # Scaffold stubbed, documented app-route seams for carried-into-unified-app BoS items.
+    # These seams provide integration points where actual business logic will be wired.
+    app_routes_scaffolded = 0
+    if bos:
+        carried_items = get_carried_items(bos)
+        if carried_items:
+            print(f"\n  🔧 Scaffolding app-route seams for {len(carried_items)} carried-into-unified-app item(s)...")
+            for item in carried_items:
+                try:
+                    seam_file = scaffold_app_route_seam(app_dir, item["item_id"], item, project_name)
+                    app_routes_scaffolded += 1
+                    print(f"    ✓ Seamed: {seam_file.relative_to(ROOT)}")
+                except Exception as e:
+                    print(f"    ⚠ Failed to scaffold seam for {item['item_id']}: {e}")
+            if app_routes_scaffolded > 0:
+                print(f"  ✓ App-route seams scaffolded: {app_routes_scaffolded}")
+
     print(f"  ✓ Site deployed to output/{project_name}/site/")
     print(f"  Run: cd output/{project_name}/site && npm run dev")
+
+    return app_routes_scaffolded
 
 
 def stage_vercel_env_and_webhooks(site_dir: Path, project_name: str):
@@ -5204,7 +5350,7 @@ def main():
             if not validation["passed"] and not args.force:
                 print("\n  ⚠ Pre-flight validation had issues. Use --force to deploy anyway.")
             if validation["passed"] or args.force:
-                stage_deploy(
+                app_routes_scaffolded = stage_deploy(
                     sections=[],  # unused when manifest set
                     section_files=[],
                     preset=preset,
@@ -5215,6 +5361,7 @@ def main():
                     section_files_by_page=section_files_by_page,
                     shopify_config_path=getattr(args, "shopify_config", None),
                     target_platform=args.target_platform,
+                    bos=None,  # BoS not yet processed for multipage path
                 )
                 save_checkpoint(output_dir, "deploy", args.project)
                 deploy_ran = True
@@ -5266,6 +5413,7 @@ def main():
                 sections_reconciled=_reconciliation_meta,
                 tenant_id=tenant_id,
                 page_count=len(site_manifest.get("pages", [])),
+                app_routes_scaffolded=0,  # Multipage path doesn't support app-route seams yet
             )
             _recon_str = ""
             if _reconciliation_meta:
@@ -5275,7 +5423,7 @@ def main():
                     f"{_reconciliation_meta['harvest_count']} hvst / "
                     f"{_reconciliation_meta['gap_filled_count']} gaps)"
                 )
-            print(f"  📊 Build logged to Supabase (multipage, {len(site_manifest.get('pages', []))} pages — {_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str})")
+            print(f"  📊 Build logged to Supabase (multipage, {len(site_manifest.get('pages', []))} pages — {_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str}, app-route seams: 0)")
         print(f"\n{'═' * 60}")
         print(f"  ✅ Layer 6 multi-page complete")
         print(f"  Output: output/{args.project}/")
@@ -5377,24 +5525,8 @@ def main():
             stage_review(sections, section_files, preset, args.project, build_cache=build_cache)
         save_checkpoint(output_dir, "review", args.project)
 
-    # Stage 5.5: Pre-flight validation (before deploy)
-    deploy_ran = False
-    if args.deploy or args.skip_to == "deploy":
-        validation = stage_validate(args.project)
-        if not validation['passed']:
-            print("\n  ⚠ Pre-flight validation found critical issues.")
-            if not args.force:
-                print("  Use --force to deploy anyway, or fix the issues above.")
-        if validation['passed'] or args.force:
-            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform)
-            save_checkpoint(output_dir, "deploy", args.project)
-            deploy_ran = True
-
-    # Print gap report summary if available (v0.9.0)
-    if args.from_url:
-        print_gap_summary(args.project)
-
-    # ── BoS orchestration: write build_trace per line item ──
+    # ── BoS orchestration: load BoS early for app-route seam scaffolding ──
+    # Load BoS before deploy so app-route seams can be scaffolded for carried-into-unified-app items.
     _bos = stage_bos_orchestrate(
         project_name=args.project,
         industry=args.industry or preset,
@@ -5405,6 +5537,27 @@ def main():
         no_bos=getattr(args, "no_bos", False),
     )
     _bos_line_items = _bos.total_count if _bos else None
+
+    # Stage 5.5: Pre-flight validation (before deploy)
+    deploy_ran = False
+    _app_routes_scaffolded = 0
+    if args.deploy or args.skip_to == "deploy":
+        validation = stage_validate(args.project)
+        if not validation['passed']:
+            print("\n  ⚠ Pre-flight validation found critical issues.")
+            if not args.force:
+                print("  Use --force to deploy anyway, or fix the issues above.")
+        if validation['passed'] or args.force:
+            _app_routes_scaffolded = stage_deploy(
+                sections, section_files, preset, args.project, extraction_dir,
+                build_cache=build_cache, target_platform=args.target_platform, bos=_bos
+            )
+            save_checkpoint(output_dir, "deploy", args.project)
+            deploy_ran = True
+
+    # Print gap report summary if available (v0.9.0)
+    if args.from_url:
+        print_gap_summary(args.project)
 
     # ── Build logging (Supabase) ──
     _build_end_time = _time.time()
@@ -5434,6 +5587,7 @@ def main():
             bos_line_items=_bos_line_items,
             sections_reconciled=_reconciliation_meta,
             tenant_id=tenant_id,
+            app_routes_scaffolded=_app_routes_scaffolded,
         )
         _recon_str = ""
         if _reconciliation_meta:
@@ -5443,7 +5597,10 @@ def main():
                 f"{_reconciliation_meta['harvest_count']} hvst / "
                 f"{_reconciliation_meta['gap_filled_count']} gaps)"
             )
-        print(f"  📊 Build logged to Supabase ({_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str})")
+        _app_routes_str = ""
+        if _app_routes_scaffolded:
+            _app_routes_str = f", app-route seams: {_app_routes_scaffolded}"
+        print(f"  📊 Build logged to Supabase ({_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str}{_app_routes_str})")
 
     mode_label = "URL Clone" if args.from_url else ("Database" if args.industry else "Pipeline")
     print(f"\n{'═' * 60}")

@@ -243,6 +243,7 @@ def log_build(
     sections_reconciled: dict | None = None,
     tenant_id: str | None = None,
     page_count: int | None = None,
+    app_routes_scaffolded: int | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
@@ -253,6 +254,9 @@ def log_build(
     tenant capture; omitted entirely when absent so non-tenant builds are unchanged.
     page_count records the number of pages built (multipage builds); omitted when
     absent so single-page builds are unchanged and rely on the column default.
+    app_routes_scaffolded records the number of app-route seams scaffolded for
+    carried-into-unified-app BoS items; omitted when absent so builds without
+    such items are unchanged.
     Returns True on success, False on failure.
     """
     row = {
@@ -279,6 +283,8 @@ def log_build(
         row["tenant_id"] = tenant_id
     if page_count is not None:
         row["page_count"] = page_count
+    if app_routes_scaffolded is not None:
+        row["app_routes_scaffolded"] = app_routes_scaffolded
 
     try:
         _post("build_log", [row])
