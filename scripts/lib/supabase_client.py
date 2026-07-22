@@ -243,7 +243,9 @@ def log_build(
     sections_reconciled: dict | None = None,
     tenant_id: str | None = None,
     page_count: int | None = None,
+    assets_bound: int | None = None,
     app_routes_scaffolded: int | None = None,
+    deploy_url: str | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
@@ -254,9 +256,13 @@ def log_build(
     tenant capture; omitted entirely when absent so non-tenant builds are unchanged.
     page_count records the number of pages built (multipage builds); omitted when
     absent so single-page builds are unchanged and rely on the column default.
-    app_routes_scaffolded records the number of app-route seams scaffolded for
-    carried-into-unified-app BoS items; omitted when absent so builds without
-    such items are unchanged.
+    assets_bound records how many sections were bound to a tenant creative_asset
+    (self-hosted path injected); omitted when no tenant assets were present so
+    registry/file builds are unchanged (no regression).
+    app_routes_scaffolded records how many protected app-route seams were stubbed
+    onto the unified app shell; omitted when no seams were requested.
+    deploy_url records the deployed site URL when a composed end-to-end tenant
+    build deploys; omitted for build-only runs.
     Returns True on success, False on failure.
     """
     row = {
@@ -283,8 +289,12 @@ def log_build(
         row["tenant_id"] = tenant_id
     if page_count is not None:
         row["page_count"] = page_count
+    if assets_bound is not None:
+        row["assets_bound"] = assets_bound
     if app_routes_scaffolded is not None:
         row["app_routes_scaffolded"] = app_routes_scaffolded
+    if deploy_url is not None:
+        row["deploy_url"] = deploy_url
 
     try:
         _post("build_log", [row])
