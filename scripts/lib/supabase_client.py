@@ -242,6 +242,7 @@ def log_build(
     bos_line_items: int | None = None,
     sections_reconciled: dict | None = None,
     tenant_id: str | None = None,
+    page_count: int | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
@@ -250,6 +251,8 @@ def log_build(
     bos_line_items records the number of Bill of Sale line items addressed in this build.
     tenant_id records the tenant coordinate (UUID) when the build was driven by a
     tenant capture; omitted entirely when absent so non-tenant builds are unchanged.
+    page_count records the number of pages built (multipage builds); omitted when
+    absent so single-page builds are unchanged and rely on the column default.
     Returns True on success, False on failure.
     """
     row = {
@@ -274,6 +277,8 @@ def log_build(
         row["sections_reconciled"] = sections_reconciled
     if tenant_id is not None:
         row["tenant_id"] = tenant_id
+    if page_count is not None:
+        row["page_count"] = page_count
 
     try:
         _post("build_log", [row])
