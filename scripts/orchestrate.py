@@ -43,9 +43,10 @@ from datetime import datetime
 try:
     from anthropic import Anthropic
 except ImportError:
-    print("Error: anthropic package not installed.")
-    print("Run: pip install anthropic --break-system-packages")
-    sys.exit(1)
+    # Not fatal: the default generation path uses the `claude` CLI (subscription
+    # auth, no API key / no anthropic package). The SDK path is only needed when
+    # WEBBUILDER_LLM=api or an ANTHROPIC_API_KEY is present — checked at call time.
+    Anthropic = None  # type: ignore
 
 # Supabase integration (optional — falls back to .md presets if not configured)
 try:
@@ -56,6 +57,7 @@ try:
         is_supabase_configured,
         get_industry_metadata,
         get_section_sequence,
+        get_all_page_sections,
     )
     SUPABASE_AVAILABLE = is_supabase_configured()
 except ImportError:
@@ -63,6 +65,7 @@ except ImportError:
     BuildCache = None  # type: ignore
     get_industry_metadata = None  # type: ignore
     get_section_sequence = None  # type: ignore
+    get_all_page_sections = None  # type: ignore
 
 # Tenant capture layer (optional) — reads phase0_field_values, creative_assets,
 # competitor_profiles by tenant coordinate. Read-only / idempotent; absence of a
@@ -122,9 +125,9 @@ load_env_file()
 
 # Model selection per pipeline stage
 MODELS = {
-    "scaffold": "claude-sonnet-4-6",    # Good judgment for structure
-    "section": "claude-sonnet-4-6",      # Fast, good for individual components
-    "review": "claude-sonnet-4-6",       # Good judgment for quality eval
+    "scaffold": "claude-sonnet-4-5-20250929",    # Good judgment for structure
+    "section": "claude-sonnet-4-5-20250929",      # Fast, good for individual components
+    "review": "claude-sonnet-4-5-20250929",       # Good judgment for quality eval
 }
 
 MAX_TOKENS = {
@@ -220,7 +223,13 @@ def write_file(path: Path, content: str):
     """Write content to a file, creating directories as needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    print(f"  → Saved: {path.relative_to(ROOT)}")
+    # --output-root can place paths outside the web-builder repo; fall back to the
+    # absolute path for logging rather than raising on relative_to.
+    try:
+        _disp = path.relative_to(ROOT)
+    except ValueError:
+        _disp = path
+    print(f"  → Saved: {_disp}")
 
 
 def list_presets() -> list[str]:
@@ -234,8 +243,82 @@ def list_presets() -> list[str]:
 
 # --- Claude API ---
 
+# ── LLM endpoint selection ────────────────────────────────────────────
+# The pipeline is the harness; these are pure text-generation sub-calls. Two
+# endpoints are supported:
+#   • "cli" (default): the `claude` CLI in headless (-p) mode — authenticates via
+#     the local Claude Code subscription, no API key, no anthropic package. Tools
+#     are denied and the call runs in an isolated temp cwd, so the model can only
+#     return text (a scaffold spec / one component's TSX / a review).
+#   • "api": the Anthropic SDK (ANTHROPIC_API_KEY). Used when WEBBUILDER_LLM=api
+#     or a key is present.
+import shutil as _shutil
+
+
+def _llm_mode() -> str:
+    forced = os.environ.get("WEBBUILDER_LLM", "").strip().lower()
+    if forced == "api":
+        return "api"
+    if forced in ("cli", "claude-cli", "subscription"):
+        return "cli"
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "api"
+    if _shutil.which("claude"):
+        return "cli"
+    return "api"
+
+
+_CLI_MODEL_ALIAS = os.environ.get("WEBBUILDER_CLAUDE_MODEL", "sonnet")
+
+
+def _cli_model_for(model: str | None) -> str:
+    m = (model or "").lower()
+    if "opus" in m:
+        return "opus"
+    if "haiku" in m:
+        return "haiku"
+    return _CLI_MODEL_ALIAS
+
+
+def _call_claude_cli(prompt: str, model: str | None) -> str:
+    """Generate via `claude -p` headless mode (subscription auth, no API key).
+    Runs in an isolated temp cwd with tools denied so it only returns text."""
+    import tempfile
+    cmd = [
+        "claude", "-p", prompt,
+        "--model", _cli_model_for(model),
+        "--output-format", "text",
+        "--allowedTools", "NoTool",  # deny all real tools → text-only response
+    ]
+    ceiling = TIMEOUT_SECONDS * 4  # CLI startup + generation headroom (~360s)
+    last_err = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            with tempfile.TemporaryDirectory(prefix="wb-claude-") as td:
+                r = subprocess.run(cmd, capture_output=True, text=True,
+                                   timeout=ceiling, cwd=td)
+            if r.returncode == 0 and (r.stdout or "").strip():
+                return r.stdout
+            last_err = ((r.stderr or "") + (r.stdout or "") or f"rc={r.returncode}")[:200]
+        except subprocess.TimeoutExpired:
+            last_err = f"timeout after {ceiling}s"
+        if attempt < MAX_RETRIES - 1:
+            wait = (2 ** attempt) * 5
+            print(f"  ⚠ claude CLI failed (attempt {attempt + 1}/{MAX_RETRIES}): {last_err}")
+            print(f"  Retrying in {wait}s...")
+            _time.sleep(wait)
+    raise RuntimeError(f"claude CLI failed after {MAX_RETRIES} retries: {last_err}")
+
+
 def call_claude(prompt: str, stage: str, max_tokens_override: int | None = None) -> str:
-    """Call the Anthropic API and return the response text."""
+    """Generate text for a pipeline stage via the selected Claude endpoint."""
+    if _llm_mode() == "cli":
+        return _call_claude_cli(prompt, MODELS[stage])
+    if Anthropic is None:
+        raise RuntimeError(
+            "anthropic SDK unavailable and no `claude` CLI found. "
+            "Install the anthropic package + set ANTHROPIC_API_KEY, or install the claude CLI."
+        )
     client = Anthropic()
     budget = max_tokens_override if max_tokens_override else MAX_TOKENS[stage]
     message = call_claude_with_retry(
@@ -1506,10 +1589,15 @@ def stage_sections(
                     # Replace placeholder tokens with actual brand values
                     palette = style.get("palette", {})
                     typography = style.get("typography", {})
-                    for token_key, token_val in palette.items():
-                        template_code = template_code.replace(f"{{{{brand.{token_key}}}}}", str(token_val))
-                    for token_key, token_val in typography.items():
-                        template_code = template_code.replace(f"{{{{brand.{token_key}}}}}", str(token_val))
+                    # style_config values can arrive as dicts OR scalars (a font
+                    # name string, etc.) depending on industry/tenant threading —
+                    # only iterate mappings.
+                    if isinstance(palette, dict):
+                        for token_key, token_val in palette.items():
+                            template_code = template_code.replace(f"{{{{brand.{token_key}}}}}", str(token_val))
+                    if isinstance(typography, dict):
+                        for token_key, token_val in typography.items():
+                            template_code = template_code.replace(f"{{{{brand.{token_key}}}}}", str(token_val))
 
                 # Replace content placeholder tokens {token_name} with string literals
                 # so JSX doesn't reference undefined variables at render time.
@@ -2151,7 +2239,7 @@ def _build_footer_template(project_name: str, adapter: DeployAdapter | None = No
     _nl = "\n"
     _nl = "\n"
     _comma_nl = ",\n"
-    _footer_cols_str = _nl.join(
+    _footer_cols_str = _comma_nl.join(
         '  {' + _nl + "    title: '" + col["title"] + "'," + _nl + "    links: [" + _nl
         + _comma_nl.join(
             "      { label: '" + link["label"] + "', href: '" + link["href"] + "' }"
@@ -2929,7 +3017,7 @@ def stage_deploy(
     # ── Determine commerce routes early (used for layout, next.config, wrappers) ──
     _page_ids = [p.get("id") for p in (site_manifest or {}).get("pages", [])] if is_multipage else []
     _has_commerce_in_manifest = "collection-template" in _page_ids or "product-template" in _page_ids
-    has_commerce_routes = _has_commerce_in_manifest and adapter.should_inject_commerce()
+    has_commerce_routes = _has_commerce_in_manifest and adapter.should_inject_commerce
 
     # ── Database path: use cached style from Supabase ──
     if build_cache and build_cache.style_config:
@@ -4743,7 +4831,7 @@ def stage_bos_orchestrate(
     _sec_files_map: dict[str, list[str]] = {}
     if section_files:
         for sf in section_files:
-            _sec_files_map[sf.stem] = str(sf.relative_to(ROOT) if not sf.is_absolute() else sf.name)
+            _sec_files_map[sf.stem] = str(sf.relative_to(ROOT) if sf.is_relative_to(ROOT) else sf.name)
 
     _bos_version = f"bos-{bos.version}"
     _completed_count = 0
@@ -5019,12 +5107,96 @@ def scaffold_app_route_seams(bos, output_dir: Path) -> int:
 
 
 # ── BRIEF #33299: Vercel deploy + capture deployed URL ────────────────
-def deploy_to_vercel(output_dir: Path, project_name: str) -> str | None:
-    """BRIEF #33299 — deploy the built Next.js site to Vercel and return the URL.
+def _vercel_token() -> str | None:
+    """Resolve a Vercel API token: VERCEL_TOKEN env, else the local CLI auth.json."""
+    tok = os.environ.get("VERCEL_TOKEN")
+    if tok:
+        return tok
+    for p in (
+        Path.home() / "Library/Application Support/com.vercel.cli/auth.json",
+        Path.home() / ".local/share/com.vercel.cli/auth.json",
+        Path.home() / ".vercel/auth.json",
+    ):
+        try:
+            if p.exists():
+                t = json.loads(p.read_text(encoding="utf-8")).get("token")
+                if t:
+                    return t
+        except (OSError, json.JSONDecodeError):
+            continue
+    return None
 
-    Runs ``vercel --yes --prod`` in the built site dir and parses the deployment
-    URL from output. Returns the URL, or None when the site is not built, the
-    vercel CLI is unavailable, or deploy fails. Gated by the caller (--publish).
+
+def _vercel_team_id(site_dir: Path) -> str | None:
+    """Read the team/org id from the site's .vercel/project.json."""
+    try:
+        pj = json.loads((site_dir / ".vercel" / "project.json").read_text(encoding="utf-8"))
+        return pj.get("orgId")
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _vercel_verify_ready(url: str, site_dir: Path, timeout_s: int = 900) -> tuple[str, str]:
+    """Poll the Vercel API for the deployment's readyState until terminal.
+
+    Returns (state, detail). state ∈ {READY, ERROR, CANCELED, UNKNOWN, TIMEOUT}.
+    On ERROR, detail carries the failing build-log lines when retrievable. A
+    successful `vercel --prod` URL is NOT proof of a successful build — this is
+    the guard that makes the deploy step honest about remote build failures."""
+    import urllib.request
+    import urllib.error
+    token = _vercel_token()
+    team = _vercel_team_id(site_dir)
+    if not token:
+        return ("UNKNOWN", "no Vercel API token (VERCEL_TOKEN or CLI auth) — cannot verify build state")
+    host = url.replace("https://", "").rstrip("/")
+    q = f"?teamId={team}" if team else ""
+
+    def _api(path: str):
+        req = urllib.request.Request(f"https://api.vercel.com{path}",
+                                     headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+
+    deadline = _time.time() + timeout_s
+    state = "UNKNOWN"
+    dep_id = None
+    while _time.time() < deadline:
+        try:
+            d = _api(f"/v13/deployments/{host}{q}")
+            state = d.get("readyState") or d.get("status") or "UNKNOWN"
+            dep_id = d.get("id") or dep_id
+        except urllib.error.URLError as e:
+            return ("UNKNOWN", f"status poll failed: {e}")
+        if state in ("READY", "ERROR", "CANCELED"):
+            break
+        print(f"     … build {state.lower()} — waiting")
+        _time.sleep(10)
+
+    if state == "ERROR" and dep_id:
+        # Pull the failing build-log lines for a precise diagnosis.
+        try:
+            ev = _api(f"/v2/deployments/{dep_id}/events?builds=1&limit=200{('&teamId=' + team) if team else ''}")
+            lines = []
+            for e in (ev if isinstance(ev, list) else ev.get("events", []) or []):
+                txt = (e.get("text") or (e.get("payload") or {}).get("text") or "")
+                if txt and any(k in txt.lower() for k in ("error", "failed", "expected", "cannot", "exit")):
+                    lines.append(txt.strip())
+            return ("ERROR", "\n".join(lines[-15:]) or "build failed (no error lines retrieved)")
+        except urllib.error.URLError as e:
+            return ("ERROR", f"build failed; could not fetch logs: {e}")
+    return (state, "")
+
+
+def deploy_to_vercel(output_dir: Path, project_name: str) -> str | None:
+    """BRIEF #33299 — deploy the built Next.js site to Vercel and return the URL,
+    ONLY after verifying the remote build actually reached READY.
+
+    Runs ``vercel --yes --prod`` in the built site dir, captures the deployment
+    URL, then polls the Vercel API for the deployment's readyState. Returns the
+    URL only when the build is READY; returns None (with the failing build-log
+    lines printed) when the build ERRORs — so the pipeline never reports a broken
+    deploy as success. Gated by the caller (--publish).
     """
     site_dir = output_dir / SITE_DIR_NAME
     if not (site_dir / "package.json").exists():
@@ -5044,11 +5216,25 @@ def deploy_to_vercel(output_dir: Path, project_name: str) -> str | None:
     out = (r.stdout or "") + "\n" + (r.stderr or "")
     m = re.search(r"https://[a-z0-9][a-z0-9.-]*\.vercel\.app", out)
     url = m.group(0) if m else None
-    if url:
-        print(f"  🌐 Deployed: {url}")
-    else:
+    if not url:
         print(f"  ⚠ vercel deploy produced no URL (rc={r.returncode})")
-    return url
+        return None
+
+    # A URL is not success — verify the remote build reached READY.
+    print(f"  ⏳ Deployment created ({url}); verifying build state...")
+    state, detail = _vercel_verify_ready(url, site_dir)
+    if state == "READY":
+        print(f"  🌐 Deployed & verified READY: {url}")
+        return url
+    if state == "UNKNOWN":
+        print(f"  ⚠ Could not verify build state ({detail}); returning URL unverified: {url}")
+        return url
+    print(f"  ❌ Vercel build did NOT succeed (state={state}) for {url}")
+    if detail:
+        print("  ── build error ──")
+        for ln in detail.splitlines():
+            print(f"     {ln}")
+    return None
 
 
 # --- Main ---
@@ -5287,6 +5473,18 @@ def main():
                 arch_path = Path(args.compiled_dir) / "architecture.json"
                 if not arch_path.exists():
                     arch_path = None
+            # Enumerate the industry's real page-types from the registry so EVERY
+            # page-type it defines is built (e.g. fintech: homepage, pricing,
+            # signup, kyc, account, checkout, legal) — not just the generic
+            # 5-page e-commerce fallback. Absent DB access → fallback unchanged.
+            _page_types = None
+            if not (arch_path and arch_path.exists()) and SUPABASE_AVAILABLE and get_all_page_sections:
+                try:
+                    _page_sections = get_all_page_sections(args.industry) or {}
+                    _page_types = [pt for pt, secs in _page_sections.items() if secs]
+                except Exception as _e:
+                    print(f"  ⚠ Could not enumerate industry page-types ({_e}); using default pages")
+                    _page_types = None
             site_manifest = site_manifest_lib.generate_site_manifest(
                 args.project,
                 args.industry,
@@ -5294,8 +5492,10 @@ def main():
                 industry_metadata=industry_meta,
                 architecture_path=arch_path,
                 write_file=True,
+                page_types=_page_types,
             )
-            print(f"  ✓ Site manifest generated: {len(site_manifest.get('pages', []))} pages (default)")
+            _src = f"{len(_page_types)} registry page-types" if _page_types else "default"
+            print(f"  ✓ Site manifest generated: {len(site_manifest.get('pages', []))} pages ({_src})")
 
     # ── Common Pipeline ─────────────────────────────────────────────
 
@@ -5650,11 +5850,6 @@ def main():
             save_checkpoint(output_dir, "deploy", args.project)
             deploy_ran = True
 
-    # ── Publish: deploy to Vercel and capture URL (BRIEF #33299) ──
-    _deploy_url = None
-    if getattr(args, "publish", False) and deploy_ran:
-        _deploy_url = deploy_to_vercel(output_dir, args.project)
-
     # Print gap report summary if available (v0.9.0)
     if args.from_url:
         print_gap_summary(args.project)
@@ -5699,7 +5894,6 @@ def main():
             bos_line_items=_bos_line_items,
             sections_reconciled=_reconciliation_meta,
             tenant_id=tenant_id,
-            deploy_url=_deploy_url,
         )
         _recon_str = ""
         if _reconciliation_meta:

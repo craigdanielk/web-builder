@@ -65,6 +65,50 @@ def get_default_shared_components(
     }
 
 
+# Commerce page-types that must render as dynamic [handle] routes with Layer-7
+# Storefront wiring. Any other page-type from the industry registry is treated as
+# a static marketing/funnel route (e.g. fintech: pricing, signup, kyc, checkout).
+_COMMERCE_PAGE_TYPES = {"collection", "product"}
+_COMMERCE_ROUTE = {
+    "collection": ("collection-template", "/collections/[handle]", "src/app/collections/[handle]/page.tsx", "Collection"),
+    "product": ("product-template", "/products/[handle]", "src/app/products/[handle]/page.tsx", "Product"),
+}
+
+
+def _page_entry_for_type(page_type: str) -> Dict[str, Any]:
+    """Map an industry page_type to a manifest page entry.
+
+    homepage → "/"; commerce types → dynamic [handle] routes (Layer 7); every
+    other page_type → a static funnel/marketing route at /{page_type}."""
+    if page_type == "homepage":
+        return {"id": "homepage", "route": "/", "app_path": "src/app/page.tsx",
+                "page_type": "homepage", "title": "Home", "dynamic": False}
+    if page_type in _COMMERCE_ROUTE:
+        pid, route, app_path, title = _COMMERCE_ROUTE[page_type]
+        return {"id": pid, "route": route, "app_path": app_path,
+                "page_type": page_type, "title": title, "dynamic": True}
+    # Static marketing/funnel page (pricing, signup, kyc, account, checkout, legal, …)
+    title = page_type.replace("-", " ").replace("_", " ").title()
+    return {"id": f"{page_type}-page", "route": f"/{page_type}",
+            "app_path": f"src/app/{page_type}/page.tsx",
+            "page_type": page_type, "title": title, "dynamic": False}
+
+
+def _pages_from_page_types(page_types) -> list:
+    """Build manifest pages from an ordered list of industry page_types.
+    homepage is forced first; a not-found page is always appended."""
+    seen, ordered = set(), []
+    for pt in (["homepage"] + list(page_types or [])):
+        if pt and pt not in seen:
+            seen.add(pt)
+            ordered.append(pt)
+    pages = [_page_entry_for_type(pt) for pt in ordered]
+    pages.append({"id": "not-found", "route": "/not-found",
+                  "app_path": "src/app/not-found.tsx", "page_type": "landing",
+                  "title": "404", "dynamic": False})
+    return pages
+
+
 def generate_site_manifest(
     project: str,
     industry: str,
@@ -72,12 +116,18 @@ def generate_site_manifest(
     industry_metadata: Optional[dict] = None,
     architecture_path: Optional[Path] = None,
     write_file: bool = True,
+    page_types: Optional[list] = None,
 ) -> Dict[str, Any]:
     """
     Generate a site manifest for multi-page generation.
 
-    If architecture_path is provided (e.g. from Calculator), reads route structure from it.
-    Otherwise uses default pages: homepage, collection, product, content, not-found.
+    Page source, in priority order:
+      1. architecture_path (e.g. from Calculator) — reads route structure from it.
+      2. page_types — the industry's real page-types from the registry (e.g.
+         fintech: homepage, pricing, signup, kyc, account, checkout, legal). Each
+         becomes a page: homepage at "/", commerce types as dynamic [handle]
+         routes, everything else a static funnel route at /{page_type}.
+      3. DEFAULT_PAGES — the generic 5-page e-commerce fallback.
 
     industry_metadata: optional dict from get_industry_metadata(industry) with
         default_nav_variant, default_footer_variant. If None, uses defaults.
@@ -98,7 +148,10 @@ def generate_site_manifest(
         except (OSError, json.JSONDecodeError):
             pass
 
-    pages = [dict(p) for p in DEFAULT_PAGES]
+    if page_types:
+        pages = _pages_from_page_types(page_types)
+    else:
+        pages = [dict(p) for p in DEFAULT_PAGES]
     shared_components = get_default_shared_components(nav_variant, footer_variant)
 
     manifest = {
