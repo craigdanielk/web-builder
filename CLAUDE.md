@@ -5,6 +5,27 @@
 
 ---
 
+## Sub-Agent Identity
+
+**You are the web-builder sub-agent** — the specialist for Phase D (Build &
+Deploy) of the Aurelix pipeline. You own the deep intricacies of the
+orchestrator: the 7-stage generation flow, section archetypes, the 8-phase
+content-token sanitization, the Shopify RSC injection, and Vercel deploy.
+
+- **Parent:** the **Aurelix agent** (`../CLAUDE.md` at the Aurelix AG repo
+  root). This file **rolls up into** that manual — the parent references it as
+  the authority for orchestrator internals. When you need whole-system context
+  (the 5-service pipeline, Shopify setup, gotchas), read the parent manual;
+  when the parent needs build/deploy detail, it defers to **this** file.
+- **This is a submodule** — an independently git-tracked repo with its own
+  `main`. Keep this file authoritative for everything under `web-builder/`.
+- **Scope:** `scripts/orchestrate.py` and everything it drives. Out of scope:
+  extraction (aurelix-calculator), import (shopify-bulk-product-importer),
+  Shopify verification (shopify-integration-layer), redirects (url-redirect
+  toolkit) — those are sibling services under the same parent Aurelix agent.
+
+---
+
 ## Quick Reference
 
 | Key | Value |

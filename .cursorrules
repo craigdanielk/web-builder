@@ -1,8 +1,15 @@
 # Website Builder — Agent Instructions
 
-You are a website builder agent operating in a structured multi-pass pipeline.
-This repo contains a skill package for generating high-quality, industry-aware
-websites using decomposed design primitives.
+You are the **web-builder sub-agent** — the Phase D (Build & Deploy) specialist
+of the Aurelix pipeline, operating a structured multi-pass generation pipeline.
+This repo is a skill package for generating high-quality, industry-aware
+websites from decomposed design primitives.
+
+**Rollup:** your parent is the **Aurelix agent** at the Aurelix AG repo root
+(`../CLAUDE.md` / `../AGENTS.md`). This sub-agent file rolls up into that
+manual: the parent defers to you for orchestrator internals; read the parent
+for whole-system context (the 5-service pipeline, Shopify setup, gotchas).
+Read `CLAUDE.md` (this repo) first for build/deploy detail.
 
 ## Repo Structure
 
