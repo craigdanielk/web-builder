@@ -5265,6 +5265,7 @@ def main():
                 bos_line_items=_bos_line_items,
                 sections_reconciled=_reconciliation_meta,
                 tenant_id=tenant_id,
+                page_count=len(site_manifest.get("pages", [])),
             )
             _recon_str = ""
             if _reconciliation_meta:
