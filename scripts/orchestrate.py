@@ -122,9 +122,9 @@ load_env_file()
 
 # Model selection per pipeline stage
 MODELS = {
-    "scaffold": "claude-sonnet-4-5-20250929",    # Good judgment for structure
-    "section": "claude-sonnet-4-5-20250929",      # Fast, good for individual components
-    "review": "claude-sonnet-4-5-20250929",       # Good judgment for quality eval
+    "scaffold": "claude-sonnet-4-6",    # Good judgment for structure
+    "section": "claude-sonnet-4-6",      # Fast, good for individual components
+    "review": "claude-sonnet-4-6",       # Good judgment for quality eval
 }
 
 MAX_TOKENS = {
@@ -4743,7 +4743,7 @@ def stage_bos_orchestrate(
     _sec_files_map: dict[str, list[str]] = {}
     if section_files:
         for sf in section_files:
-            _sec_files_map[sf.stem] = str(sf.relative_to(ROOT) if sf.is_relative() else sf.name)
+            _sec_files_map[sf.stem] = str(sf.relative_to(ROOT) if not sf.is_absolute() else sf.name)
 
     _bos_version = f"bos-{bos.version}"
     _completed_count = 0
@@ -5650,6 +5650,11 @@ def main():
             save_checkpoint(output_dir, "deploy", args.project)
             deploy_ran = True
 
+    # ── Publish: deploy to Vercel and capture URL (BRIEF #33299) ──
+    _deploy_url = None
+    if getattr(args, "publish", False) and deploy_ran:
+        _deploy_url = deploy_to_vercel(output_dir, args.project)
+
     # Print gap report summary if available (v0.9.0)
     if args.from_url:
         print_gap_summary(args.project)
@@ -5694,6 +5699,7 @@ def main():
             bos_line_items=_bos_line_items,
             sections_reconciled=_reconciliation_meta,
             tenant_id=tenant_id,
+            deploy_url=_deploy_url,
         )
         _recon_str = ""
         if _reconciliation_meta:

@@ -10,7 +10,7 @@ except ImportError:
     sys.exit("anthropic package required: pip install anthropic")
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-4-6"
 ROOT = Path(__file__).parent.parent
 BRIEFS_DIR = ROOT / "briefs"
 OUTPUT_DIR = ROOT / "output"
