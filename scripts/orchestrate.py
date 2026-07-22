@@ -741,6 +741,12 @@ def reconcile_sections(
     harvested sections into one per-page list, normalizing variants and
     resolving duplicates/gaps.
 
+    PURE / IDEMPOTENT: this function has no side effects, performs no I/O,
+    and is fully deterministic — identical inputs always produce identical
+    outputs. It is safe to call repeatedly; re-running it over its own
+    output (or over the same build inputs) neither duplicates nor drifts
+    sections. Callers rely on this for re-runnable builds.
+
     This is the authoritative reconciliation step that runs before any
     section generation. It guarantees:
       - Every section has a non-null variant string (normalized)
@@ -772,165 +778,148 @@ def reconcile_sections(
     """
     # ── Normalize inputs: ensure variant is never None/empty ──
     _DEFAULT_VARIANT = "icon-grid"
+    _ARCH_VARIANTS = {
+        "HERO": "full-bleed-overlay",
+        "NAV": "sticky-transparent",
+        "FEATURES": "icon-grid",
+        "ABOUT": "two-column",
+        "CTA": "centered",
+        "FOOTER": "mega",
+        "FAQ": "accordion",
+        "TESTIMONIALS": "carousel",
+        "STATS": "grid",
+        "PRICING": "three-tier",
+        "PRODUCT-SHOWCASE": "hover-cards",
+        "GALLERY": "masonry",
+        "HOW-IT-WORKS": "numbered-steps",
+        "NEWSLETTER": "inline-form",
+        "LOGO-BAR": "carousel",
+        "TRUST-BADGES": "icon-grid",
+        "CONTACT": "split",
+        "COMPARISON": "table",
+        "PORTFOLIO": "grid",
+        "BLOG": "card-grid",
+    }
+
+    # Build archetype→variant map from the registry so a null/empty variant
+    # falls back to the *registry* variant for that archetype first (brief
+    # spec), and only then to a hardcoded sensible default. Deterministic:
+    # first registry occurrence of each archetype wins.
+    _registry_variant_by_arch: dict[str, str] = {}
+    for _rsec in registry_sections:
+        _rarch = _rsec.get("archetype", "").upper()
+        _rvar = _rsec.get("variant")
+        if (
+            _rarch
+            and isinstance(_rvar, str)
+            and _rvar.strip()
+            and _rarch not in _registry_variant_by_arch
+        ):
+            _registry_variant_by_arch[_rarch] = _rvar.strip()
 
     def _normalize_variant(sec: dict) -> str:
         var = sec.get("variant")
-        if not var or not isinstance(var, str) or not var.strip():
-            # Fall back to archetype-based default
-            _ARCH_VARIANTS = {
-                "HERO": "full-bleed-overlay",
-                "NAV": "sticky-transparent",
-                "FEATURES": "icon-grid",
-                "ABOUT": "two-column",
-                "CTA": "centered",
-                "FOOTER": "mega",
-                "FAQ": "accordion",
-                "TESTIMONIALS": "carousel",
-                "STATS": "grid",
-                "PRICING": "three-tier",
-                "PRODUCT-SHOWCASE": "hover-cards",
-                "GALLERY": "masonry",
-                "HOW-IT-WORKS": "numbered-steps",
-                "NEWSLETTER": "inline-form",
-                "LOGO-BAR": "carousel",
-                "TRUST-BADGES": "icon-grid",
-                "CONTACT": "split",
-                "COMPARISON": "table",
-                "PORTFOLIO": "grid",
-                "BLOG": "card-grid",
-            }
-            return _ARCH_VARIANTS.get(sec.get("archetype", "").upper(), _DEFAULT_VARIANT)
-        return var.strip()
-
-    # 1. Build lookup keys: (position, archetype) for deduplication
-    registry_by_key: dict[tuple, dict] = {}
-    for sec in registry_sections:
-        pos = sec.get("position", len(registry_by_key) + 1)
+        if var and isinstance(var, str) and var.strip():
+            return var.strip()
+        # Null/None/empty variant — never let it flow into generation.
         arch = sec.get("archetype", "").upper()
-        normalized = dict(sec)
-        normalized["variant"] = _normalize_variant(sec)
-        normalized["position"] = pos
-        normalized["_source"] = "registry"
-        key = (pos, arch)
-        if key not in registry_by_key:
-            registry_by_key[key] = normalized
+        # 1. Prefer the registry variant for this archetype.
+        if arch in _registry_variant_by_arch:
+            return _registry_variant_by_arch[arch]
+        # 2. Fall back to an archetype-based sensible default.
+        return _ARCH_VARIANTS.get(arch, _DEFAULT_VARIANT)
 
-    harvest_by_key: dict[tuple, dict] = {}
-    for sec in harvested_sections:
-        pos = sec.get("position", len(harvest_by_key) + 1)
-        arch = sec.get("archetype", "").upper()
-        normalized = dict(sec)
-        normalized["variant"] = _normalize_variant(sec)
-        normalized["position"] = pos
-        normalized["_source"] = "harvest"
-        key = (pos, arch)
-        if key not in harvest_by_key:
-            harvest_by_key[key] = normalized
+    # Content richness score — used to pick the populated section when the
+    # same archetype appears more than once (e.g. an empty hero vs a
+    # populated hero). Higher = more real content. Deterministic.
+    _CONTENT_FIELDS = (
+        "content", "images", "icons", "animations",
+        "components", "generation_guidance", "confidence",
+    )
 
-    # 2. Merge: registry sections take precedence at their positions
+    def _content_score(sec: dict) -> int:
+        score = 0
+        content = sec.get("content")
+        if isinstance(content, dict):
+            score += sum(1 for v in content.values() if v)
+        elif content:
+            score += 1
+        for fld in ("images", "icons", "animations", "components", "generation_guidance"):
+            if sec.get(fld):
+                score += 1
+        return score
+
+    # 1. Collapse each source to one entry per archetype ("matched by
+    #    archetype"). On collision keep the richer entry so an empty
+    #    duplicate never displaces a populated one.
+    def _collapse(sections: list[dict], source: str) -> tuple[dict, list]:
+        by_arch: dict[str, dict] = {}
+        order: list[str] = []
+        for i, sec in enumerate(sections):
+            arch = sec.get("archetype", "").upper()
+            if not arch:
+                continue
+            normalized = dict(sec)
+            normalized["variant"] = _normalize_variant(sec)
+            normalized["position"] = sec.get("position", i + 1)
+            normalized["_source"] = source
+            if arch not in by_arch:
+                by_arch[arch] = normalized
+                order.append(arch)
+            elif _content_score(normalized) > _content_score(by_arch[arch]):
+                by_arch[arch] = normalized
+        return by_arch, order
+
+    registry_by_arch, registry_order = _collapse(registry_sections, "registry")
+    harvest_by_arch, harvest_order = _collapse(harvested_sections, "harvest")
+
     duplicates_resolved = 0
-    reconciled: list[dict] = []
+    gap_filled_count = 0
+    final_sections: list[dict] = []
 
-    # Collect all unique positions
-    all_positions = sorted(set(
-        [k[0] for k in registry_by_key.keys()]
-        + [k[0] for k in harvest_by_key.keys()]
-    ))
+    # 2. Union order: registry-required archetypes first (they define the
+    #    required page shape), then any extra harvested archetypes.
+    union_order: list[str] = list(registry_order)
+    for arch in harvest_order:
+        if arch not in union_order:
+            union_order.append(arch)
 
-    for pos in all_positions:
-        reg = registry_by_key.get((pos,))
-        hvst = harvest_by_key.get((pos,))
+    for arch in union_order:
+        reg = registry_by_arch.get(arch)
+        hvst = harvest_by_arch.get(arch)
 
         if reg and hvst:
-            # Both exist at same position — check if same archetype
-            if reg["archetype"] == hvst["archetype"]:
-                # Registry wins; merge harvested content fields into it
-                merged = dict(reg)
-                for key in ("content", "images", "icons", "animations",
-                            "confidence", "components", "generation_guidance"):
-                    if key in hvst and hvst[key]:
-                        merged[key] = hvst[key]
-                # Mark as reconciled from both sources
-                merged["_merged"] = True
-                reconciled.append(merged)
-            else:
-                # Different archetype at same position — prefer registry
-                reconciled.append(reg)
+            # Both present — registry is authoritative for the required
+            # shape (variant, content_direction, priority); overlay the
+            # harvested content so real extracted content is preserved.
+            merged = dict(reg)
+            for fld in _CONTENT_FIELDS:
+                if hvst.get(fld):
+                    merged[fld] = hvst[fld]
+            if not (merged.get("variant") or "").strip():
+                merged["variant"] = _normalize_variant(hvst)
+            merged["variant"] = _normalize_variant(merged)
+            # An empty required slot + a populated harvest = a resolved
+            # empty-duplicate.
+            if _content_score(reg) == 0 and _content_score(hvst) > 0:
                 duplicates_resolved += 1
+            merged.pop("_source", None)
+            final_sections.append(merged)
         elif reg:
-            reconciled.append(reg)
+            # Required-but-missing-from-harvest — gap-fill with the registry
+            # archetype/variant/content_direction and empty content for the
+            # copy node to populate downstream.
+            gap = dict(reg)
+            gap["variant"] = _normalize_variant(reg)
+            gap.pop("_source", None)
+            final_sections.append(gap)
+            gap_filled_count += 1
         elif hvst:
-            reconciled.append(hvst)
-
-    # 3. Append any registry-required sections that weren't covered by position
-    seen_keys = set()
-    for sec in reconciled:
-        key = (sec.get("position", 0), sec.get("archetype", "").upper())
-        seen_keys.add(key)
-
-    gap_filled_count = 0
-    for sec in registry_sections:
-        key = (sec.get("position", 0), sec.get("archetype", "").upper())
-        if key not in seen_keys:
-            normalized = dict(sec)
-            normalized["variant"] = _normalize_variant(sec)
-            normalized["_source"] = "registry"
-            normalized["_gap_filled"] = True
-            reconciled.append(normalized)
-            seen_keys.add(key)
-            gap_filled_count += 1
-
-    # 4. Append any harvested sections not already covered
-    for sec in harvested_sections:
-        key = (sec.get("position", 0), sec.get("archetype", "").upper())
-        if key not in seen_keys:
-            normalized = dict(sec)
-            normalized["variant"] = _normalize_variant(sec)
-            normalized["_source"] = "harvest"
-            normalized["_gap_filled"] = True
-            reconciled.append(normalized)
-            seen_keys.add(key)
-            gap_filled_count += 1
-
-    # 5. Final normalization: strip internal metadata from output, ensure
-    #    every section has variant set, no empties, no duplicates
-    seen_archetypes: set[str] = set()
-    final_sections: list[dict] = []
-    for sec in reconciled:
-        arch = sec.get("archetype", "").upper()
-        var = _normalize_variant(sec)
-
-        # Skip truly empty sections (no archetype at all)
-        if not arch:
-            continue
-
-        # If same archetype appears twice, keep the one with more content
-        if arch in seen_archetypes:
-            duplicates_resolved += 1
-            existing_idx = next(
-                (i for i, s in enumerate(final_sections)
-                 if s.get("archetype", "").upper() == arch),
-                None,
-            )
-            if existing_idx is not None:
-                existing = final_sections[existing_idx]
-                existing_content = existing.get("content", {})
-                new_content = sec.get("content", {})
-                if isinstance(existing_content, dict) and isinstance(new_content, dict):
-                    existing_keys = [k for k in existing_content if existing_content[k]]
-                    new_keys = [k for k in new_content if new_content[k]]
-                    if len(new_keys) > len(existing_keys):
-                        final_sections[existing_idx] = sec
-            continue
-        seen_archetypes.add(arch)
-
-        clean = dict(sec)
-        clean["variant"] = var
-        # Remove internal metadata before output
-        clean.pop("_source", None)
-        clean.pop("_merged", None)
-        clean.pop("_gap_filled", None)
-        final_sections.append(clean)
+            # Harvested section beyond the required set — keep it (union).
+            extra = dict(hvst)
+            extra["variant"] = _normalize_variant(hvst)
+            extra.pop("_source", None)
+            final_sections.append(extra)
 
     # 6. Build metadata
     registry_count = sum(
