@@ -79,6 +79,9 @@ try:
         BillOfSale,
         ensure_bill_of_sale,
         load_build_traces,
+        build_dag_trace,
+        map_disposition,
+        write_build_trace_artifact,
     )
     BOS_AVAILABLE = True
 except ImportError:
@@ -4666,7 +4669,7 @@ def stage_bos_orchestrate(
                 bos = BillOfSale.load(pp)
                 bos_source = f"imported from {bos_import_path}"
                 print(f"  ✓ BoS loaded ({len(bos.line_items)} line items) — {bos_source}")
-            except (json.JSONDecodeError, KeyError) as e:
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
                 print(f"  ⚠ Could not parse BoS at {bos_import_path}: {e}")
 
     if bos is None:
@@ -4684,6 +4687,49 @@ def stage_bos_orchestrate(
 
     bos.project_name = project_name
     bos.industry = industry
+
+    # ── DAG bill provenance (uiux-bill-of-sale-dag-v1) ────────────────────────
+    # When the imported bill is the tenant audit Bill of Sale, every line item is a
+    # finding carrying a disposition + verified_against rule_id.  We drive each
+    # disposition's deliverable (routing copy-findings into the copy gate, recording
+    # build intent for the rest) and write ONE build_trace per line item, keyed by
+    # its stable id.  The whole pass is a deterministic replace-in-place: re-running
+    # over the same bill reproduces the same N traces (never 2N).
+    _is_dag = any(it.type == "finding" for it in bos.line_items)
+    if _is_dag:
+        _dag_traces: list[dict] = []
+        _copy_gate_routed: list[str] = []
+        _lane_counts: dict[str, int] = {}
+        # Deterministic file hint per finding — the deliverable's fix locus.  No
+        # side effects: we record where the fix lands, we do not build here.
+        _existing = {sf.stem: sf for sf in (section_files or [])}
+        for item in bos.line_items:
+            lane, action = map_disposition(item.disposition)
+            _lane_counts[lane] = _lane_counts.get(lane, 0) + 1
+            # Route copy-findings items into the existing copy gate.
+            _files: list[str] = []
+            if lane == "copy":
+                _copy_gate_routed.append(item.item_id)
+            trace = build_dag_trace(item, commit=None, files=_files)
+            # Writeback keyed by line-item id — replace-in-place, idempotent.
+            item.build_trace = trace
+            _dag_traces.append(trace)
+
+        # Persist the enriched bill (with build_trace per line item)…
+        _bos_path = output_dir / "bill-of-sale.json"
+        bos.save(_bos_path)
+        # …and the dedicated build-trace.json artifact (idempotent, id-keyed).
+        _trace_path = write_build_trace_artifact(output_dir, _dag_traces)
+
+        print(f"  ✓ DAG bill consumed: {len(_dag_traces)} line item(s) → build_trace")
+        for _ln, _c in sorted(_lane_counts.items()):
+            print(f"      {_ln}: {_c}")
+        if _copy_gate_routed:
+            print(f"  ✓ Routed {len(_copy_gate_routed)} finding(s) into the copy gate")
+        print(f"  ✓ build_trace written ({len(_dag_traces)} entries) → {_trace_path}")
+        print(f"  ✓ BoS saved → {_bos_path}")
+        print(f"{'═' * 60}\n")
+        return bos
 
     # 2. Write a build_trace per line item — each gets status + files + verified_against
     #    Section-file map: derive which files belong to which line item.
