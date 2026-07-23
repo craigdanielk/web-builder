@@ -75,6 +75,17 @@ def _post(path: str, data: Any) -> Any:
     return resp.status
 
 
+def _patch(path: str, filters: str, data: Any) -> Any:
+    """PATCH to Supabase REST API."""
+    url = f"{SUPABASE_URL}/rest/v1/{path}?{filters}"
+    body = json.dumps(data).encode("utf-8")
+    headers = dict(_HEADERS)
+    headers["Prefer"] = "return=minimal"
+    req = urllib.request.Request(url, data=body, method="PATCH", headers=headers)
+    resp = urllib.request.urlopen(req, context=_SSL_CTX, timeout=15)
+    return resp.status
+
+
 def _rpc(fn_name: str, params: dict) -> list[dict]:
     """Call Supabase RPC function."""
     url = f"{SUPABASE_URL}/rest/v1/rpc/{fn_name}"

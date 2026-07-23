@@ -3210,6 +3210,41 @@ class VercelAdapter(DeployAdapter):
         return "#"
 
 
+def resolve_target_platform(tenant_context: dict | None) -> str:
+    """Resolve the deploy target platform from tenant configuration.
+
+    BRIEF #33318: Reads deploy target from tenant config rather than
+    defaulting to 'shopify'. When tenant_context is available, queries
+    the tenants table for deploy_target; otherwise falls back to 'shopify'.
+
+    Args:
+        tenant_context: Dict with tenant_id and other tenant context data
+
+    Returns:
+        str: The resolved target platform ('shopify' or 'vercel')
+    """
+    if not tenant_context:
+        return "shopify"
+
+    tenant_id = tenant_context.get("tenant_id")
+    if not tenant_id:
+        return "shopify"
+
+    # Query tenants table for deploy_target
+    try:
+        if TENANT_CONTEXT_AVAILABLE and load_tenant_context:
+            from lib.supabase_client import _get
+            rows = _get("tenants", f"id=eq.{tenant_id}&select=deploy_target")
+            if rows and isinstance(rows, list) and rows:
+                deploy_target = rows[0].get("deploy_target")
+                if deploy_target in ("shopify", "vercel"):
+                    return deploy_target
+    except Exception:
+        pass
+
+    return "shopify"
+
+
 def _resolve_adapter(target_platform: str) -> DeployAdapter:
     """Resolve the deploy adapter for the given platform string."""
     if target_platform == "shopify":
@@ -5695,8 +5730,9 @@ def main():
                         "When set, all build artifacts write under <output-root>/{project}/... "
                         "(re-rooted, same subtree layout). Accepts absolute or relative paths.",
                         default=None, metavar="PATH")
-    parser.add_argument("--target-platform", choices=["shopify", "vercel"], default="shopify",
-                        help="Deploy target platform (shopify=current behavior, vercel=clean Next.js app). Default: shopify")
+    parser.add_argument("--target-platform", choices=["shopify", "vercel"], default=None,
+                        help="Deploy target platform (shopify=current behavior, vercel=clean Next.js app). "
+                             "Default: resolved from tenant config, falls back to shopify")
     parser.add_argument("--bill-of-sale", help="Path to a pre-generated Bill of Sale JSON. "
                         "When set, the pipeline cross-references output against BoS line items "
                         "and writes build_trace per item for the re-audit loop.",
@@ -5736,6 +5772,16 @@ def main():
 
     # Resolved tenant UUID threaded into build_log (None = column omitted).
     tenant_id = tenant_context.get("tenant_id") if tenant_context else None
+
+    # ── Resolve target platform from tenant config (BRIEF #33318) ──
+    # If --target-platform is not explicitly set, resolve from tenant config
+    if getattr(args, "target_platform", None) is None:
+        resolved_platform = resolve_target_platform(tenant_context)
+        args.target_platform = resolved_platform
+        if tenant_context:
+            print(f"  🎯 Target platform resolved from tenant config: {resolved_platform}")
+        else:
+            print(f"  🎯 Target platform (no tenant config): {resolved_platform}")
 
     # ── Output-root injection: re-root the base output directory ──
     # Default (flag absent) is a no-op — OUTPUT_DIR stays <web-builder>/output.
