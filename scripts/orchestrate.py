@@ -3475,11 +3475,17 @@ def stage_deploy(
         # next.config.ts — ignoreBuildErrors for GSAP/Framer Motion type issues
         # Adapter may inject extra fields (e.g. Shopify image remotePatterns)
         _next_cfg_extras = adapter.get_next_config_extras()
+        # Live-CDN images: when the adapter doesn't configure images (e.g. the
+        # Vercel / --from-url path referencing the source site's live image URLs),
+        # disable optimization so any remote URL renders without per-domain
+        # remotePatterns. Shopify keeps its own remotePatterns via the adapter.
+        _img_cfg = "" if "images:" in _next_cfg_extras else "  images: { unoptimized: true },\n"
         write_file(
             site_dir / "next.config.ts",
             'import type { NextConfig } from "next";\n\n'
             "const nextConfig: NextConfig = {\n"
             "  typescript: { ignoreBuildErrors: true },\n"
+            f"{_img_cfg}"
             f"{_next_cfg_extras}"
             "};\n\n"
             "export default nextConfig;\n",

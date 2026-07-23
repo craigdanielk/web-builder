@@ -351,9 +351,11 @@ function buildAssetContext(categorizedImages, sectionArchetype, sectionIndex) {
 
   for (let i = 0; i < matchingImages.length; i++) {
     const img = matchingImages[i];
-    const { localPath } = buildLocalPath(img.url);
+    // Emit the LIVE source URL (the source site acts as the CDN) — never a
+    // local path. Nothing downloads these, so a local path would render broken;
+    // the live URL resolves directly. (Fix: images = live CDN URLs, not disk.)
     const dims = img.width && img.height ? ` (${img.width}x${img.height})` : '';
-    lines.push(`${i + 1}. ${localPath}${dims}`);
+    lines.push(`${i + 1}. ${img.url}${dims}`);
     if (img.alt) {
       lines.push(`   Alt: "${img.alt}"`);
     }
@@ -361,9 +363,11 @@ function buildAssetContext(categorizedImages, sectionArchetype, sectionIndex) {
 
   lines.push('');
   lines.push('### Instructions');
-  lines.push('- Use these local asset paths in your component (they will exist at build time)');
-  lines.push('- For images: use CSS backgroundImage with role="img" and aria-label');
-  lines.push('- If no assets are listed above, use a gradient placeholder with descriptive aria-label');
+  lines.push('- Use these LIVE image URLs directly in your component — the source site hosts them (CDN).');
+  lines.push('- For an <img>/<Image>, set src to the full URL exactly as listed (do NOT rewrite to a local path).');
+  lines.push('- For a background, use style={{ backgroundImage: `url(${THE_URL})` }} with role="img" and an aria-label.');
+  lines.push('- Preserve each image\'s Alt text for accessibility.');
+  lines.push('- Only if NO asset is listed for a slot, fall back to a gradient placeholder with a descriptive aria-label.');
 
   return lines.join('\n');
 }
