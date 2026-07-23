@@ -2,8 +2,8 @@
   "version": "1.0.0",
   "generated": "2026-02-13",
   "total_archetypes": 25,
-  "total_variants": 73,
-  "templates_available": 73,
+  "total_variants": 74,
+  "templates_available": 74,
   "archetypes": {
     "ABOUT": {
       "directory": "section-templates/ABOUT/",
@@ -103,6 +103,12 @@
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
           "file_name": "split-image.tsx"
+        },
+        {
+          "name": "dark-band",
+          "has_template": true,
+          "template_path": "section-templates/CTA/dark-band.tsx",
+          "file_name": "dark-band.tsx"
         }
       ]
     },
