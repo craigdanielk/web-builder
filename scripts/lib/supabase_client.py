@@ -188,6 +188,13 @@ def check_template_exists(
     Check if a parameterized TSX template exists for this archetype+variant.
     Resolution order: (1) cache, (2) local file, (3) Supabase code_template.
     Returns Path (local file), str (code from Supabase), or None (LLM fallback).
+
+    Alongside the resolved template, the Supabase branch also fetches the
+    template's ``slot_schema`` (the JSON contract describing the template's
+    fillable slots) and makes it available via ``cache.slot_schema_cache``,
+    keyed by ``(archetype, variant)``. Callers can read the slot schema for a
+    resolved template with ``get_slot_schema(archetype, variant, cache)``.
+    Local-file and LLM-fallback resolutions have no slot schema (``None``).
     """
     # 1. Check per-build cache
     if cache is not None:
@@ -221,7 +228,7 @@ def check_template_exists(
             f"archetype=eq.{urllib.parse.quote(archetype)}",
             f"variant=eq.{urllib.parse.quote(variant)}",
             "has_template=eq.true",
-            "select=code_template",
+            "select=code_template,slot_schema",
         ])
         rows = _get("section_archetypes", params)
         if rows and len(rows) > 0:
@@ -229,6 +236,10 @@ def check_template_exists(
             if isinstance(code, str) and code.strip():
                 if cache is not None:
                     cache.template_cache[(archetype, variant)] = code
+                    # Surface the slot_schema alongside the code_template so
+                    # callers can resolve the template's fillable-slot contract
+                    # from the same lookup (None if the column is absent/empty).
+                    cache.slot_schema_cache[(archetype, variant)] = rows[0].get("slot_schema")
                 return code
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError, KeyError):
         pass  # Fall through to LLM
@@ -236,6 +247,24 @@ def check_template_exists(
     if cache is not None:
         cache.template_cache[(archetype, variant)] = None
     return None
+
+
+def get_slot_schema(
+    archetype: str,
+    variant: str,
+    cache: BuildCache | None = None,
+) -> Any | None:
+    """
+    Return the slot_schema resolved alongside code_template by
+    check_template_exists() for this archetype+variant.
+
+    check_template_exists() must have been called first (it populates
+    cache.slot_schema_cache). Returns None when no cache is provided, the
+    template was not Supabase-resolved, or the row had no slot_schema.
+    """
+    if cache is None:
+        return None
+    return cache.slot_schema_cache.get((archetype, variant))
 
 
 def log_build(
@@ -357,6 +386,9 @@ class BuildCache:
         self.industry_style: dict | None = None
         self._loaded = False
         self.template_cache: dict[tuple[str, str], Path | str | None] = {}
+        # Slot-schema contract for each Supabase-resolved template, populated by
+        # check_template_exists() alongside code_template.
+        self.slot_schema_cache: dict[tuple[str, str], Any | None] = {}
 
     def load(self) -> "BuildCache":
         """Fetch section sequence and industry style from Supabase (2 reads total)."""
