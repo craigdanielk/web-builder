@@ -1788,6 +1788,31 @@ def stage_sections(
                         for token_key, token_val in typography.items():
                             template_code = template_code.replace(f"{{{{brand.{token_key}}}}}", str(token_val))
 
+                    # BRIEF #33317 — semantic role tokens with WCAG-checked fg/bg
+                    # pairing. Roles: bg, surface, text_primary, text_muted,
+                    # on_accent, on_surface, border. Threaded as {{brand.<role>}}
+                    # and as Tailwind role classes (text-primary, text-muted,
+                    # on-accent, on-surface) so generated sections never emit raw
+                    # hex text without a paired, contrast-safe foreground.
+                    if isinstance(palette, dict):
+                        try:
+                            from lib.semantic_palette import (
+                                derive_semantic_tokens,
+                                ROLE_CLASS_MAP,
+                            )
+                            _roles = derive_semantic_tokens(palette)
+                            for _role, _hex in _roles.items():
+                                template_code = template_code.replace(
+                                    f"{{{{brand.{_role}}}}}", str(_hex)
+                                )
+                                _cls = ROLE_CLASS_MAP.get(_role)
+                                if _cls:  # on_accent -> on-accent, text_primary -> text-primary
+                                    template_code = template_code.replace(
+                                        f"{{{{role.{_cls}}}}}", str(_hex)
+                                    )
+                        except Exception as _sem_err:
+                            print(f"      ⚠ semantic tokens skipped: {_sem_err}")
+
                 # Replace content placeholder tokens {token_name} with string literals
                 # so JSX doesn't reference undefined variables at render time.
                 # Matches bare {word_word} patterns in JSX (not {var} inside .map callbacks etc.)

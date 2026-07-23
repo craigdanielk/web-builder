@@ -259,6 +259,8 @@ def log_build(
     deploy_url: str | None = None,
     harvested_copy_ratio: float | None = None,
     render_audit_status: str | None = None,
+    contrast_defect_count: int | None = None,
+    broken_image_count: int | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
@@ -319,6 +321,10 @@ def log_build(
         row["harvested_copy_ratio"] = harvested_copy_ratio
     if render_audit_status is not None:
         row["render_audit_status"] = render_audit_status
+    if contrast_defect_count is not None:
+        row["contrast_defect_count"] = contrast_defect_count
+    if broken_image_count is not None:
+        row["broken_image_count"] = broken_image_count
 
     try:
         _post("build_log", [row])
