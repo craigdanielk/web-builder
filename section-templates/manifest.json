@@ -2,8 +2,8 @@
   "version": "1.0.0",
   "generated": "2026-02-13",
   "total_archetypes": 25,
-  "total_variants": 72,
-  "templates_available": 72,
+  "total_variants": 73,
+  "templates_available": 73,
   "archetypes": {
     "ABOUT": {
       "directory": "section-templates/ABOUT/",
@@ -496,6 +496,12 @@
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
           "file_name": "grid.tsx"
+        },
+        {
+          "name": "headshot-grid-square",
+          "has_template": true,
+          "template_path": "db:section_archetypes.code_template",
+          "file_name": "headshot-grid-square.tsx"
         }
       ]
     },
