@@ -5461,6 +5461,13 @@ _ASSET_TYPE_ARCHETYPE_AFFINITY = {
     "team": ("team", "about"),
     "testimonial": ("testimonials",),
     "image": ("hero", "gallery", "features"),
+    # BRIEF #33320/#33312 — trust & security assets distribute to a security_row
+    # archetype across ALL pages (bind_section_assets flattens every page's
+    # sections), so badges/certifications land on inner pages, not just the hero.
+    "badge": ("security_row", "trust", "footer", "features"),
+    "trust": ("security_row", "trust", "footer"),
+    "security": ("security_row", "trust"),
+    "certification": ("security_row", "trust", "footer"),
 }
 
 
