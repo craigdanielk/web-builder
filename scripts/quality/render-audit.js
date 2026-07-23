@@ -182,6 +182,19 @@ const PROBE = () => {
     Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim().length > 3);
   const textEls = Array.from(document.querySelectorAll("h1,h2,h3,p,a,button,li,span"))
     .filter((e) => (e.innerText || "").trim().length > 4 && hasOwnText(e)).slice(0, 400);
+  // Is the element inside a position:fixed/sticky overlay? Such elements (e.g. a
+  // transparent header over a hero) render over whatever is visually behind them,
+  // which the DOM-ancestor walk cannot see — measuring them against the page
+  // default background yields false flags. Skip when their bg is unresolved.
+  const inOverlay = (el) => {
+    let n = el;
+    while (n && n !== document.body) {
+      const p = getComputedStyle(n).position;
+      if (p === "fixed" || p === "sticky") return true;
+      n = n.parentElement;
+    }
+    return false;
+  };
   for (const el of textEls) {
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) continue;
@@ -189,6 +202,10 @@ const PROBE = () => {
     const fg = parseRGB(cs.color);
     if (!fg) continue;
     const bg = effectiveBg(el);
+    // Overlay text (fixed/sticky) whose backdrop resolves to the light page default
+    // is unmeasurable — a transparent header renders over whatever is visually
+    // behind it, which the DOM-ancestor walk cannot see. Skip rather than false-flag.
+    if (inOverlay(el) && lum(bg) > 0.8) continue;
     const ratio = contrast(fg.rgb, bg);
     const size = parseFloat(cs.fontSize);
     const need = size >= 24 || (size >= 18.66 && parseInt(cs.fontWeight) >= 700) ? 3 : 4.5;
