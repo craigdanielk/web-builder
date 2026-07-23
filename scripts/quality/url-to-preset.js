@@ -18,7 +18,7 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
-const Anthropic = require('@anthropic-ai/sdk');
+const { callClaudeCli } = require('./lib/claude-cli');
 const { extractReference } = require('./lib/extract-reference');
 const {
   collectTokens, collectAnimationTokens, rgbToHex,
@@ -75,7 +75,6 @@ function hexToTailwindApprox(hex) {
 // ---------------------------------------------------------------------------
 
 async function generatePreset(url, tokens, mappedSections, extractionData, animationAnalysis, animationTokens, colorSystemData, gsapPlugins = []) {
-  const client = new Anthropic();
   const template = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 
   // Build section sequence from mapped archetypes
@@ -210,17 +209,8 @@ Common misclassification triggers to IGNORE when determining bg_primary:
 
 Output ONLY the complete preset markdown. No explanation, no code fences around the entire output.`;
 
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 4096,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const text = message.content
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n');
-
+  // Subscription-auth via the claude CLI (no ANTHROPIC_API_KEY needed).
+  const text = callClaudeCli(prompt, 'sonnet');
   return text;
 }
 

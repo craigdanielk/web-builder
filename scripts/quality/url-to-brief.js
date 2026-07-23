@@ -18,7 +18,7 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
-const Anthropic = require('@anthropic-ai/sdk');
+const { callClaudeCli } = require('./lib/claude-cli');
 const { extractReference } = require('./lib/extract-reference');
 
 const BRIEFS_DIR = path.resolve(__dirname, '../../briefs');
@@ -57,7 +57,6 @@ function parseArgs() {
 // ---------------------------------------------------------------------------
 
 async function generateBrief(url, extractionData, projectName) {
-  const client = new Anthropic();
   const briefTemplate = fs.readFileSync(BRIEF_TEMPLATE_PATH, 'utf-8');
 
   // Extract meaningful text content
@@ -139,16 +138,8 @@ Be specific and concrete — no generic filler.
 
 Output ONLY the brief markdown. No explanation, no code fences around the entire output.`;
 
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 2048,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  return message.content
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n');
+  // Subscription-auth via the claude CLI (no ANTHROPIC_API_KEY needed).
+  return callClaudeCli(prompt, 'sonnet');
 }
 
 // ---------------------------------------------------------------------------
