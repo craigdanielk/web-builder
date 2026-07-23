@@ -247,6 +247,7 @@ def log_build(
     app_routes_scaffolded: int | None = None,
     deploy_url: str | None = None,
     harvested_copy_ratio: float | None = None,
+    render_audit_status: str | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
@@ -268,6 +269,9 @@ def log_build(
     copy slots for the build, providing a copy-fidelity metric (0.0 = all generated,
     1.0+ = harvested exceeds slots). Omitted when no harvest data is available so
     registry/file builds are unchanged (no regression).
+    render_audit_status records the post-build render audit outcome ('passed',
+    'review_needed', 'failed', 'skipped') from stage_render_audit. Omitted
+    when no audit ran so pre-existing builds are unchanged (no regression).
     Returns True on success, False on failure.
     """
     row = {
@@ -302,6 +306,8 @@ def log_build(
         row["deploy_url"] = deploy_url
     if harvested_copy_ratio is not None:
         row["harvested_copy_ratio"] = harvested_copy_ratio
+    if render_audit_status is not None:
+        row["render_audit_status"] = render_audit_status
 
     try:
         _post("build_log", [row])

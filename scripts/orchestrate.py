@@ -4949,6 +4949,196 @@ def stage_validate(project_name: str) -> dict:
 # Bill of Sale Orchestration (BoS → build_trace → re-audit loop)
 # ═════════════════════════════════════════════════════════════════════════════
 
+def stage_render_audit(project_name: str, site_manifest: dict | None = None) -> str:
+    """
+    Stage 6: Post-build render audit — invoke render-audit.js against the
+    built site and record the outcome.
+
+    This is a mandatory post-build gate: builds that deploy successfully
+    are NOT considered complete until the render audit passes (or flags
+    defects for review).
+
+    Returns one of:
+      'passed'         — no defects found
+      'review_needed'  — unaccepted defect groups exist
+      'failed'         — audit crashed or could not run
+      'skipped'        — audit not available (missing deps/tools)
+    """
+    print("\n═══ STAGE 6: POST-BUILD RENDER AUDIT ═══\n")
+
+    audit_script = ROOT / "scripts" / "quality" / "render-audit.js"
+    site_dir = OUTPUT_DIR / project_name / SITE_DIR_NAME
+    audit_out = OUTPUT_DIR / project_name / "render-audit-results"
+
+    if not audit_script.exists():
+        print(f"  ⚠ render-audit.js not found at {audit_script}")
+        print(f"  → Render audit SKIPPED")
+        return "skipped"
+
+    if not site_dir.exists():
+        print(f"  ⚠ Site directory not found at {site_dir}")
+        print(f"  → Render audit SKIPPED (no built site to audit)")
+        return "skipped"
+
+    # Determine routes to audit
+    routes = ["/"]
+    if site_manifest:
+        manifest_routes = []
+        for page in site_manifest.get("pages", []):
+            route = page.get("route") or "/"
+            if route and "[" not in route:
+                manifest_routes.append(route)
+        if manifest_routes:
+            routes = manifest_routes
+
+    # Ensure node dependencies are installed in scripts/quality
+    quality_dir = ROOT / "scripts" / "quality"
+    node_modules = quality_dir / "node_modules"
+    if not node_modules.exists():
+        print("  Installing render-audit dependencies (npm ci)...")
+        result = subprocess.run(
+            ["npm", "ci", "--no-audit", "--no-fund"],
+            cwd=str(quality_dir),
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            print(f"  ⚠ npm ci failed: {result.stderr.strip()[:200]}")
+            print(f"  → Render audit SKIPPED")
+            return "skipped"
+
+    # Build the Next.js site (production build)
+    print("  Building Next.js site for audit...")
+    result = subprocess.run(
+        ["npm", "run", "build"],
+        cwd=str(site_dir),
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        print(f"  ⚠ Next.js build failed for render audit")
+        for line in result.stderr.strip().splitlines()[-5:]:
+            print(f"    {line}")
+        print(f"  → Render audit mark: FAILED (build error)")
+        return "failed"
+
+    # Start local server for the audit on a random available port
+    import socket as _sock
+    _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+    _s.bind(("", 0))
+    port = _s.getsockname()[1]
+    _s.close()
+
+    server_proc = subprocess.Popen(
+        ["npm", "run", "start", "--", "--port", str(port)],
+        cwd=str(site_dir),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    base_url = f"http://localhost:{port}"
+
+    # Wait for the server to be ready (poll socket connect every 1s, up to 20s)
+    max_retries = 20
+    server_ready = False
+    for attempt in range(max_retries):
+        _time.sleep(1)
+        try:
+            s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+            s.settimeout(3)
+            s.connect(("127.0.0.1", port))
+            s.close()
+            server_ready = True
+            break
+        except (OSError, ConnectionRefusedError):
+            continue
+    if not server_ready:
+        server_proc.kill()
+        server_proc.wait(timeout=5)
+        print(f"  ⚠ Local server did not start in time")
+        print(f"  → Render audit mark: FAILED (server timeout)")
+        return "failed"
+
+    try:
+        # Run render-audit.js
+        audit_out.mkdir(parents=True, exist_ok=True)
+        routes_csv = ",".join(routes)
+        print(f"  Auditing {len(routes)} route(s): {', '.join(routes)}")
+        result = subprocess.run(
+            [
+                "node", str(audit_script),
+                "--base", base_url,
+                "--routes", routes_csv,
+                "--out", str(audit_out),
+                "--settle", "3000",
+            ],
+            cwd=str(quality_dir),
+            capture_output=True, text=True, timeout=180,
+        )
+
+        if result.returncode != 0:
+            print(f"  ⚠ render-audit.js exited with code {result.returncode}")
+            print(f"  stderr: {result.stderr.strip()[:300]}")
+            status = "failed"
+        else:
+            # Parse the machine-readable output (last JSON line on stdout)
+            audit_data = None
+            for line in result.stdout.strip().splitlines():
+                try:
+                    audit_data = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+
+            if audit_data:
+                total = audit_data.get("total_defects", 0)
+                by_severity = audit_data.get("by_severity", {})
+                severity_summary = ", ".join(
+                    f"{k}: {v}" for k, v in by_severity.items()
+                )
+                print(f"  📋 Render audit: {total} defect(s) — {severity_summary}")
+
+                if total == 0:
+                    print(f"  ✅ Render audit PASSED — no defects found")
+                    status = "passed"
+                else:
+                    print(f"  ⚠ Render audit: {total} defect(s) require review")
+                    print(f"  → Build marked for REVIEW (defects must be accepted or fixed)")
+                    status = "review_needed"
+            else:
+                print(f"  ⚠ Could not parse render-audit output")
+                print(f"  stdout: {result.stdout.strip()[:300]}")
+                status = "failed"
+
+        # Print details from audit report if available
+        report_path = audit_out / "render-audit.json"
+        if report_path.exists():
+            try:
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                if report.get("defects"):
+                    print(f"\n  Defect summary:")
+                    by_cat = report.get("by_category", {})
+                    for cat, count in sorted(by_cat.items()):
+                        print(f"    {cat}: {count}")
+                    # Print first 3 defects inline
+                    for d in report["defects"][:3]:
+                        print(f"    • [{d['severity']}] {d['category']}: {d['finding']}")
+                    if len(report["defects"]) > 3:
+                        print(f"    ... and {len(report['defects']) - 3} more")
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    except subprocess.TimeoutExpired:
+        print(f"  ⚠ render-audit.js timed out after 180s")
+        status = "failed"
+    except Exception as e:
+        print(f"  ⚠ render-audit exception: {e}")
+        status = "failed"
+    finally:
+        # Stop the server
+        server_proc.terminate()
+        server_proc.wait(timeout=10)
+
+    print(f"  → Render audit status: {status}")
+    return status
+
+
 def stage_bos_orchestrate(
     project_name: str,
     industry: str,
@@ -5899,6 +6089,11 @@ def main():
                         OUTPUT_DIR / args.project / SITE_DIR_NAME,
                         args.project,
                     )
+        # ── Stage 6: Post-build render audit ──
+        _render_audit_status = stage_render_audit(
+            project_name=args.project,
+            site_manifest=site_manifest,
+        ) if deploy_ran else "skipped"
         _build_end_time = _time.time()
         _build_duration_ms = int((_build_end_time - _build_start_time) * 1000)
 
@@ -5955,6 +6150,7 @@ def main():
                 assets_bound=_assets_bound,
                 app_routes_scaffolded=_app_routes_scaffolded,
                 deploy_url=_deploy_url,
+                render_audit_status=_render_audit_status,
             )
             _recon_str = ""
             if _reconciliation_meta:
@@ -6092,6 +6288,12 @@ def main():
             save_checkpoint(output_dir, "deploy", args.project)
             deploy_ran = True
 
+    # ── Stage 6: Post-build render audit (single-page) ──
+    _render_audit_status = stage_render_audit(
+        project_name=args.project,
+        site_manifest=site_manifest if site_manifest and "pages" in site_manifest else None,
+    ) if deploy_ran else "skipped"
+
     # Print gap report summary if available (v0.9.0)
     if args.from_url:
         print_gap_summary(args.project)
@@ -6141,6 +6343,7 @@ def main():
             sections_reconciled=_reconciliation_meta,
             tenant_id=tenant_id,
             harvested_copy_ratio=_harvested_copy_ratio,
+            render_audit_status=_render_audit_status,
         )
         _recon_str = ""
         if _reconciliation_meta:
