@@ -246,6 +246,7 @@ def log_build(
     assets_bound: int | None = None,
     app_routes_scaffolded: int | None = None,
     deploy_url: str | None = None,
+    harvested_copy_ratio: float | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
@@ -263,6 +264,10 @@ def log_build(
     onto the unified app shell; omitted when no seams were requested.
     deploy_url records the deployed site URL when a composed end-to-end tenant
     build deploys; omitted for build-only runs.
+    harvested_copy_ratio records the ratio of verbatim harvested strings to total
+    copy slots for the build, providing a copy-fidelity metric (0.0 = all generated,
+    1.0+ = harvested exceeds slots). Omitted when no harvest data is available so
+    registry/file builds are unchanged (no regression).
     Returns True on success, False on failure.
     """
     row = {
@@ -295,6 +300,8 @@ def log_build(
         row["app_routes_scaffolded"] = app_routes_scaffolded
     if deploy_url is not None:
         row["deploy_url"] = deploy_url
+    if harvested_copy_ratio is not None:
+        row["harvested_copy_ratio"] = harvested_copy_ratio
 
     try:
         _post("build_log", [row])

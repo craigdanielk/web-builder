@@ -1089,6 +1089,188 @@ def stage_scaffold_v2(site_spec: dict, project_name: str) -> tuple:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Audit Captures Harvester — verbatim copy from audit_captures.html
+# ─────────────────────────────────────────────────────────────────────────────
+
+# HTML parser for extracting verbatim text from audit_captures.html field.
+# Uses only stdlib to avoid external dependencies.
+from html.parser import HTMLParser as _HTMLParser
+
+
+class _AuditHtmlParser(_HTMLParser):
+    """Extract headings, body text, and CTAs from an HTML snippet verbatim."""
+
+    HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
+    BODY_TAGS = frozenset({"p", "li", "blockquote", "figcaption", "label", "span", "td", "th"})
+    CTA_TAGS = frozenset({"a", "button"})
+    SKIP_TAGS = frozenset({"script", "style", "noscript", "svg", "path"})
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.headings: list[str] = []
+        self.body_text: list[str] = []
+        self.ctas: list[dict] = []
+        self._current_tag: str | None = None
+        self._current_href: str | None = None
+        self._text_fragments: list[str] = []
+        self._skip_depth: int = 0
+
+    def _flush_text(self) -> None:
+        """Accumulate buffered text into the appropriate list."""
+        text = "".join(self._text_fragments).strip()
+        self._text_fragments = []
+        if not text or len(text) < 2:
+            return
+        tag = self._current_tag
+        if tag in self.HEADING_TAGS:
+            self.headings.append(text[:200])
+        elif tag in self.CTA_TAGS:
+            entry: dict = {"text": text[:100]}
+            if self._current_href:
+                entry["href"] = self._current_href
+            # Deduplicate by text content
+            if not any(c.get("text") == entry["text"] for c in self.ctas):
+                self.ctas.append(entry)
+        elif tag in self.BODY_TAGS:
+            self.body_text.append(text[:300])
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag_lower = tag.lower()
+        if tag_lower in self.SKIP_TAGS:
+            self._skip_depth += 1
+        if self._skip_depth > 0:
+            return
+        # Flush previous tag's text before switching
+        self._flush_text()
+        self._current_tag = tag_lower
+        self._current_href = None
+        if tag_lower == "a":
+            for k, v in attrs:
+                if k.lower() == "href":
+                    self._current_href = v
+                    break
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_lower = tag.lower()
+        if tag_lower in self.SKIP_TAGS and self._skip_depth > 0:
+            self._skip_depth -= 1
+            return
+        if self._skip_depth > 0:
+            return
+        if tag_lower in (self.HEADING_TAGS | self.BODY_TAGS | self.CTA_TAGS):
+            self._flush_text()
+            self._current_tag = None
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth > 0:
+            return
+        stripped = data.strip()
+        if stripped:
+            self._text_fragments.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if self._skip_depth > 0:
+            return
+        # Collapse common entities to their character; let handle_data collect.
+        char_map = {"amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'"}
+        self._text_fragments.append(char_map.get(name, f"&{name};"))
+
+    def handle_charref(self, name: str) -> None:
+        if self._skip_depth > 0:
+            return
+        try:
+            if name.startswith("x"):
+                self._text_fragments.append(chr(int(name[1:], 16)))
+            else:
+                self._text_fragments.append(chr(int(name)))
+        except (ValueError, OverflowError):
+            self._text_fragments.append(f"&#{name};")
+
+
+def _safe_get_audit(path: str, params: str = "") -> list[dict]:
+    """Fault-tolerant GET via supabase_client primitives — never raises."""
+    supabase_url = os.environ.get("SUPABASE_URL", "")
+    supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not (supabase_url and supabase_key):
+        return []
+    try:
+        from lib.supabase_client import _get
+        rows = _get(path, params)
+        return rows if isinstance(rows, list) else []
+    except Exception:
+        return []
+
+
+def harvest_verbatim_copy(tenant_id: str) -> dict[str, Any]:
+    """Harvest verbatim copy strings from audit_captures HTML for a tenant.
+
+    Queries the ``audit_captures`` Supabase table for the given tenant UUID,
+    parses each row's ``html`` field to extract verbatim headings, body text,
+    and CTAs, then returns a structured harvest dict.
+
+    The function is fully fault-tolerant:
+    - Missing table / missing rows / absent credentials → returns empty harvest
+      with ``harvested_strings=0`` (caller falls back to generated copy).
+    - Malformed HTML in a row → that row is skipped; other rows are unaffected.
+    - An unresolvable tenant_id → caller passes None and gets empty harvest.
+
+    Returns
+    -------
+    dict with keys:
+        tenant_id          : the input tenant UUID
+        harvested_strings  : total verbatim strings extracted
+        sections           : list[dict] each with
+            - ``index``      : row ordering
+            - ``headings``   : list[str] extracted from HTML
+            - ``body_text``  : list[str] extracted from HTML
+            - ``ctas``       : list[dict] with ``text`` (and optionally ``href``)
+        source_rows        : number of audit_captures rows processed
+    """
+    result: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "harvested_strings": 0,
+        "sections": [],
+        "source_rows": 0,
+    }
+    if not tenant_id or not isinstance(tenant_id, str) or len(tenant_id) < 8:
+        return result
+
+    rows = _safe_get_audit("audit_captures", f"tenant_id=eq.{tenant_id}&select=html,page_type&order=created_at.asc")
+    if not rows:
+        return result
+
+    result["source_rows"] = len(rows)
+    for idx, row in enumerate(rows):
+        html_content = row.get("html") or row.get("html_content") or ""
+        if not isinstance(html_content, str) or not html_content.strip():
+            continue
+        try:
+            parser = _AuditHtmlParser()
+            parser.feed(html_content)
+            parser.close()
+            section_harvest: dict[str, Any] = {
+                "index": idx,
+                "headings": parser.headings,
+                "body_text": parser.body_text,
+                "ctas": parser.ctas,
+            }
+            if parser.headings or parser.body_text or parser.ctas:
+                # Only include sections that yielded at least one string
+                result["sections"].append(section_harvest)
+        except Exception:
+            # Malformed HTML in this row — skip it, don't kill the whole harvest
+            continue
+
+    # Count total verbatim strings across all sections
+    _total = 0
+    for sec in result["sections"]:
+        _total += len(sec["headings"]) + len(sec["body_text"]) + len(sec["ctas"])
+    result["harvested_strings"] = _total
+
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Copy Fidelity Node (Phase 1) — reproduce source copy verbatim
 # ─────────────────────────────────────────────────────────────────────────────
 def _normalize_ctas(ctas) -> list[str]:
@@ -1484,11 +1666,18 @@ def stage_sections(
     section_file_names: list[str] | None = None,
     brief: str | None = None,
     copy_findings: dict | None = None,
-) -> list[Path]:
+    audit_harvest: dict | None = None,
+) -> tuple[list[Path], dict | None]:
     """Stage 2: Generate each section component individually with engine-aware injection.
     When output_subdir and section_file_names are set (e.g. Layer 6 shared components),
     writes to output/{project}/{output_subdir}/{section_file_names[i]} instead of sections/.
     When brief is provided, it is injected into each section prompt for brand context.
+    When audit_harvest (from harvest_verbatim_copy) is provided, its strings are counted
+    in the copy manifest summary and harvested_copy_ratio is returned.
+
+    Returns (section_files, copy_summary) where copy_summary is a dict with
+    harvested_strings_total, generated_strings_total, harvested_copy_ratio, or None
+    when no copy manifests were built.
     """
     print(f"\n🔨 Stage 2: Generating {len(sections)} sections...")
     if brief:
@@ -1971,6 +2160,7 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
         print(f"  ✓ {len(unique_files)} extra component files queued for stage_deploy")
 
     # ── Copy Fidelity Node: emit copy manifest + revision trace ──
+    _copy_summary: dict | None = None
     if _copy_manifest:
         _counts = {"reproduced": 0, "revised": 0, "generated": 0}
         for _m in _copy_manifest:
@@ -1981,18 +2171,57 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
             _cm_name = f"copy-manifest-{output_subdir.replace('/', '_')}.json"
         else:
             _cm_name = "copy-manifest.json"
-        write_file(_cm_dir / _cm_name, json.dumps({
-            "summary": _counts,
+
+        # ── Audit harvest integration ──────────────────────────────
+        # Count total harvested strings: site-spec harvest (per-section) + audit harvest
+        _harvested_total = sum(
+            _m.get("harvested_strings", 0) for _m in _copy_manifest
+        )
+        _audit_total = 0
+        if audit_harvest:
+            _audit_total = audit_harvest.get("harvested_strings", 0)
+            _harvested_total += _audit_total
+
+        # Total copy slots: site-spec harvested sections + generated sections = all sections
+        _total_copy_slots = len(_copy_manifest)
+        _generated_slots = _counts.get("generated", 0)
+        _harvested_copy_ratio = (
+            round(_harvested_total / max(_total_copy_slots, 1), 4)
+            if _harvested_total > 0 else 0.0
+        )
+
+        _manifest_data: dict = {
+            "summary": {
+                **_counts,
+                "audit_harvest_strings": _audit_total,
+                "harvested_strings_total": _harvested_total,
+                "total_copy_slots": _total_copy_slots,
+                "harvested_copy_ratio": _harvested_copy_ratio,
+            },
             "sections": _copy_manifest,
-        }, indent=2))
+        }
+        if audit_harvest:
+            _manifest_data["audit_harvest"] = {
+                "source_rows": audit_harvest.get("source_rows", 0),
+                "section_count": len(audit_harvest.get("sections", [])),
+                "harvested_strings": _audit_total,
+            }
+
+        write_file(_cm_dir / _cm_name, json.dumps(_manifest_data, indent=2))
         if _copy_trace:
             write_file(_cm_dir / "copy-trace.json", json.dumps(_copy_trace, indent=2))
         print(
             f"  ✓ Copy manifest: {_counts['reproduced']} reproduced, "
             f"{_counts['revised']} revised, {_counts['generated']} generated"
         )
+        if _audit_total > 0:
+            print(
+                f"    Audit harvest: {_audit_total} strings from "
+                f"{audit_harvest.get('source_rows', 0)} capture(s) | "
+                f"ratio: {_harvested_copy_ratio}"
+            )
 
-    return section_files
+    return section_files, _copy_summary
 
 
 def stage_assemble(sections: list[dict], section_files: list[Path], project_name: str):
@@ -2413,7 +2642,7 @@ def stage_sections_multipage(
             s = dict(s)
             s.setdefault("content", s.get("content_direction", ""))
             sections_with_index.append(s)
-        files = stage_sections(
+        files, _ = stage_sections(
             sections_with_index,
             preset,
             project_name,
@@ -5808,11 +6037,24 @@ def main():
 
     print(f"\n  Parsed {len(sections)} sections from scaffold")
 
+    # ── Audit Captures Harvester ──────────────────────────────────
+    # When a tenant is present, harvest verbatim copy from the audit_captures table
+    # so it feeds into the copy manifest and harvested_copy_ratio tracking.
+    _audit_harvest = None
+    _copy_summary: dict | None = None
+    if tenant_id:
+        _audit_harvest = harvest_verbatim_copy(tenant_id)
+        if _audit_harvest and _audit_harvest.get("harvested_strings", 0) > 0:
+            print(f"  📋 Audit captures: {_audit_harvest['harvested_strings']} verbatim string(s) "
+                  f"harvested from {_audit_harvest['source_rows']} row(s)")
+        else:
+            print(f"  📋 Audit captures: no verbatim strings harvested (tenant_id={tenant_id})")
+
     if args.skip_to in (None, "sections"):
-        section_files = stage_sections(
+        section_files, _copy_summary = stage_sections(
             sections, preset, args.project, section_contexts, extraction_dir, identification,
             site_spec=site_spec, build_cache=build_cache, brief=brief,
-            copy_findings=copy_findings,
+            copy_findings=copy_findings, audit_harvest=_audit_harvest,
         )
         save_checkpoint(output_dir, "sections", args.project, {"section_count": len(section_files)})
     else:
@@ -5880,6 +6122,10 @@ def main():
                 _db_count += 1
             else:
                 _llm_count += 1
+        # Extract harvested_copy_ratio from copy summary if available
+        _harvested_copy_ratio: float | None = None
+        if _copy_summary:
+            _harvested_copy_ratio = _copy_summary.get("summary", {}).get("harvested_copy_ratio")
         log_build(
             project_name=args.project,
             industry=args.industry or preset,
@@ -5894,6 +6140,7 @@ def main():
             bos_line_items=_bos_line_items,
             sections_reconciled=_reconciliation_meta,
             tenant_id=tenant_id,
+            harvested_copy_ratio=_harvested_copy_ratio,
         )
         _recon_str = ""
         if _reconciliation_meta:
@@ -5903,7 +6150,10 @@ def main():
                 f"{_reconciliation_meta['harvest_count']} hvst / "
                 f"{_reconciliation_meta['gap_filled_count']} gaps)"
             )
-        print(f"  📊 Build logged to Supabase ({_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str})")
+        _ratio_str = ""
+        if _harvested_copy_ratio is not None:
+            _ratio_str = f", copy_ratio: {_harvested_copy_ratio}"
+        print(f"  📊 Build logged to Supabase ({_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str}{_ratio_str})")
 
     mode_label = "URL Clone" if args.from_url else ("Database" if args.industry else "Pipeline")
     print(f"\n{'═' * 60}")
