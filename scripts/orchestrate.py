@@ -3277,6 +3277,64 @@ def _resolve_adapter(target_platform: str) -> DeployAdapter:
     return VercelAdapter()
 
 
+def stage_git_publish(
+    output_dir: Path,
+    project_name: str,
+    *,
+    github_repo: str | None = None,
+    push_policy: str = "off",
+) -> str | None:
+    """BRIEF #33323 — publish the built site to a GitHub repo as source-of-truth.
+
+    Commits the built site tree so every build has a versioned SoT and deploy is
+    git-driven. When push_policy=='push' and a github_repo (owner/name or URL) is
+    given, pushes to that remote (credentials permitting). Default push_policy=='off'
+    commits locally only — never pushes without an explicit policy. Returns the
+    published commit SHA, or None if there was nothing to publish.
+    """
+    import subprocess
+
+    site_dir = output_dir / project_name / "site"
+    if not site_dir.exists():
+        site_dir = output_dir / project_name
+    if not site_dir.exists():
+        print(f"  ⚠ git-publish: no built site at {site_dir}")
+        return None
+
+    def _git(*args):
+        return subprocess.run(
+            ["git", "-C", str(site_dir), *args], capture_output=True, text=True
+        )
+
+    if not (site_dir / ".git").exists():
+        _git("init")
+        _git("checkout", "-b", "main")
+    _git("add", "-A")
+    status = _git("status", "--porcelain").stdout.strip()
+    head = _git("rev-parse", "HEAD")
+    if not status and head.returncode == 0:
+        return head.stdout.strip()[:40]  # already published, no changes this build
+    _git("commit", "-m", f"build: {project_name} site (web-builder git-publish)")
+    sha = _git("rev-parse", "HEAD").stdout.strip()[:40]
+
+    if push_policy == "push" and github_repo:
+        remote = (
+            github_repo
+            if github_repo.startswith("http")
+            else f"https://github.com/{github_repo}.git"
+        )
+        _git("remote", "remove", "origin")
+        _git("remote", "add", "origin", remote)
+        pr = _git("push", "-u", "origin", "main")
+        if pr.returncode != 0:
+            print(f"  ⚠ git-publish push failed: {pr.stderr[:140]}")
+        else:
+            print(f"  ✓ git-publish pushed {sha[:9]} → {github_repo}")
+    else:
+        print(f"  ✓ git-publish committed {sha[:9]} locally (push_policy={push_policy})")
+    return sha
+
+
 def stage_deploy(
     sections: list[dict],
     section_files: list[Path],
@@ -5758,6 +5816,11 @@ def main():
     parser.add_argument("--target-platform", choices=["shopify", "vercel"], default=None,
                         help="Deploy target platform (shopify=current behavior, vercel=clean Next.js app). "
                              "Default: resolved from tenant config, falls back to shopify")
+    parser.add_argument("--github-repo", default=None,
+                        help="BRIEF #33323 — target GitHub repo (owner/name or URL) for git-publish SoT.")
+    parser.add_argument("--push-policy", choices=["off", "push"], default="off",
+                        help="BRIEF #33323 — 'off' commits built site locally as SoT; "
+                             "'push' also pushes to --github-repo when set.")
     parser.add_argument("--bill-of-sale", help="Path to a pre-generated Bill of Sale JSON. "
                         "When set, the pipeline cross-references output against BoS line items "
                         "and writes build_trace per item for the re-audit loop.",
@@ -6189,6 +6252,14 @@ def main():
         if getattr(args, "publish", False) and deploy_ran:
             _deploy_url = deploy_to_vercel(output_dir, args.project)
 
+        # ── Git-publish: commit built site as source-of-truth (BRIEF #33323) ──
+        _published_sha = stage_git_publish(
+            output_dir,
+            args.project,
+            github_repo=getattr(args, "github_repo", None),
+            push_policy=getattr(args, "push_policy", "off"),
+        ) if deploy_ran else None
+
         if build_cache and SUPABASE_AVAILABLE:
             all_sections = []
             for p in site_manifest.get("pages", []):
@@ -6222,6 +6293,7 @@ def main():
                 app_routes_scaffolded=_app_routes_scaffolded,
                 deploy_url=_deploy_url,
                 render_audit_status=_render_audit_status,
+                published_sha=_published_sha,
             )
             _recon_str = ""
             if _reconciliation_meta:

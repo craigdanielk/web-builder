@@ -261,6 +261,7 @@ def log_build(
     render_audit_status: str | None = None,
     contrast_defect_count: int | None = None,
     broken_image_count: int | None = None,
+    published_sha: str | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
@@ -325,6 +326,8 @@ def log_build(
         row["contrast_defect_count"] = contrast_defect_count
     if broken_image_count is not None:
         row["broken_image_count"] = broken_image_count
+    if published_sha is not None:
+        row["published_sha"] = published_sha
 
     try:
         _post("build_log", [row])
