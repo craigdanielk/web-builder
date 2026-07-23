@@ -5380,6 +5380,22 @@ def stage_bos_orchestrate(
     _completed_count = 0
     _failed_count = 0
 
+    # Load Stage-4 review issues so the BoS records REAL defects (unbalanced braces,
+    # etc.) instead of marking every section "completed" with no errors. Without this
+    # the post-build defect ledger is a false-success artifact and the learning loop
+    # (pattern_detector.ingest_bill_of_sale_ledger) learns nothing from broken builds.
+    _review_by_file: dict[str, list[dict]] = {}
+    _review_path = output_dir / "review.json"
+    if _review_path.exists():
+        try:
+            _rev = json.loads(_review_path.read_text())
+            for _iss in _rev.get("issues", []):
+                _f = Path(str(_iss.get("file", ""))).name
+                if _f:
+                    _review_by_file.setdefault(_f, []).append(_iss)
+        except (json.JSONDecodeError, OSError, TypeError):
+            pass
+
     for item in bos.line_items:
         item_id = item.item_id
 
@@ -5418,16 +5434,42 @@ def stage_bos_orchestrate(
             _pos = item.position or (bos.line_items.index(item) + 1)
             _arch_key = item.archetype.lower().replace("-", "_")
             _expected = f"{_pos:02d}-{_arch_key}.tsx"
-            _found = _sec_files_map.get(_expected.replace(".tsx", ""), _expected)
+            _stem = _expected.replace(".tsx", "")
+            # A skipped section (truncated past retries) never entered _sec_files_map,
+            # so its absence from the map — not the _expected fallback — is the signal.
+            _produced = _stem in _sec_files_map
+            _found = _sec_files_map.get(_stem, _expected)
 
             bos.mark_started(item_id)
-            bos.mark_completed(
-                item_id,
-                files=[f"sections/{_found}"] if _found else [],
-                verified_against=_bos_version,
-            )
-            _completed_count += 1
-            print(f"    ✓ {item_id}: completed — {_found}")
+            if not _produced:
+                # Section was skipped during generation — never written to disk.
+                bos.mark_failed(item_id, errors=[
+                    f"section skipped during generation — {_expected} truncated after "
+                    f"retries and was not written (broken section)"
+                ])
+                _failed_count += 1
+                print(f"    ❌ {item_id}: skipped — {_expected} not produced")
+            else:
+                # Produced — attach any Stage-4 review errors/warnings for this file so
+                # a section that compiled-but-broke (e.g. unbalanced braces) is recorded.
+                _iss = _review_by_file.get(Path(_found).name, [])
+                _errs = [f"{i.get('check', 'review')}: {i.get('message', '')}"
+                         for i in _iss if i.get("severity") == "error"]
+                _warns = [f"{i.get('check', 'review')}: {i.get('message', '')}"
+                          for i in _iss if i.get("severity") == "warning"]
+                bos.mark_completed(
+                    item_id,
+                    files=[f"sections/{_found}"],
+                    verified_against=_bos_version,
+                    errors=_errs or None,
+                    warnings=_warns or None,
+                )
+                if _errs:
+                    _failed_count += 1
+                    print(f"    ⚠ {item_id}: completed with {len(_errs)} review error(s) — {_found}")
+                else:
+                    _completed_count += 1
+                    print(f"    ✓ {item_id}: completed — {_found}")
 
         # If a file was expected but not found, mark with a warning
         if item.build_trace:
@@ -5436,7 +5478,10 @@ def stage_bos_orchestrate(
     # 3. Persist the BoS (with populated build_traces)
     bos_path = output_dir / "bill-of-sale.json"
     saved = bos.save(bos_path)
-    print(f"  ✓ BoS saved with {_completed_count} completed traces → {saved}")
+    _trace_note = f"{_completed_count} completed"
+    if _failed_count:
+        _trace_note += f", {_failed_count} with defects/skipped"
+    print(f"  ✓ BoS saved with {_trace_note} traces → {saved}")
 
     # 4. Make build_traces available for the re-audit loop
     traces = load_build_traces(output_dir)
