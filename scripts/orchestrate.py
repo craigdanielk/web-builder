@@ -1813,6 +1813,15 @@ def stage_sections(
                         except Exception as _sem_err:
                             print(f"      ⚠ semantic tokens skipped: {_sem_err}")
 
+                # BRIEF #33297: Inject bound tenant creative_asset src into template
+                _ba = section.get("bound_asset")
+                if _ba and _ba.get("src"):
+                    template_code = template_code.replace("{{asset.src}}", _ba["src"])
+                    template_code = template_code.replace("{{asset.type}}", str(_ba.get("asset_type", "image")))
+                else:
+                    template_code = template_code.replace("{{asset.src}}", "")
+                    template_code = template_code.replace("{{asset.type}}", "")
+
                 # Replace content placeholder tokens {token_name} with string literals
                 # so JSX doesn't reference undefined variables at render time.
                 # Matches bare {word_word} patterns in JSX (not {var} inside .map callbacks etc.)
@@ -1973,6 +1982,21 @@ See section-instructions-gsap.md for the full pinned horizontal scroll technique
                     ui_component_block = f"\n{ucm['block']}\n"
                     extra_component_files.extend(ucm.get("componentFiles", []))
 
+        # ── BRIEF #33297: Bound asset injection block ──
+        bound_asset_block = ""
+        _ba = section.get("bound_asset")
+        if _ba and _ba.get("src"):
+            bound_asset_block = f"""
+## Tenant Creative Asset Binding
+This section has a tenant creative asset bound to it:
+- Asset src: {_ba['src']}
+- Asset type: {_ba.get('asset_type', 'image')}
+
+Render this asset as the PRIMARY visual / image for this section. Use the self-hosted
+URL directly as the image src (e.g. `<img src="{{...}}" />` or `backgroundImage: url(...)`).
+Do NOT use placeholder image URLs or generic placeholder images when a bound asset is present.
+"""
+
         # ── v2.0.0: Build style + section spec block ──
         # When site_spec is available (--from-url), use JSON style tokens directly.
         # When not (--preset mode), fall back to the compact style header.
@@ -2085,7 +2109,7 @@ as a React + Tailwind CSS component.
 {source_copy_block}
 ## Structural Reference
 {structure_ref}
-{ref_context_block}{animation_context_block}{asset_context_block}{identification_block}{pinned_scroll_block}{plugin_block}{icon_block}{visual_fallback_block}{card_embed_block}{ui_component_block}
+{ref_context_block}{animation_context_block}{asset_context_block}{identification_block}{pinned_scroll_block}{plugin_block}{icon_block}{visual_fallback_block}{card_embed_block}{ui_component_block}{bound_asset_block}
 {instructions}
 Component name: Section{num}{section['archetype'].replace('-', '')}"""
 
