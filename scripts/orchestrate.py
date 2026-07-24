@@ -2060,6 +2060,23 @@ Content Direction: {section['content']}"""
 {brief}
 """
 
+        # ── Per-section asset binding context (BRIEF #33297) ──
+        bound_asset_block = ""
+        bound_asset = section.get("bound_asset")
+        if bound_asset:
+            asset_src = bound_asset.get("src", "")
+            asset_type = bound_asset.get("asset_type", "")
+            bound_asset_block = f"""
+## Tenant Asset Binding
+This section has been bound to a tenant-provided creative asset.
+Asset type: {asset_type}
+Asset src: {asset_src}
+
+IMPORTANT: Use this exact asset src path in your component. Do not use placeholder images or external URLs.
+For image assets, use: <img src="{asset_src}" alt="..." />
+For background images, use: style={{backgroundImage: 'url("{asset_src}")'}}
+"""
+
         # ── Copy Fidelity Node: verbatim source-copy block (Phase 1) ──
         # Threads the harvested content.{headings, body_text, ctas} into the prompt as
         # authoritative copy. When a finding targets this section, switches that section to
@@ -2107,6 +2124,7 @@ as a React + Tailwind CSS component.
 {brief_block}
 {style_and_spec_block}
 {source_copy_block}
+{bound_asset_block}
 ## Structural Reference
 {structure_ref}
 {ref_context_block}{animation_context_block}{asset_context_block}{identification_block}{pinned_scroll_block}{plugin_block}{icon_block}{visual_fallback_block}{card_embed_block}{ui_component_block}{bound_asset_block}
@@ -6471,6 +6489,16 @@ def main():
         else:
             print(f"  📋 Audit captures: no verbatim strings harvested (tenant_id={tenant_id})")
 
+    # ── Per-section asset binding (BRIEF #33297) ──
+    # Bind tenant creative_assets onto sections BEFORE generation so
+    # the bound self-hosted src flows into the generated components. No tenant
+    # assets → 0 bound, sections untouched (no regression).
+    _assets_bound = 0
+    if tenant_context:
+        # Create minimal site_manifest structure for single-page pipeline
+        _single_page_manifest = {"pages": [{"sections": sections}]}
+        _assets_bound = bind_section_assets(tenant_context, _single_page_manifest, output_dir)
+
     if args.skip_to in (None, "sections"):
         section_files, _copy_summary = stage_sections(
             sections, preset, args.project, section_contexts, extraction_dir, identification,
@@ -6569,6 +6597,7 @@ def main():
             tenant_id=tenant_id,
             harvested_copy_ratio=_harvested_copy_ratio,
             render_audit_status=_render_audit_status,
+            assets_bound=_assets_bound if _assets_bound > 0 else None,
         )
         _recon_str = ""
         if _reconciliation_meta:
