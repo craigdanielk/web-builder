@@ -461,6 +461,54 @@ async function extractReference(url, outputDir) {
             }
           });
 
+          // Per-section structured data: extract table rows as metrics.nodes
+          // Supports currency exchange tables, data grids, and other tabular data
+          // where each row becomes a node with column-based key-value pairs.
+          const metricsNodes = [];
+          const tables = child.querySelectorAll('table');
+          tables.forEach(table => {
+            const rows = table.querySelectorAll('tbody tr, tr:not(:has(thead))');
+            const headers = [];
+            const headerRow = table.querySelector('thead tr, tr:first-of-type');
+            if (headerRow) {
+              headerRow.querySelectorAll('th, td').forEach(h => {
+                const txt = h.textContent.trim().toLowerCase().replace(/[^a-z]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+                headers.push(txt || 'col_' + headers.length);
+              });
+            }
+            rows.forEach(row => {
+              const cells = row.querySelectorAll('td, th');
+              if (cells.length < 2) return; // skip rows that are clearly not data rows
+              const node = {};
+              let hasContent = false;
+              cells.forEach((cell, i) => {
+                const txt = cell.textContent.trim();
+                if (txt) {
+                  const key = headers[i] || 'col_' + i;
+                  node[key] = txt;
+                  hasContent = true;
+                }
+              });
+              if (hasContent) metricsNodes.push(node);
+            });
+          });
+
+          // Also extract <dl> (description list) data as flat key-value nodes
+          const dlLists = child.querySelectorAll('dl');
+          dlLists.forEach(dl => {
+            const dt = dl.querySelectorAll('dt');
+            const dd = dl.querySelectorAll('dd');
+            if (dt.length > 0 && dt.length === dd.length) {
+              const node = {};
+              dt.forEach((term, i) => {
+                const key = term.textContent.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+                const val = dd[i].textContent.trim();
+                if (key && val) node[key] = val;
+              });
+              if (Object.keys(node).length > 0) metricsNodes.push(node);
+            }
+          });
+
           sectionData.push({
             index: sectionData.length,
             tag,
@@ -483,6 +531,13 @@ async function extractReference(url, outputDir) {
             },
             images,
             backgroundImages: bgImages,
+            // Structured data extracted from URL page (tables, data grids, etc.)
+            // Populated from <table> rows and <dl> lists in the section.
+            // Downstream slot_schema entries (e.g. CURRENCY-MAP/interactive)
+            // reference metrics.nodes via source_path.
+            metrics: {
+              nodes: metricsNodes.slice(0, 50), // cap at 50 nodes per section
+            },
           });
         }
       }

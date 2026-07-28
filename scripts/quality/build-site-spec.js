@@ -395,6 +395,11 @@ function buildSections(extractionData, mappedSections, componentRegistry, animat
     else if (mapped.archetype === 'HERO' && animationAnalysis?.engine === 'gsap') recommended = 'entrance-fade-up-stagger';
     else if (detectedAnimations.length > 0) recommended = 'entrance-fade';
 
+    // metrics.nodes: populated from URL extraction data when available.
+    // The CURRENCY-MAP/interactive slot_schema declares source_path: "metrics.nodes",
+    // so any structured node/tabular data from URL extraction flows through here.
+    const sectionMetrics = embeddedSection?.metrics || {};
+
     sections.push({
       index: mapped.index,
       archetype: mapped.archetype,
@@ -422,6 +427,9 @@ function buildSections(extractionData, mappedSections, componentRegistry, animat
           source_file: c.source_file,
         })),
         fallbacks: [],
+      },
+      metrics: {
+        nodes: sectionMetrics.nodes || [],
       },
     });
   }
