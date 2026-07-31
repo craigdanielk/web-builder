@@ -1,0 +1,32 @@
+{
+  "summary": {
+    "reproduced": 0,
+    "revised": 0,
+    "generated": 2,
+    "audit_harvest_strings": 0,
+    "harvested_strings_total": 0,
+    "total_copy_slots": 2,
+    "harvested_copy_ratio": 0.0
+  },
+  "sections": [
+    {
+      "index": 0,
+      "file": "01-trust_badges.tsx",
+      "archetype": "TRUST-BADGES",
+      "status": "generated",
+      "harvested_strings": 0
+    },
+    {
+      "index": 1,
+      "file": "02-faq.tsx",
+      "archetype": "FAQ",
+      "status": "generated",
+      "harvested_strings": 0
+    }
+  ],
+  "audit_harvest": {
+    "source_rows": 0,
+    "section_count": 0,
+    "harvested_strings": 0
+  }
+}
