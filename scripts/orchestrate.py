@@ -179,6 +179,56 @@ def token_ledger_summary() -> dict:
     }
 
 
+TOKEN_LEDGER_FILENAME = "token-ledger.json"
+
+
+def reset_token_ledger() -> None:
+    """Start a build with an empty ledger.
+
+    The ledger is module-level, so a second build inside one process (tests,
+    a batch driver) would otherwise inherit the first build's calls and report
+    both builds' cost as one.
+    """
+    TOKEN_LEDGER.clear()
+
+
+def persist_token_ledger(output_dir: Path) -> dict | None:
+    """Write the build's token ledger to output/<project>/token-ledger.json.
+
+    Returns the summary (for build_log) or None if nothing could be written.
+
+    On-disk is the PRIMARY store, not a fallback: a build run offline, or with
+    Supabase unreachable, must still leave its cost on disk. The file carries
+    both the summary and every per-call entry so a total can always be
+    re-derived from the calls that produced it.
+
+    Cost accounting must never fail a build, so every failure mode here is a
+    warning and a continue.
+    """
+    try:
+        if not TOKEN_LEDGER:
+            return None
+        summary = token_ledger_summary()
+        payload = {
+            "schema": "aurelix.token_ledger.v1",
+            "generated_at": datetime.now().astimezone().isoformat(),
+            "summary": summary,
+            "calls": list(TOKEN_LEDGER),
+        }
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path = output_dir / TOKEN_LEDGER_FILENAME
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(
+            f"  💰 Token ledger: {summary['calls']} call(s) "
+            f"({summary['measured_calls']} measured / {summary['unmeasured_calls']} unmeasured), "
+            f"{summary['input_tokens']} in / {summary['output_tokens']} out → {path.name}"
+        )
+        return summary
+    except Exception as e:  # noqa: BLE001 — accounting never fails a build
+        print(f"  ⚠ Could not persist token ledger: {e}")
+        return None
+
+
 # API resilience
 MAX_RETRIES = 3
 TIMEOUT_SECONDS = 90
@@ -353,11 +403,21 @@ def _call_claude_cli(prompt: str, model: str | None) -> str:
     raise RuntimeError(f"claude CLI failed after {MAX_RETRIES} retries: {last_err}")
 
 
-def call_claude(prompt: str, stage: str, max_tokens_override: int | None = None) -> str:
-    """Generate text for a pipeline stage via the selected Claude endpoint."""
+def call_claude(
+    prompt: str,
+    stage: str,
+    max_tokens_override: int | None = None,
+    label: str | None = None,
+) -> str:
+    """Generate text for a pipeline stage via the selected Claude endpoint.
+
+    `label` attributes the call in the token ledger. Per-section attribution is
+    the point of a per-call ledger — a total tells you the build was expensive,
+    a label tells you which section made it so.
+    """
     if _llm_mode() == "cli":
         out = _call_claude_cli(prompt, MODELS[stage])
-        record_token_usage(stage, "cli", MODELS[stage], usage=None)
+        record_token_usage(stage, "cli", MODELS[stage], usage=None, label=label)
         return out
     if Anthropic is None:
         raise RuntimeError(
@@ -372,7 +432,7 @@ def call_claude(prompt: str, stage: str, max_tokens_override: int | None = None)
         max_tokens=budget,
         model=MODELS[stage],
     )
-    record_token_usage(stage, "api", MODELS[stage], usage=getattr(message, "usage", None))
+    record_token_usage(stage, "api", MODELS[stage], usage=getattr(message, "usage", None), label=label)
     text_parts = [
         block.text for block in message.content if block.type == "text"
     ]
@@ -2181,7 +2241,7 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
         if uses_pinned_scroll:
             token_budget = max(token_budget, 8192)
 
-        code = call_claude(prompt, "section", max_tokens_override=token_budget)
+        code = call_claude(prompt, "section", max_tokens_override=token_budget, label=filename)
 
         # Clean up any markdown code fences that might have snuck in
         code = re.sub(r"^```\w*\n?", "", code)
@@ -2209,7 +2269,8 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
                     retry_prompt = prompt + "\n\nIMPORTANT: Generate a more concise version of this section. Keep it under 120 lines. Prioritize completeness over detail."
                     print(f"    🔄 {filename}: truncated, retry {retry_num} with conciseness instruction")
 
-                code = call_claude(retry_prompt, "section", max_tokens_override=retry_budget)
+                code = call_claude(retry_prompt, "section", max_tokens_override=retry_budget,
+                                   label=f"{filename} (retry {retry_num})")
                 code = re.sub(r"^```\w*\n?", "", code)
                 code = re.sub(r"\n?```$", "", code)
 
@@ -6201,6 +6262,9 @@ def main():
     # ── Initialize Supabase build cache (if --industry mode) ──
     build_cache = None
     _build_start_time = _time.time()  # Track build duration for all modes
+    # The ledger is module-level; clear it so a second run in one process
+    # does not report the previous build's calls as part of this one.
+    reset_token_ledger()
     if args.industry and SUPABASE_AVAILABLE and BuildCache:
         build_cache = BuildCache(industry=args.industry, page_type=args.page).load()
         if not build_cache.section_sequence:
@@ -6377,6 +6441,9 @@ def main():
         _build_end_time = _time.time()
         _build_duration_ms = int((_build_end_time - _build_start_time) * 1000)
 
+        # ── Token ledger: on disk first, Supabase second ──
+        _token_summary = persist_token_ledger(output_dir)
+
         # ── BoS orchestration: write build_trace per line item ──
         _bos = stage_bos_orchestrate(
             project_name=args.project,
@@ -6440,6 +6507,7 @@ def main():
                 deploy_url=_deploy_url,
                 render_audit_status=_render_audit_status,
                 published_sha=_published_sha,
+                token_ledger=_token_summary,
             )
             _recon_str = ""
             if _reconciliation_meta:
@@ -6612,6 +6680,10 @@ def main():
     # ── Build logging (Supabase) ──
     _build_end_time = _time.time()
     _build_duration_ms = int((_build_end_time - _build_start_time) * 1000)
+
+    # ── Token ledger: on disk first, Supabase second ──
+    _token_summary = persist_token_ledger(output_dir)
+
     if build_cache and SUPABASE_AVAILABLE:
         # Count local / db / LLM sections (cache used so no extra Supabase reads)
         _local_count = _db_count = _llm_count = 0
@@ -6644,6 +6716,7 @@ def main():
             harvested_copy_ratio=_harvested_copy_ratio,
             render_audit_status=_render_audit_status,
             assets_bound=_assets_bound if _assets_bound > 0 else None,
+            token_ledger=_token_summary,
         )
         _recon_str = ""
         if _reconciliation_meta:

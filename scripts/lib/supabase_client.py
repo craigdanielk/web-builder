@@ -291,6 +291,7 @@ def log_build(
     contrast_defect_count: int | None = None,
     broken_image_count: int | None = None,
     published_sha: str | None = None,
+    token_ledger: dict | None = None,
 ) -> bool:
     """
     Write a build log entry to the build_log table.
@@ -315,6 +316,11 @@ def log_build(
     render_audit_status records the post-build render audit outcome ('passed',
     'review_needed', 'failed', 'skipped') from stage_render_audit. Omitted
     when no audit ran so pre-existing builds are unchanged (no regression).
+    token_ledger records the build's LLM token totals (see
+    orchestrate.token_ledger_summary). Omitted when no LLM calls were made.
+    Because the column is newer than some deployed databases, an insert that
+    fails is retried once WITHOUT it — losing the cost figure is acceptable,
+    losing the whole build_log row over it is not.
     Returns True on success, False on failure.
     """
     row = {
@@ -357,11 +363,25 @@ def log_build(
         row["broken_image_count"] = broken_image_count
     if published_sha is not None:
         row["published_sha"] = published_sha
+    if token_ledger is not None:
+        row["token_ledger"] = token_ledger
 
     try:
         _post("build_log", [row])
         return True
     except Exception as e:
+        if "token_ledger" in row:
+            # Most likely an un-migrated database. Retry without the new column
+            # rather than discard the entire build record over a cost figure
+            # that is also written to disk as output/<project>/token-ledger.json.
+            print(f"  ⚠ Build log insert failed ({e}); retrying without token_ledger")
+            row.pop("token_ledger")
+            try:
+                _post("build_log", [row])
+                return True
+            except Exception as e2:
+                print(f"  ⚠ Failed to write build log: {e2}")
+                return False
         print(f"  ⚠ Failed to write build log: {e}")
         return False
 
