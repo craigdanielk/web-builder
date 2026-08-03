@@ -71,7 +71,13 @@ function extractDependencies(source) {
   while ((m = re.exec(source)) !== null) {
     const spec = m[1];
     if (spec.startsWith('.') || spec.startsWith('@/')) continue;
-    const pkg = spec.split('/')[0];
+    // Scoped packages are `@scope/name` — the package name is the FIRST TWO
+    // path segments, not the first. Splitting on the first '/' recorded the
+    // bare scope `@gsap` for `@gsap/react`, which is not an installable
+    // package, so the dependency was dropped from package.json and the
+    // Next.js build failed with module-not-found on character-reveal.tsx.
+    const parts = spec.split('/');
+    const pkg = spec.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
     if (pkg && pkg !== 'react' && pkg !== 'react-dom') packages.add(pkg);
   }
   return Array.from(packages);

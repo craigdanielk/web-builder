@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "generated_at": "2026-02-11T13:05:11.987Z",
+  "generated_at": "2026-08-03T21:41:49.930Z",
   "component_count": 48,
   "components": {
     "blur-fade": {
@@ -27,7 +27,7 @@
       "import_statement": "import TextRevealEffect from '@/components/animations/character-reveal'",
       "dependencies": [
         "gsap",
-        "@gsap"
+        "@gsap/react"
       ],
       "engine": "gsap",
       "category": "entrance",
@@ -536,7 +536,7 @@
       "affinity": {},
       "description": "",
       "status": "ready",
-      "line_count": 67
+      "line_count": 68
     },
     "gradient-shift": {
       "source_file": "continuous/gradient-shift.tsx",
