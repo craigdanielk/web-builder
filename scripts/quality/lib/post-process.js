@@ -343,16 +343,64 @@ function escapeRegExp(str) {
 }
 
 /**
- * Very rough strip of string literals and comments to aid bracket counting.
- * Not meant to be a parser — just good enough for a sanity heuristic.
+ * Strip string literals and comments to aid bracket counting.
+ *
+ * Single-pass scanner rather than chained regexes. The chained-regex version
+ * removed `//` line comments FIRST, which meant any `https://` inside a string
+ * literal (extremely common in generated sections: hrefs, image srcs) was read
+ * as a comment start and the remainder of the line — including its closing
+ * quote and any `}` — was deleted. That inflated the open-brace count and made
+ * `detectAndRepairTruncation()` append phantom `}` to perfectly valid files.
+ * Scanning left-to-right with an explicit state machine makes string context
+ * win over comment detection, which is the correct precedence.
  */
 function stripStringsAndComments(code) {
-  return code
-    .replace(/\/\/.*$/gm, "") // single-line comments
-    .replace(/\/\*[\s\S]*?\*\//g, "") // block comments
-    .replace(/"(?:[^"\\]|\\.)*"/g, '""') // double-quoted strings
-    .replace(/'(?:[^'\\]|\\.)*'/g, "''") // single-quoted strings
-    .replace(/`(?:[^`\\]|\\.)*`/g, "``"); // template literals (simplified)
+  let out = "";
+  let i = 0;
+  const n = code.length;
+
+  while (i < n) {
+    const ch = code[i];
+    const next = code[i + 1];
+
+    // Line comment
+    if (ch === "/" && next === "/") {
+      while (i < n && code[i] !== "\n") i++;
+      continue;
+    }
+
+    // Block comment
+    if (ch === "/" && next === "*") {
+      i += 2;
+      while (i < n && !(code[i] === "*" && code[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+
+    // String / template literal — consume to the matching (unescaped) quote.
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      out += quote + quote; // collapse to an empty literal
+      i++;
+      while (i < n) {
+        if (code[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (code[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+
+    out += ch;
+    i++;
+  }
+
+  return out;
 }
 
 // ---------------------------------------------------------------------------
