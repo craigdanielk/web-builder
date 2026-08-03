@@ -33,6 +33,36 @@ if str(_scripts_dir) not in sys.path:
     sys.path.insert(0, str(_scripts_dir))
 
 
+def _load_audit():
+    """Import `audit()` from testing/audit_tokens.py, tolerating PEP 604 syntax.
+
+    testing/audit_tokens.py annotates with `str | Path` / `list[dict]` but has
+    no `from __future__ import annotations`, so importing it raises
+    `TypeError: unsupported operand type(s) for |` on Python < 3.10. The
+    pipeline documents Python 3.11+ but in practice runs on whichever
+    interpreter has the deps installed (3.9 here), which made Gate A abort the
+    entire deploy stage with a traceback. Re-exec the module source with the
+    future import prepended so annotations stay unevaluated.
+    """
+    try:
+        from audit_tokens import audit  # type: ignore
+        return audit
+    except TypeError:
+        pass
+
+    import types
+
+    src_path = _testing_dir / "audit_tokens.py"
+    if not src_path.exists():
+        raise
+    module = types.ModuleType("audit_tokens_compat")
+    module.__file__ = str(src_path)
+    source = "from __future__ import annotations\n" + src_path.read_text(encoding="utf-8")
+    exec(compile(source, str(src_path), "exec"), module.__dict__)
+    sys.modules["audit_tokens_compat"] = module
+    return module.audit
+
+
 def check_gate_a(
     site_dir: str | Path,
     context: dict | None = None,
@@ -55,7 +85,7 @@ def check_gate_a(
         Dict with keys: passed (bool), count (int), findings (list),
         auto_fixed (int), passes_run (int).
     """
-    from audit_tokens import audit
+    audit = _load_audit()
     from lib.sanitizer import sanitize_directory
 
     site_path = Path(site_dir)
