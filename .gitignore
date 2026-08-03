@@ -31,3 +31,7 @@ node_modules/
 # Archives
 *.tar.gz
 logs/
+
+# Regenerable build artifacts inside generated output projects
+output/**/node_modules/
+output/**/.next/
