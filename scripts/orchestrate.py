@@ -1028,6 +1028,32 @@ def reconcile_sections(
         # 2. Fall back to an archetype-based sensible default.
         return _ARCH_VARIANTS.get(arch, _DEFAULT_VARIANT)
 
+    # Archetype aliases. The Supabase section registry stores some archetypes
+    # under a longer name than the canonical taxonomy name in
+    # skills/section-taxonomy.md (e.g. "FAQ-ACCORDION" vs "FAQ", "CTA-STRIP"
+    # vs "CTA"). Collapsing/deduping on the raw string therefore treated the
+    # registry entry and the harvested entry as two different sections, and
+    # the page ended up with the SAME section twice (cape-crypto shipped both
+    # a FAQ-ACCORDION and a FAQ). Dedupe on the canonical key while leaving
+    # each section's own `archetype` value untouched, so downstream template
+    # lookup (check_template_exists) still resolves the registry name.
+    _ARCHETYPE_ALIASES = {
+        "FAQ-ACCORDION": "FAQ",
+        "FAQS": "FAQ",
+        "CTA-STRIP": "CTA",
+        "CTA-BANNER": "CTA",
+        "CALL-TO-ACTION": "CTA",
+        "BLOG-PREVIEW": "BLOG",
+        "LOGO-CLOUD": "LOGO-BAR",
+        "SOCIAL-PROOF": "TESTIMONIALS",
+        "NAVBAR": "NAV",
+        "NAVIGATION": "NAV",
+    }
+
+    def _canonical_arch(archetype: str) -> str:
+        arch = (archetype or "").upper().strip()
+        return _ARCHETYPE_ALIASES.get(arch, arch)
+
     # Content richness score — used to pick the populated section when the
     # same archetype appears more than once (e.g. an empty hero vs a
     # populated hero). Higher = more real content. Deterministic.
@@ -1055,7 +1081,7 @@ def reconcile_sections(
         by_arch: dict[str, dict] = {}
         order: list[str] = []
         for i, sec in enumerate(sections):
-            arch = sec.get("archetype", "").upper()
+            arch = _canonical_arch(sec.get("archetype", ""))
             if not arch:
                 continue
             normalized = dict(sec)
@@ -1121,15 +1147,14 @@ def reconcile_sections(
             final_sections.append(extra)
 
     # 6. Build metadata
+    _final_archs = {_canonical_arch(s.get("archetype", "")) for s in final_sections}
     registry_count = sum(
         1 for sec in registry_sections
-        if sec.get("archetype", "").upper()
-        in {s.get("archetype", "").upper() for s in final_sections}
+        if _canonical_arch(sec.get("archetype", "")) in _final_archs
     )
     harvest_count = sum(
         1 for sec in harvested_sections
-        if sec.get("archetype", "").upper()
-        in {s.get("archetype", "").upper() for s in final_sections}
+        if _canonical_arch(sec.get("archetype", "")) in _final_archs
     )
 
     reconciliation_meta = {
@@ -2398,19 +2423,52 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
     return section_files, _copy_summary
 
 
+def _component_name_for_section_file(filepath: Path) -> str:
+    """Derive the page.tsx component identifier from a section FILENAME.
+
+    Section files are named `{NN}-{archetype_slug}.tsx`, and each file's own
+    `export default` is named from that same filename. Deriving the identifier
+    here from the file (rather than from a parallel `sections` metadata list)
+    keeps imports and files in lockstep.
+    """
+    stem = filepath.name[:-4] if filepath.name.endswith(".tsx") else filepath.name
+    num, _, slug = stem.partition("-")
+    num = num or "00"
+    ident = "".join(ch for ch in slug.upper() if ch.isalnum())
+    return f"Section{num}{ident}"
+
+
+def _build_page_imports(section_files: list[Path], import_prefix: str) -> tuple[list[str], list[str]]:
+    """Build (imports, JSX elements) for every section file, in file order.
+
+    Previously this zipped the `sections` metadata list against `section_files`
+    by index. Those two lists drift apart whenever a section fails to generate
+    or the section registry resolves to a different length than what is on disk
+    (e.g. a Supabase outage falling back to a shorter site-spec list). The zip
+    then silently (a) DROPPED the trailing files past the shorter list and
+    (b) MISLABELLED every import after the drift point — cape-crypto shipped a
+    `Section08FAQACCORDION` that actually imported `09-cta_strip`. The files on
+    disk are the ground truth, so iterate those.
+    """
+    imports: list[str] = []
+    components: list[str] = []
+    seen: set[str] = set()
+    for filepath in section_files:
+        component_name = _component_name_for_section_file(filepath)
+        if component_name in seen:
+            continue
+        seen.add(component_name)
+        rel = f"{import_prefix}{filepath.name.replace('.tsx', '')}"
+        imports.append(f'import {component_name} from "{rel}";')
+        components.append(f"      <{component_name} />")
+    return imports, components
+
+
 def stage_assemble(sections: list[dict], section_files: list[Path], project_name: str):
     """Stage 3: Assemble all sections into a single page component."""
     print("\n📦 Stage 3: Assembling page...")
 
-    imports = []
-    components = []
-
-    for i, (section, filepath) in enumerate(zip(sections, section_files)):
-        num = f"{i + 1:02d}"
-        component_name = f"Section{num}{section['archetype'].replace('-', '')}"
-        relative_path = f"./sections/{filepath.name.replace('.tsx', '')}"
-        imports.append(f'import {component_name} from "{relative_path}";')
-        components.append(f"      <{component_name} />")
+    imports, components = _build_page_imports(section_files, "./sections/")
 
     page_code = f'''import React from "react";
 {chr(10).join(imports)}
@@ -4502,7 +4560,11 @@ export default async function Page({ params }: { params: Promise<{ page: string 
                 # Add any new deps to package.json
                 # v2.0.0: filter invalid/remapped package names
                 INVALID_PKGS = {"@gsap", "motion"}  # @gsap is a scope not a package; motion duplicates framer-motion
-                PKG_REMAP = {}  # add remappings here if needed (e.g., {"old-pkg": "new-pkg"})
+                # `@gsap` only ever appears because a component imports
+                # `@gsap/react` (the useGSAP hook). Dropping it left the real
+                # dependency uninstalled and the Next.js build failed with
+                # module-not-found. Remap the bare scope to the real package.
+                PKG_REMAP = {"@gsap": "@gsap/react"}
                 if new_deps:
                     pkg_path = site_dir / "package.json"
                     pkg_data = json.loads(pkg_path.read_text(encoding="utf-8"))
@@ -4590,14 +4652,7 @@ export default async function Page({ params }: { params: Promise<{ page: string 
     # ── Generate page.tsx (single-page only) ──
     if not is_multipage:
         print("  Generating page.tsx...")
-        imports = []
-        components = []
-        for i, (section, filepath) in enumerate(zip(sections, section_files)):
-            num = f"{i + 1:02d}"
-            component_name = f"Section{num}{section['archetype'].replace('-', '')}"
-            rel = f"@/components/sections/{filepath.name.replace('.tsx', '')}"
-            imports.append(f'import {component_name} from "{rel}";')
-            components.append(f"      <{component_name} />")
+        imports, components = _build_page_imports(section_files, "@/components/sections/")
 
         page_code = f"""{chr(10).join(imports)}
 
@@ -6196,8 +6251,16 @@ def main():
                 print(f"Available presets: {', '.join(available)}")
                 preset = input("Select preset: ").strip()
         elif args.industry and not preset:
-            # --industry mode: use industry name as preset identifier
-            preset = args.industry
+            # --industry mode: use industry name as preset identifier.
+            # But --industry mode can fall back to legacy preset mode when the
+            # database is unreachable (Supabase 5xx/timeout), and that fallback
+            # reads skills/presets/{preset}.md — a file that never exists for a
+            # bare industry name, so a transient DB outage crashed the deploy
+            # with "File not found: skills/presets/fintech.md". A URL-cloned
+            # project has its own generated preset at skills/presets/{project}.md;
+            # prefer it so the fallback path has a real file to read.
+            _project_preset = SKILLS_DIR / "presets" / f"{args.project}.md"
+            preset = args.project if _project_preset.exists() else args.industry
 
         if not args.industry:
             preset_path = SKILLS_DIR / "presets" / f"{preset}.md"
@@ -6219,7 +6282,23 @@ def main():
 
     # ── Layer 6: Site manifest (multi-page) ─────────────────────────
     site_manifest = None
-    if not args.from_url and site_manifest_lib:
+    # A project's pipeline mode (single-page vs Layer 6 multi-page) must be a
+    # property of the PROJECT, not of the flags on this particular invocation.
+    # Multi-page is auto-selected from `--industry` and suppressed by
+    # `--from-url`; that meant a URL-cloned single-page build could not be
+    # resumed, because a resume run (`--skip-to deploy --industry X`, no
+    # `--from-url`) silently re-entered multi-page mode and regenerated every
+    # section from scratch, discarding the completed single-page build.
+    # On a resume, honour the mode the project was actually built in.
+    _resume_single_page = False
+    if args.skip_to and not getattr(args, "site_manifest", None):
+        _has_mp = (output_dir / "site-manifest.json").exists()
+        _has_sp = (output_dir / "page.tsx").exists() or (output_dir / "site-spec.json").exists()
+        if _has_sp and not _has_mp:
+            _resume_single_page = True
+            print("  ↳ Resuming existing single-page build (no site-manifest.json); staying single-page.")
+
+    if not args.from_url and not _resume_single_page and site_manifest_lib:
         if getattr(args, "site_manifest", None):
             manifest_path = Path(args.site_manifest)
             if not manifest_path.is_absolute():
