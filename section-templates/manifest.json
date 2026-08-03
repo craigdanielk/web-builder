@@ -1,9 +1,9 @@
 {
   "version": "1.0.0",
   "generated": "2026-02-13",
-  "total_archetypes": 25,
-  "total_variants": 72,
-  "templates_available": 72,
+  "total_archetypes": 26,
+  "total_variants": 75,
+  "templates_available": 75,
   "archetypes": {
     "ABOUT": {
       "directory": "section-templates/ABOUT/",
@@ -83,6 +83,17 @@
         }
       ]
     },
+    "CURRENCY-MAP": {
+      "directory": "section-templates/CURRENCY-MAP/",
+      "variants": [
+        {
+          "name": "interactive",
+          "has_template": true,
+          "template_path": "section-templates/CURRENCY-MAP/interactive.tsx",
+          "file_name": "interactive.tsx"
+        }
+      ]
+    },
     "CTA": {
       "directory": "section-templates/CTA/",
       "variants": [
@@ -103,6 +114,12 @@
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
           "file_name": "split-image.tsx"
+        },
+        {
+          "name": "dark-band",
+          "has_template": true,
+          "template_path": "section-templates/CTA/dark-band.tsx",
+          "file_name": "dark-band.tsx"
         }
       ]
     },
@@ -496,6 +513,12 @@
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
           "file_name": "grid.tsx"
+        },
+        {
+          "name": "headshot-grid-square",
+          "has_template": true,
+          "template_path": "db:section_archetypes.code_template",
+          "file_name": "headshot-grid-square.tsx"
         }
       ]
     },

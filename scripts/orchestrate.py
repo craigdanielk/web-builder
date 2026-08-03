@@ -1813,6 +1813,15 @@ def stage_sections(
                         except Exception as _sem_err:
                             print(f"      ⚠ semantic tokens skipped: {_sem_err}")
 
+                # BRIEF #33297: Inject bound tenant creative_asset src into template
+                _ba = section.get("bound_asset")
+                if _ba and _ba.get("src"):
+                    template_code = template_code.replace("{{asset.src}}", _ba["src"])
+                    template_code = template_code.replace("{{asset.type}}", str(_ba.get("asset_type", "image")))
+                else:
+                    template_code = template_code.replace("{{asset.src}}", "")
+                    template_code = template_code.replace("{{asset.type}}", "")
+
                 # Replace content placeholder tokens {token_name} with string literals
                 # so JSX doesn't reference undefined variables at render time.
                 # Matches bare {word_word} patterns in JSX (not {var} inside .map callbacks etc.)
@@ -1973,6 +1982,21 @@ See section-instructions-gsap.md for the full pinned horizontal scroll technique
                     ui_component_block = f"\n{ucm['block']}\n"
                     extra_component_files.extend(ucm.get("componentFiles", []))
 
+        # ── BRIEF #33297: Bound asset injection block ──
+        bound_asset_block = ""
+        _ba = section.get("bound_asset")
+        if _ba and _ba.get("src"):
+            bound_asset_block = f"""
+## Tenant Creative Asset Binding
+This section has a tenant creative asset bound to it:
+- Asset src: {_ba['src']}
+- Asset type: {_ba.get('asset_type', 'image')}
+
+Render this asset as the PRIMARY visual / image for this section. Use the self-hosted
+URL directly as the image src (e.g. `<img src="{{...}}" />` or `backgroundImage: url(...)`).
+Do NOT use placeholder image URLs or generic placeholder images when a bound asset is present.
+"""
+
         # ── v2.0.0: Build style + section spec block ──
         # When site_spec is available (--from-url), use JSON style tokens directly.
         # When not (--preset mode), fall back to the compact style header.
@@ -2036,6 +2060,23 @@ Content Direction: {section['content']}"""
 {brief}
 """
 
+        # ── Per-section asset binding context (BRIEF #33297) ──
+        bound_asset_block = ""
+        bound_asset = section.get("bound_asset")
+        if bound_asset:
+            asset_src = bound_asset.get("src", "")
+            asset_type = bound_asset.get("asset_type", "")
+            bound_asset_block = f"""
+## Tenant Asset Binding
+This section has been bound to a tenant-provided creative asset.
+Asset type: {asset_type}
+Asset src: {asset_src}
+
+IMPORTANT: Use this exact asset src path in your component. Do not use placeholder images or external URLs.
+For image assets, use: <img src="{asset_src}" alt="..." />
+For background images, use: style={{backgroundImage: 'url("{asset_src}")'}}
+"""
+
         # ── Copy Fidelity Node: verbatim source-copy block (Phase 1) ──
         # Threads the harvested content.{headings, body_text, ctas} into the prompt as
         # authoritative copy. When a finding targets this section, switches that section to
@@ -2083,9 +2124,10 @@ as a React + Tailwind CSS component.
 {brief_block}
 {style_and_spec_block}
 {source_copy_block}
+{bound_asset_block}
 ## Structural Reference
 {structure_ref}
-{ref_context_block}{animation_context_block}{asset_context_block}{identification_block}{pinned_scroll_block}{plugin_block}{icon_block}{visual_fallback_block}{card_embed_block}{ui_component_block}
+{ref_context_block}{animation_context_block}{asset_context_block}{identification_block}{pinned_scroll_block}{plugin_block}{icon_block}{visual_fallback_block}{card_embed_block}{ui_component_block}{bound_asset_block}
 {instructions}
 Component name: Section{num}{section['archetype'].replace('-', '')}"""
 
@@ -5380,6 +5422,22 @@ def stage_bos_orchestrate(
     _completed_count = 0
     _failed_count = 0
 
+    # Load Stage-4 review issues so the BoS records REAL defects (unbalanced braces,
+    # etc.) instead of marking every section "completed" with no errors. Without this
+    # the post-build defect ledger is a false-success artifact and the learning loop
+    # (pattern_detector.ingest_bill_of_sale_ledger) learns nothing from broken builds.
+    _review_by_file: dict[str, list[dict]] = {}
+    _review_path = output_dir / "review.json"
+    if _review_path.exists():
+        try:
+            _rev = json.loads(_review_path.read_text())
+            for _iss in _rev.get("issues", []):
+                _f = Path(str(_iss.get("file", ""))).name
+                if _f:
+                    _review_by_file.setdefault(_f, []).append(_iss)
+        except (json.JSONDecodeError, OSError, TypeError):
+            pass
+
     for item in bos.line_items:
         item_id = item.item_id
 
@@ -5418,16 +5476,42 @@ def stage_bos_orchestrate(
             _pos = item.position or (bos.line_items.index(item) + 1)
             _arch_key = item.archetype.lower().replace("-", "_")
             _expected = f"{_pos:02d}-{_arch_key}.tsx"
-            _found = _sec_files_map.get(_expected.replace(".tsx", ""), _expected)
+            _stem = _expected.replace(".tsx", "")
+            # A skipped section (truncated past retries) never entered _sec_files_map,
+            # so its absence from the map — not the _expected fallback — is the signal.
+            _produced = _stem in _sec_files_map
+            _found = _sec_files_map.get(_stem, _expected)
 
             bos.mark_started(item_id)
-            bos.mark_completed(
-                item_id,
-                files=[f"sections/{_found}"] if _found else [],
-                verified_against=_bos_version,
-            )
-            _completed_count += 1
-            print(f"    ✓ {item_id}: completed — {_found}")
+            if not _produced:
+                # Section was skipped during generation — never written to disk.
+                bos.mark_failed(item_id, errors=[
+                    f"section skipped during generation — {_expected} truncated after "
+                    f"retries and was not written (broken section)"
+                ])
+                _failed_count += 1
+                print(f"    ❌ {item_id}: skipped — {_expected} not produced")
+            else:
+                # Produced — attach any Stage-4 review errors/warnings for this file so
+                # a section that compiled-but-broke (e.g. unbalanced braces) is recorded.
+                _iss = _review_by_file.get(Path(_found).name, [])
+                _errs = [f"{i.get('check', 'review')}: {i.get('message', '')}"
+                         for i in _iss if i.get("severity") == "error"]
+                _warns = [f"{i.get('check', 'review')}: {i.get('message', '')}"
+                          for i in _iss if i.get("severity") == "warning"]
+                bos.mark_completed(
+                    item_id,
+                    files=[f"sections/{_found}"],
+                    verified_against=_bos_version,
+                    errors=_errs or None,
+                    warnings=_warns or None,
+                )
+                if _errs:
+                    _failed_count += 1
+                    print(f"    ⚠ {item_id}: completed with {len(_errs)} review error(s) — {_found}")
+                else:
+                    _completed_count += 1
+                    print(f"    ✓ {item_id}: completed — {_found}")
 
         # If a file was expected but not found, mark with a warning
         if item.build_trace:
@@ -5436,7 +5520,10 @@ def stage_bos_orchestrate(
     # 3. Persist the BoS (with populated build_traces)
     bos_path = output_dir / "bill-of-sale.json"
     saved = bos.save(bos_path)
-    print(f"  ✓ BoS saved with {_completed_count} completed traces → {saved}")
+    _trace_note = f"{_completed_count} completed"
+    if _failed_count:
+        _trace_note += f", {_failed_count} with defects/skipped"
+    print(f"  ✓ BoS saved with {_trace_note} traces → {saved}")
 
     # 4. Make build_traces available for the re-audit loop
     traces = load_build_traces(output_dir)
@@ -6402,6 +6489,16 @@ def main():
         else:
             print(f"  📋 Audit captures: no verbatim strings harvested (tenant_id={tenant_id})")
 
+    # ── Per-section asset binding (BRIEF #33297) ──
+    # Bind tenant creative_assets onto sections BEFORE generation so
+    # the bound self-hosted src flows into the generated components. No tenant
+    # assets → 0 bound, sections untouched (no regression).
+    _assets_bound = 0
+    if tenant_context:
+        # Create minimal site_manifest structure for single-page pipeline
+        _single_page_manifest = {"pages": [{"sections": sections}]}
+        _assets_bound = bind_section_assets(tenant_context, _single_page_manifest, output_dir)
+
     if args.skip_to in (None, "sections"):
         section_files, _copy_summary = stage_sections(
             sections, preset, args.project, section_contexts, extraction_dir, identification,
@@ -6500,6 +6597,7 @@ def main():
             tenant_id=tenant_id,
             harvested_copy_ratio=_harvested_copy_ratio,
             render_audit_status=_render_audit_status,
+            assets_bound=_assets_bound if _assets_bound > 0 else None,
         )
         _recon_str = ""
         if _reconciliation_meta:
