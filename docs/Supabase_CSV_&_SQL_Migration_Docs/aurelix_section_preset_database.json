@@ -9260,5 +9260,115 @@
     "section_variant": "slide-out",
     "content_direction": "Side panel with upsell recommendations",
     "priority": "required"
+  },
+  {
+    "id": 843,
+    "industry": "adventure-tours",
+    "page_type": "homepage",
+    "component_type": "page_section",
+    "position": 1,
+    "section_archetype": "HERO",
+    "section_variant": "video-background",
+    "content_direction": "Epic coastline / on-water action footage; experience-led tagline over motion (video-parallax).",
+    "priority": "required"
+  },
+  {
+    "id": 844,
+    "industry": "adventure-tours",
+    "page_type": "homepage",
+    "component_type": "page_section",
+    "position": 2,
+    "section_archetype": "ABOUT",
+    "section_variant": "editorial-split",
+    "content_direction": "Who we are \u2014 local certified guides and the promise of the day.",
+    "priority": "required"
+  },
+  {
+    "id": 845,
+    "industry": "adventure-tours",
+    "page_type": "homepage",
+    "component_type": "page_section",
+    "position": 3,
+    "section_archetype": "PRODUCT-SHOWCASE",
+    "section_variant": "hover-cards",
+    "content_direction": "Tours as bookable cards: name, hook, duration, group size, difficulty, from-price. CTA: Check availability.",
+    "priority": "required"
+  },
+  {
+    "id": 846,
+    "industry": "adventure-tours",
+    "page_type": "homepage",
+    "component_type": "page_section",
+    "position": 4,
+    "section_archetype": "HOW-IT-WORKS",
+    "section_variant": "numbered-steps",
+    "content_direction": "Book in 3 calm steps: choose experience, pick a date, confirm. Name what's included + cancellation.",
+    "priority": "required"
+  },
+  {
+    "id": 847,
+    "industry": "adventure-tours",
+    "page_type": "homepage",
+    "component_type": "page_section",
+    "position": 5,
+    "section_archetype": "FEATURES",
+    "section_variant": "icon-grid",
+    "content_direction": "Why book with us: certified guides, small groups, safety-first, gear & transfers included.",
+    "priority": "recommended"
+  },
+  {
+    "id": 848,
+    "industry": "adventure-tours",
+    "page_type": "homepage",
+    "component_type": "page_section",
+    "position": 6,
+    "section_archetype": "STATS",
+    "section_variant": "counter",
+    "content_direction": "Years operating, guests hosted, tours run, 5-star reviews (count-up).",
+    "priority": "optional"
+  },
+  {
+    "id": 849,
+    "industry": "adventure-tours",
+    "page_type": "homepage",
+    "component_type": "page_section",
+    "position": 7,
+    "section_archetype": "TESTIMONIALS",
+    "section_variant": "wall",
+    "content_direction": "Guest reviews with trip name + rating.",
+    "priority": "required"
+  },
+  {
+    "id": 850,
+    "industry": "adventure-tours",
+    "page_type": "homepage",
+    "component_type": "page_section",
+    "position": 8,
+    "section_archetype": "GALLERY",
+    "section_variant": "masonry",
+    "content_direction": "Real trip photography from past adventures (reveal-stagger).",
+    "priority": "recommended"
+  },
+  {
+    "id": 851,
+    "industry": "adventure-tours",
+    "page_type": "homepage",
+    "component_type": "page_section",
+    "position": 9,
+    "section_archetype": "FAQ",
+    "section_variant": "accordion",
+    "content_direction": "Booking, cancellation, fitness/safety, what to bring.",
+    "priority": "recommended"
+  },
+  {
+    "id": 852,
+    "industry": "adventure-tours",
+    "page_type": "homepage",
+    "component_type": "page_section",
+    "position": 10,
+    "section_archetype": "CTA",
+    "section_variant": "split-image",
+    "content_direction": "Primary booking band: Book your adventure / Enquire \u2014 warm amber CTA over coastal image.",
+    "priority": "required"
   }
 ]
