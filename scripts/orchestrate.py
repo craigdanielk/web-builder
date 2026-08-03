@@ -136,6 +136,49 @@ MAX_TOKENS = {
     "review": 4096,
 }
 
+# --- Token accounting (W-A/A6) ---
+# response.usage was previously discarded, so "what did this site cost"
+# was unanswerable and could not be backfilled from past builds.
+TOKEN_LEDGER: list[dict] = []
+
+
+def record_token_usage(stage: str, mode: str, model: str, usage=None, label: str | None = None) -> None:
+    """Append one LLM call to the build's token ledger.
+
+    The CLI path has no usage object; it records None counts rather than
+    an estimate, so totals stay honest about what was measured.
+    """
+    TOKEN_LEDGER.append({
+        "stage": stage,
+        "mode": mode,
+        "model": model,
+        "input_tokens": getattr(usage, "input_tokens", None) if usage else None,
+        "output_tokens": getattr(usage, "output_tokens", None) if usage else None,
+        "label": label,
+    })
+
+
+def token_ledger_summary() -> dict:
+    """Totals for build_log. measured_calls vs unmeasured_calls keeps the
+    CLI path visible instead of silently reading as zero cost."""
+    measured = [e for e in TOKEN_LEDGER if e["input_tokens"] is not None]
+    return {
+        "calls": len(TOKEN_LEDGER),
+        "measured_calls": len(measured),
+        "unmeasured_calls": len(TOKEN_LEDGER) - len(measured),
+        "input_tokens": sum(e["input_tokens"] for e in measured),
+        "output_tokens": sum(e["output_tokens"] for e in measured),
+        "by_stage": {
+            stage: {
+                "calls": len([e for e in TOKEN_LEDGER if e["stage"] == stage]),
+                "input_tokens": sum(e["input_tokens"] for e in measured if e["stage"] == stage),
+                "output_tokens": sum(e["output_tokens"] for e in measured if e["stage"] == stage),
+            }
+            for stage in sorted({e["stage"] for e in TOKEN_LEDGER})
+        },
+    }
+
+
 # API resilience
 MAX_RETRIES = 3
 TIMEOUT_SECONDS = 90
@@ -313,7 +356,9 @@ def _call_claude_cli(prompt: str, model: str | None) -> str:
 def call_claude(prompt: str, stage: str, max_tokens_override: int | None = None) -> str:
     """Generate text for a pipeline stage via the selected Claude endpoint."""
     if _llm_mode() == "cli":
-        return _call_claude_cli(prompt, MODELS[stage])
+        out = _call_claude_cli(prompt, MODELS[stage])
+        record_token_usage(stage, "cli", MODELS[stage], usage=None)
+        return out
     if Anthropic is None:
         raise RuntimeError(
             "anthropic SDK unavailable and no `claude` CLI found. "
@@ -327,6 +372,7 @@ def call_claude(prompt: str, stage: str, max_tokens_override: int | None = None)
         max_tokens=budget,
         model=MODELS[stage],
     )
+    record_token_usage(stage, "api", MODELS[stage], usage=getattr(message, "usage", None))
     text_parts = [
         block.text for block in message.content if block.type == "text"
     ]
