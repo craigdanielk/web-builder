@@ -30,3 +30,4 @@ node_modules/
 
 # Archives
 *.tar.gz
+logs/
