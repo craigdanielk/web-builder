@@ -151,6 +151,7 @@ def reconcile_pages(
     discovered_pages: list[str],
     required_pages: set[str],
     industry: str,
+    exact: bool = False,
 ) -> list[str]:
     """
     Reconcile discovered pages with required page types per industry.
@@ -160,10 +161,20 @@ def reconcile_pages(
     2. Add missing required pages
     3. Always include not-found page
 
+    When ``exact`` is True, steps 2 and 3 are skipped: the caller's enumerated
+    page list is treated as the complete site. This matters for sites whose
+    real route set is known (e.g. from a crawl) — silently folding in
+    industry-required page types would emit routes the source site does not
+    have, which on a regulated/financial site means shipping pages that can
+    only be filled with invented content.
+
     Returns a deduplicated, ordered list of page types.
     """
     # Start with discovered pages (preserve order)
     reconciled = list(dict.fromkeys(discovered_pages))  # Remove duplicates, preserve order
+
+    if exact:
+        return reconciled
 
     # Add missing required pages.
     # IMPORTANT: iterate a *sorted* list, not the raw set — set iteration order
@@ -270,6 +281,7 @@ def build_site_manifest(
     pages: Optional[List[str]] = None,
     output_path: Optional[Path] = None,
     harvested_pages: Optional[List[Dict[str, Any]]] = None,
+    exact_pages: bool = False,
 ) -> Dict[str, Any]:
     """
     Build a complete site manifest from an enumerated page list OR from a set of
@@ -301,11 +313,14 @@ def build_site_manifest(
         print(f"   Discovered pages: {', '.join(pages)}")
 
         # Get required page types for this industry
-        required_pages = get_required_page_types(industry)
-        print(f"   Required pages: {', '.join(sorted(required_pages))}")
+        required_pages = set() if exact_pages else get_required_page_types(industry)
+        if exact_pages:
+            print("   Exact mode: industry-required pages and not-found NOT folded in")
+        else:
+            print(f"   Required pages: {', '.join(sorted(required_pages))}")
 
         # Reconcile pages (add missing required pages, remove duplicates)
-        reconciled_pages = reconcile_pages(pages, required_pages, industry)
+        reconciled_pages = reconcile_pages(pages, required_pages, industry, exact=exact_pages)
         print(f"   Reconciled pages: {', '.join(reconciled_pages)}")
 
         # Convert page types to manifest page entries
@@ -382,6 +397,13 @@ Examples:
         "(page_id→id, derives route, carries page_type/sections). Overrides --pages*.",
     )
     parser.add_argument(
+        "--exact-pages",
+        action="store_true",
+        help="Emit exactly the pages given by --pages/--pages-file. Skips folding in "
+        "industry-required page types and the not-found page. Use when the site's real "
+        "route set is already known (e.g. from a crawl).",
+    )
+    parser.add_argument(
         "--use-default-pages",
         action="store_true",
         help="Use default pages for the industry instead of specifying manually",
@@ -443,6 +465,7 @@ Examples:
             pages=pages,
             output_path=output_path,
             harvested_pages=harvested_pages,
+            exact_pages=args.exact_pages,
         )
         print(f"\n📊 Manifest summary:")
         print(f"   Project: {manifest['project']}")
