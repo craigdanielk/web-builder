@@ -422,9 +422,13 @@ async function extractReference(url, outputDir) {
             'h1, h2, h3, h4, h5, h6, p, li, blockquote, figcaption, a, button'
           );
           const seen = new Set(); // deduplicate nested text
+          // Emoji/symbol-only nodes (e.g. a bare flag glyph) are decoration, not
+          // content — harvesting them dumps a stray glyph into a content slot.
+          const HAS_WORD_CHARS = /[\p{L}\p{N}]/u;
           textEls.forEach(el => {
             const text = el.textContent?.trim();
             if (!text || text.length < 2 || seen.has(text)) return;
+            if (!HAS_WORD_CHARS.test(text)) return;
             seen.add(text);
             const elRect = el.getBoundingClientRect();
             if (elRect.width === 0 && elRect.height === 0) return;
@@ -662,9 +666,14 @@ async function extractReference(url, outputDir) {
         'h1, h2, h3, h4, h5, h6, p, li, a, button, span, blockquote, figcaption, label';
       const elements = document.querySelectorAll(selector);
 
+      // Emoji/symbol-only nodes carry no copy — skip them so they never land
+      // in a generated content slot.
+      const HAS_WORD_CHARS = /[\p{L}\p{N}]/u;
+
       elements.forEach((el) => {
         const text = el.textContent?.trim();
         if (!text || text.length < 2) return;
+        if (!HAS_WORD_CHARS.test(text)) return;
 
         const rect = el.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) return;
