@@ -370,6 +370,12 @@ function buildSections(extractionData, mappedSections, componentRegistry, animat
         }));
     }
 
+    // Grouped items come only from the embedded (DOM-scoped) path — the
+    // sectionIndex fallback below reconstructs content from a flat text list
+    // that never carried grouping, so there is nothing there to group. Absent
+    // grouping is reported as an empty array, never as an inferred one.
+    const embeddedItems = Array.isArray(embeddedContent?.items) ? embeddedContent.items : [];
+
     // Text content: prefer embedded, fallback to sectionIndex
     let headings, bodyText, ctas;
     if (embeddedContent && (embeddedContent.headings?.length > 0 || embeddedContent.body_text?.length > 0)) {
@@ -421,9 +427,21 @@ function buildSections(extractionData, mappedSections, componentRegistry, animat
       method: mapped.method,
       source_rect: mapped.rect,
       content: {
+        // Unchanged flat lists — every existing consumer reads these.
         headings: headings.slice(0, 5),
         body_text: bodyText.slice(0, 10),
         ctas: ctas.slice(0, 5),
+        // Additive structure. `items` is the section's repeated content with
+        // each item's own fields joined at the DOM, so a repeater no longer
+        // has to be reconstructed by pairing heading[i] with body[i]. The
+        // section_* lists are the copy no item claimed — a section's own
+        // title and intro, identified by subtraction rather than by an
+        // off-by-one rule that is right for one archetype and wrong for the next.
+        items: embeddedItems,
+        item_count: embeddedItems.length,
+        item_grouping: embeddedContent?.item_grouping || null,
+        section_headings: (embeddedContent?.section_headings || headings).slice(0, 5),
+        section_body_text: (embeddedContent?.section_body_text || bodyText).slice(0, 10),
       },
       images: sectionImages,
       icons: { library: extractionData.assets?.iconLibrary?.library || null },
@@ -579,10 +597,18 @@ function assertSectionContract(pageId, sections) {
     if (!section.content || typeof section.content !== 'object' || Array.isArray(section.content)) {
       problems.push(`section ${section.index}: "content" must be a dict`);
     } else {
-      for (const key of ['headings', 'body_text', 'ctas']) {
+      for (const key of ['headings', 'body_text', 'ctas', 'items', 'section_headings', 'section_body_text']) {
         if (!Array.isArray(section.content[key])) {
           problems.push(`section ${section.index}: content.${key} must be an array`);
         }
+      }
+      // item_count exists so arity is readable without walking items[]. If the
+      // two ever disagree the consumer's arity is a lie, so it is enforced.
+      if (section.content.item_count !== (section.content.items || []).length) {
+        problems.push(
+          `section ${section.index}: content.item_count (${section.content.item_count}) ` +
+          `disagrees with items.length (${(section.content.items || []).length})`
+        );
       }
     }
     if (section.section_uid) {

@@ -123,6 +123,58 @@ function collectBlocks(html, tagNames) {
   return blocks;
 }
 
+/**
+ * Direct child ELEMENTS of a fragment, in document order, whatever their tag.
+ *
+ * `collectBlocks()` above answers "which of these named tags are top-level",
+ * counting depth by tag name only; that is enough for section discovery but
+ * cannot answer "what are this node's children", which is the question item
+ * grouping asks. A stack keeps mixed nesting honest, and a close tag with no
+ * matching open on the stack is ignored rather than unwinding — real-world
+ * markup (an unclosed `<p>`) must degrade, not derail.
+ */
+function parseChildren(html) {
+  const tagRe = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)\b([^>]*?)(\/?)>/g;
+  const out = [];
+  const stack = [];
+  let current = null;
+  let m;
+
+  while ((m = tagRe.exec(html)) !== null) {
+    const closing = m[1] === '/';
+    const name = m[2].toLowerCase();
+    const selfClosing = m[4] === '/' || VOID_ELEMENTS.has(name);
+
+    if (!closing) {
+      if (selfClosing) {
+        if (!current) out.push({ tag: name, attrs: m[3] || '', inner: '', selfClosing: true });
+        continue;
+      }
+      if (!current) {
+        current = { tag: name, attrs: m[3] || '', contentStart: tagRe.lastIndex, inner: '', selfClosing: false };
+        stack.length = 0;
+      }
+      stack.push(name);
+    } else {
+      if (!current) continue;
+      const idx = stack.lastIndexOf(name);
+      if (idx === -1) continue;
+      stack.length = idx;
+      if (stack.length === 0) {
+        current.inner = html.slice(current.contentStart, m.index);
+        out.push(current);
+        current = null;
+      }
+    }
+  }
+
+  if (current) {
+    current.inner = html.slice(current.contentStart);
+    out.push(current);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Per-section content extraction
 // ---------------------------------------------------------------------------
@@ -207,6 +259,255 @@ function extractImages(inner, baseUrl) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Item grouping
+//
+// A repeater's items are not a property of its text — they are a property of
+// its DOM. Flattening a section into parallel `headings[]` / `body_text[]`
+// throws that structure away and forces the consumer to re-infer it by
+// position, which is wrong the moment a section carries its own intro or a
+// card is missing a field. Grouping recovers the structure before it is lost.
+//
+// Two shapes cover every repeater observed in real captures, and one rule
+// covers both: a run of sibling elements whose signatures repeat with a fixed
+// period. Period 1 is the card-grid shape (`<div class="step-card">` ×3);
+// period >1 is the flat-run shape (`<h3><p><h3><p><h3><p>`), where the items
+// are not wrapped at all and only the repetition marks their boundaries.
+// ---------------------------------------------------------------------------
+
+/** Longest an item's element cycle may be. Beyond this it is a layout, not an item. */
+const MAX_ITEM_PERIOD = 4;
+
+/** How far below a section root to look for a repeater before giving up. */
+const MAX_GROUPING_DEPTH = 8;
+
+/** Guard against pathological nodes (a nav with hundreds of links). */
+const MAX_CHILDREN_SCANNED = 200;
+
+/** Items emitted per section. Generous — a real repeater rarely exceeds this. */
+const MAX_ITEMS = 24;
+
+function normalizedClass(attrs) {
+  return getAttr(attrs, 'class')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(' ');
+}
+
+/**
+ * Shape key for sibling comparison: tag plus its class set.
+ *
+ * Class-based rather than structural on purpose — authors mark repeated items
+ * with a repeated class far more reliably than with identical inner markup
+ * (a card missing its image still carries `class="card"`).
+ */
+function elementSignature(el) {
+  return `${el.tag}.${normalizedClass(el.attrs)}`;
+}
+
+/**
+ * Find the strongest repeating run in a signature sequence.
+ *
+ * Ranked by cycle count first, then by the shorter period: for `[A,A,A]`,
+ * period 1 gives 3 items and period 2 would give 2 items of two cards each —
+ * more elements covered, but the wrong reading. More items of a simpler shape
+ * is always the better answer.
+ *
+ * @returns {{start:number, period:number, count:number}|null}
+ */
+function findRepeatingRun(signatures) {
+  const n = signatures.length;
+  let best = null;
+
+  for (let period = 1; period <= MAX_ITEM_PERIOD; period++) {
+    for (let start = 0; start + period * 2 <= n; start++) {
+      let count = 1;
+      while (start + period * (count + 1) <= n) {
+        let same = true;
+        for (let k = 0; k < period; k++) {
+          if (signatures[start + k] !== signatures[start + period * count + k]) { same = false; break; }
+        }
+        if (!same) break;
+        count++;
+      }
+      if (count < 2) continue;
+      if (!best || count > best.count || (count === best.count && period < best.period)) {
+        best = { start, period, count };
+      }
+    }
+  }
+  return best;
+}
+
+function serializeElement(el) {
+  if (el.selfClosing) return `<${el.tag}${el.attrs}>`;
+  return `<${el.tag}${el.attrs}>${el.inner}</${el.tag}>`;
+}
+
+/** Bare `<span>` text, used only when an item carries no heading and no body. */
+function extractSpanTexts(frag) {
+  const out = [];
+  const re = /<span\b[^>]*>([\s\S]*?)<\/span>/gi;
+  let m;
+  while ((m = re.exec(frag)) !== null) {
+    const text = stripTags(m[1]);
+    if (text) out.push(text);
+  }
+  return out;
+}
+
+/**
+ * First link in a fragment regardless of whether it has visible text.
+ * A logo-bar item is an `<a>` wrapping only an `<img>`; `extractCtas()`
+ * (rightly) drops textless anchors, which would discard the item's only href.
+ */
+function firstHref(frag, baseUrl) {
+  const m = /<a\b([^>]*)>/i.exec(frag);
+  if (!m) return null;
+  const href = absolutize(getAttr(m[1], 'href'), baseUrl);
+  if (!href) return null;
+  return { href, label: getAttr(m[1], 'aria-label') || getAttr(m[1], 'title') || '' };
+}
+
+/** Turn one cycle of sibling elements into an item record. */
+function buildItem(elements, baseUrl, period) {
+  const frag = elements.map(serializeElement).join('');
+  const headings = extractHeadings(frag);
+  const bodyText = extractBodyText(frag);
+  const ctas = extractCtas(frag, baseUrl);
+  const images = extractImages(frag, baseUrl);
+
+  let heading = headings[0] || '';
+  let body = bodyText[0] || '';
+
+  // Stat-style items ("5+" / "Years operating") are spans, not headings and
+  // paragraphs. Only consulted when the semantic tags yielded nothing, so a
+  // span inside a heading is never double-counted.
+  const spans = (!heading && !body) ? extractSpanTexts(frag) : [];
+  if (spans.length > 0) heading = spans[0];
+  if (spans.length > 1) body = spans[1];
+
+  // An item has internal structure; prose does not. Three consecutive
+  // `<p>` paragraphs of an About story repeat perfectly as siblings and are
+  // NOT a repeater — reporting them as three items would invent a card grid
+  // out of a paragraph. Requiring a heading, an image, a link, a span pair or
+  // a multi-element cycle keeps every real repeater on this site (step cards,
+  // stat blocks, feature runs, logo links, post lists) and rejects prose runs.
+  const structured =
+    period > 1 ||
+    headings.length > 0 ||
+    images.length > 0 ||
+    ctas.length > 0 ||
+    spans.length > 1 ||
+    /<a\b[^>]*\bhref/i.test(frag);
+
+  let cta = ctas[0] || null;
+  const link = firstHref(frag, baseUrl);
+  if (!cta && link) cta = { text: link.label, href: link.href };
+
+  // Image-only item (logo bar): the alt/aria-label is the only name it has.
+  if (!heading && !body && images.length > 0) heading = images[0].alt || (link ? link.label : '') || '';
+  // Link-only item (nav, link column): the anchor text is the item's label.
+  if (!heading && !body && cta && cta.text) heading = cta.text;
+
+  return {
+    structured,
+    item: {
+      heading,
+      body,
+      cta,
+      image: images[0] || null,
+      headings,
+      body_text: bodyText,
+      ctas,
+      images,
+    },
+  };
+}
+
+function itemHasContent(item) {
+  return Boolean(item.heading || item.body || item.image || (item.cta && (item.cta.text || item.cta.href)));
+}
+
+/**
+ * Walk a section subtree collecting every repeating-run candidate, then keep
+ * the shallowest one.
+ *
+ * Shallowest wins because depth means specificity: a footer's three columns sit
+ * above the link lists inside them, and the columns are the items a consumer
+ * means. Taking the run with the most cycles instead would return twelve links
+ * and lose the columns entirely.
+ */
+function findItemGroup(inner, baseUrl) {
+  const candidates = [];
+
+  const visit = (html, depth) => {
+    if (depth > MAX_GROUPING_DEPTH) return;
+    const children = parseChildren(html).slice(0, MAX_CHILDREN_SCANNED);
+    if (children.length >= 2) {
+      const run = findRepeatingRun(children.map(elementSignature));
+      if (run) {
+        const items = [];
+        let structuredCount = 0;
+        for (let i = 0; i < run.count; i++) {
+          const start = run.start + i * run.period;
+          const built = buildItem(children.slice(start, start + run.period), baseUrl, run.period);
+          if (built.structured) structuredCount++;
+          items.push(built.item);
+        }
+        const populated = items.filter(itemHasContent);
+        if (populated.length >= 2 && structuredCount >= 2) {
+          candidates.push({
+            depth,
+            items,
+            grouping: {
+              method: run.period === 1 ? 'sibling-repeat' : 'cycle-repeat',
+              signature: elementSignature(children[run.start]),
+              period: run.period,
+              depth,
+            },
+          });
+        }
+      }
+    }
+    for (const child of children) {
+      if (child.inner) visit(child.inner, depth + 1);
+    }
+  };
+
+  visit(inner, 0);
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    if (a.depth !== b.depth) return a.depth - b.depth;
+    return b.items.length - a.items.length;
+  });
+  const best = candidates[0];
+  best.items = best.items.slice(0, MAX_ITEMS).map((item, index) => ({ index, ...item }));
+  return best;
+}
+
+/**
+ * Multiset difference: strings the section owns that no item claimed.
+ *
+ * This is what separates a section's own intro from item copy without any
+ * off-by-one arithmetic — a string belongs to the section exactly when no item
+ * took it, which is a fact about the DOM, not a guess about counts.
+ */
+function subtractClaimed(all, claimed) {
+  const remaining = new Map();
+  for (const value of claimed) remaining.set(value, (remaining.get(value) || 0) + 1);
+  const out = [];
+  for (const value of all) {
+    const n = remaining.get(value) || 0;
+    if (n > 0) remaining.set(value, n - 1);
+    else out.push(value);
+  }
+  return out;
+}
+
 /**
  * Static HTML has no layout box. `archetype-mapper.js` reads `rect.height` for
  * variant selection (hero size, footer size) and `rect.y` in its legacy
@@ -270,6 +571,16 @@ function harvestBlocks(html, baseUrl) {
     const rect = estimateRect(block.inner, y);
     y += rect.height;
 
+    // Grouped items, derived from the DOM rather than inferred from the flat
+    // lists. `headings` / `body_text` above keep their exact current meaning
+    // (every string in the section, in document order) so existing consumers
+    // are untouched; `section_headings` / `section_body_text` carry only the
+    // copy no item claimed, which is what a fill needs for section-level slots.
+    const group = findItemGroup(block.inner, baseUrl);
+    const items = group ? group.items : [];
+    const claimedHeadings = items.flatMap((it) => it.headings);
+    const claimedBody = items.flatMap((it) => it.body_text);
+
     // A <header> wrapping the primary <nav> is the site chrome, not a hero.
     // archetype-mapper maps the `header` tag to HERO at 0.9, which outranks —
     // and, via its adjacent-duplicate dedup, deletes — the real hero section
@@ -289,6 +600,11 @@ function harvestBlocks(html, baseUrl) {
         body_text: bodyText,
         ctas,
         image_count: images.length,
+        items,
+        item_count: items.length,
+        item_grouping: group ? group.grouping : null,
+        section_headings: subtractClaimed(headings, claimedHeadings),
+        section_body_text: subtractClaimed(bodyText, claimedBody),
       },
       images,
       metrics: { nodes: [] },
@@ -488,6 +804,9 @@ module.exports = {
   stripTags,
   decodeEntities,
   collectBlocks,
+  parseChildren,
+  findRepeatingRun,
+  findItemGroup,
   extractCtas,
   extractImages,
   extractHeadings,
