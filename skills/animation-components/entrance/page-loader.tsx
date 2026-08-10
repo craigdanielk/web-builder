@@ -96,9 +96,12 @@ function PageLoader({
       });
 
       const moveProps = getAnimationProperties(movementDirection);
-      const staggerConfig = {
+      // `gsap.Position` is the wrong type here — it is the motionPath position
+      // type and widens to `string`, which `StaggerVars["from"]` does not
+      // accept. The stagger origin is the narrower literal union below.
+      const staggerConfig: gsap.StaggerVars = {
         each: 0.1,
-        from: getStaggerFrom(staggerOrder) as gsap.Position,
+        from: getStaggerFrom(staggerOrder) as gsap.StaggerVars["from"],
       };
 
       // 1. Reveal text

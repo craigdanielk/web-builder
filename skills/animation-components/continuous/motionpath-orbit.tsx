@@ -45,7 +45,10 @@ export default function MotionPathOrbit({
       },
     });
 
-    return () => tween.kill();
+    // Braced, not a concise arrow: `tween.kill()` returns the Tween, and an
+    // effect cleanup that returns a value is a type error (and, if it were ever
+    // a promise, a React warning).
+    return () => { tween.kill(); };
   }, [pathData, duration]);
 
   return (

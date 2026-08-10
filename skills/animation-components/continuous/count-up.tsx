@@ -13,6 +13,13 @@ interface CountUpProps {
   duration?: number;
   /** Number of decimal places */
   decimals?: number;
+  /**
+   * Group the integer part with thousands separators (e.g. 600,000). Ignored
+   * when `decimals > 0`.
+   */
+  separator?: boolean;
+  /** BCP 47 locale used for grouping (default "en-US") */
+  locale?: string;
   /** Additional CSS classes */
   className?: string;
 }
@@ -23,6 +30,8 @@ export function CountUp({
   prefix = "",
   duration = 2000,
   decimals = 0,
+  separator = false,
+  locale = "en-US",
   className,
 }: CountUpProps) {
   const [count, setCount] = useState(0);
@@ -57,10 +66,18 @@ export function CountUp({
     return () => observer.disconnect();
   }, [target, duration, decimals]);
 
+  // Large stat counters read as noise without grouping — 600000 vs 600,000.
+  const display =
+    decimals > 0
+      ? count.toFixed(decimals)
+      : separator
+        ? Math.round(count).toLocaleString(locale)
+        : String(count);
+
   return (
     <span ref={ref} className={className}>
       {prefix}
-      {decimals > 0 ? count.toFixed(decimals) : count}
+      {display}
       {suffix}
     </span>
   );

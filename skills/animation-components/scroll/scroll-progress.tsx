@@ -7,7 +7,7 @@ import {
   useScroll,
   useSpring,
   type HTMLMotionProps,
-} from 'motion/react';
+} from 'framer-motion';
 import { cn } from '@/lib/utils';
 
 type ScrollProgressProps = React.ComponentProps<'div'> & {

@@ -1,7 +1,7 @@
 {
   "version": "2.0.0",
-  "generated_at": "2026-08-03T21:41:49.930Z",
-  "component_count": 48,
+  "generated_at": "2026-08-10T16:52:38.501Z",
+  "component_count": 53,
   "components": {
     "blur-fade": {
       "source_file": "entrance/blur-fade.tsx",
@@ -104,7 +104,7 @@
       "affinity": {},
       "description": "",
       "status": "ready",
-      "line_count": 179
+      "line_count": 182
     },
     "scale-up": {
       "source_file": "entrance/scale-up.tsx",
@@ -112,7 +112,7 @@
       "export_type": "named",
       "import_statement": "import { BlurReveal } from '@/components/animations/scale-up'",
       "dependencies": [
-        "motion"
+        "framer-motion"
       ],
       "engine": "framer-motion",
       "category": "entrance",
@@ -248,7 +248,7 @@
       "export_type": "named",
       "import_statement": "import { FloatingPathsBackground } from '@/components/animations/parallax-layers'",
       "dependencies": [
-        "motion"
+        "framer-motion"
       ],
       "engine": "framer-motion",
       "category": "scroll",
@@ -297,7 +297,7 @@
       "import_statement": "import { Component } from '@/components/animations/scroll-progress'",
       "dependencies": [
         "lucide-react",
-        "motion"
+        "framer-motion"
       ],
       "engine": "framer-motion",
       "category": "scroll",
@@ -386,6 +386,23 @@
       "description": "",
       "status": "ready",
       "line_count": 65
+    },
+    "geo-choropleth": {
+      "source_file": "interactive/geo-choropleth.tsx",
+      "export_name": "GeoChoropleth",
+      "export_type": "default",
+      "import_statement": "import GeoChoropleth from '@/components/animations/geo-choropleth'",
+      "dependencies": [
+        "d3-geo",
+        "topojson-client"
+      ],
+      "category": "interactive",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 216
     },
     "hover-glow": {
       "source_file": "interactive/hover-glow.tsx",
@@ -518,7 +535,7 @@
       "affinity": {},
       "description": "",
       "status": "ready",
-      "line_count": 70
+      "line_count": 87
     },
     "floating": {
       "source_file": "continuous/floating.tsx",
@@ -584,7 +601,7 @@
       "affinity": {},
       "description": "",
       "status": "ready",
-      "line_count": 66
+      "line_count": 69
     },
     "character-flip": {
       "source_file": "text/character-flip.tsx",
@@ -776,6 +793,68 @@
       "description": "",
       "status": "ready",
       "line_count": 129
+    },
+    "connection-globe": {
+      "source_file": "background/connection-globe.tsx",
+      "export_name": "ConnectionGlobe",
+      "export_type": "default",
+      "import_statement": "import ConnectionGlobe from '@/components/animations/connection-globe'",
+      "dependencies": [],
+      "category": "background",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 462
+    },
+    "corridor-flow": {
+      "source_file": "background/corridor-flow.tsx",
+      "export_name": "CorridorFlow",
+      "export_type": "default",
+      "import_statement": "import CorridorFlow from '@/components/animations/corridor-flow'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "background",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 114
+    },
+    "diagonal-ribbon": {
+      "source_file": "background/diagonal-ribbon.tsx",
+      "export_name": "DiagonalRibbon",
+      "export_type": "default",
+      "import_statement": "import DiagonalRibbon from '@/components/animations/diagonal-ribbon'",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "engine": "framer-motion",
+      "category": "background",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 83
+    },
+    "mesh-gradient": {
+      "source_file": "background/mesh-gradient.tsx",
+      "export_name": "MeshGradient",
+      "export_type": "default",
+      "import_statement": "import MeshGradient from '@/components/animations/mesh-gradient'",
+      "dependencies": [],
+      "category": "background",
+      "archetypes": [],
+      "intensity": "moderate",
+      "affinity": {},
+      "description": "",
+      "status": "ready",
+      "line_count": 124
     },
     "perspective-grid": {
       "source_file": "background/perspective-grid.tsx",
