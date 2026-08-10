@@ -192,7 +192,8 @@ def _resolve_token(token_inner: str, context: dict | None = None) -> str | None:
             if field in ("title", "name", "label") and val == prefix.title():
                 return f"{val} {num_str}"
             return val
-        return field.replace("_", " ").title()
+        # See the note below: never humanize a token name into visible copy.
+        return None
 
     # 3. Non-numbered: prefix_field
     m2 = re.match(r'^([a-z]+)_(.+)$', token_inner)
@@ -205,7 +206,10 @@ def _resolve_token(token_inner: str, context: dict | None = None) -> str | None:
         defaults = CONTENT_DEFAULTS.get(prefix, {})
         if field in defaults:
             return defaults[field]
-        return field.replace("_", " ").title()
+        # No humanize fallback: turning `primary_cta_text` into "Primary Cta
+        # Text" renders a variable name as page copy. Unresolvable means
+        # unresolvable — the caller records it and leaves the slot empty.
+        return None
 
     return None
 

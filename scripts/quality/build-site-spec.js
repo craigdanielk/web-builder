@@ -4,8 +4,15 @@
  * Reads extraction artifacts (extraction-data, mapped-sections, animation-analysis,
  * component-registry) and produces a single structured site-spec.json. No Claude calls.
  *
- * Usage: node scripts/quality/build-site-spec.js <extraction-dir> <project-name>
+ * Usage: node scripts/quality/build-site-spec.js <extraction-dir> <project-name> [options]
  * Example: node scripts/quality/build-site-spec.js output/extractions/sofi-health-be91e37d sofi-health
+ *
+ * Options:
+ *   --captures <dir>   Audit capture bundle (run dir or its captures/ dir). Adds a
+ *                      `pages[]` array — one entry per crawled route, each with its own
+ *                      extracted sections. Without it the output is unchanged.
+ *   --routes <list>    Comma-separated route paths to keep (e.g. "/,/about,/blog").
+ *   --max-pages <n>    Keep at most n pages (in crawl order).
  *
  * @module build-site-spec
  */
@@ -14,6 +21,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+
+const { mapSectionsToArchetypes } = require('./lib/archetype-mapper');
+const pageHarvest = require('./lib/html-page-harvest');
 
 const designTokens = (function () {
   try {
@@ -494,6 +505,229 @@ function applyAnimationAnalysisToStyle(styleTokens, animationAnalysis) {
 }
 
 // ---------------------------------------------------------------------------
+// Multi-page harvest (v2.1.0)
+//
+// The single-URL path above learns about exactly one route. `buildPages()`
+// enumerates every route the audit engine crawled and gives each one its own
+// extracted sections, using the identical section pipeline (archetype mapping →
+// confidence gates → buildSections) so a page-scoped `sections[]` is
+// shape-identical to the top-level one.
+//
+// Source: the audit engine's capture bundle. It already crawled the site, so it
+// holds both the real information architecture and the raw HTML of every route.
+// A second crawl would duplicate the work and let the two views drift.
+// ---------------------------------------------------------------------------
+
+/**
+ * Stable, content-derived identity for a harvested section.
+ *
+ * Deliberately NOT positional: this id is what human decisions, audit defects
+ * and per-section regeneration key on, so it has to survive both reordering of
+ * the page and regeneration of the section's code. Minted once, at harvest.
+ *
+ * Collisions (a page with two same-archetype sections sharing a first heading,
+ * or two with no heading at all) get a `-N` suffix assigned in source order —
+ * the only positional residue, and unavoidable when the content is identical.
+ */
+function mintSectionUid(pageId, archetype, variant, headings, taken) {
+  const normalizedHeading = String(headings && headings[0] ? headings[0] : '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+  const digest = crypto
+    .createHash('sha1')
+    .update(`${pageId}|${archetype}|${variant}|${normalizedHeading}`)
+    .digest('hex')
+    .slice(0, 12);
+
+  if (!taken.has(digest)) {
+    taken.add(digest);
+    return digest;
+  }
+  for (let n = 2; ; n++) {
+    const candidate = `${digest}-${n}`;
+    if (!taken.has(candidate)) {
+      taken.add(candidate);
+      return candidate;
+    }
+  }
+}
+
+/**
+ * Fields every emitted page section must carry for the downstream reconciler
+ * (`orchestrate.py:reconcile_sections`) to function. Enforced, not assumed:
+ * a section silently missing `archetype` wires the consumer up to nothing.
+ */
+const REQUIRED_SECTION_FIELDS = ['archetype', 'variant', 'section_uid', 'source_index'];
+
+/**
+ * Fail the build if any section violates the published contract.
+ *
+ * This exists because the contract is what another agent codes against, and a
+ * spec that quietly disagrees with its own artifact is worse than no spec.
+ */
+function assertSectionContract(pageId, sections) {
+  const problems = [];
+  const seenUids = new Set();
+  for (const section of sections) {
+    for (const field of REQUIRED_SECTION_FIELDS) {
+      const value = section[field];
+      if (value === undefined || value === null || value === '') {
+        problems.push(`section ${section.index}: missing "${field}"`);
+      }
+    }
+    if (!section.content || typeof section.content !== 'object' || Array.isArray(section.content)) {
+      problems.push(`section ${section.index}: "content" must be a dict`);
+    } else {
+      for (const key of ['headings', 'body_text', 'ctas']) {
+        if (!Array.isArray(section.content[key])) {
+          problems.push(`section ${section.index}: content.${key} must be an array`);
+        }
+      }
+    }
+    if (section.section_uid) {
+      if (seenUids.has(section.section_uid)) {
+        problems.push(`section ${section.index}: duplicate section_uid "${section.section_uid}"`);
+      }
+      seenUids.add(section.section_uid);
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `[build-site-spec] Page "${pageId}" violates the harvested-section contract:\n  ` +
+      problems.join('\n  ')
+    );
+  }
+}
+
+/**
+ * Build one page entry from a raw harvested page.
+ *
+ * Emits the shape `build_site_manifest.harvested_pages_to_manifest_pages()`
+ * consumes: {page_id, page_type, nav, sections, source_url, ...}.
+ */
+function buildPage(rawPage, componentRegistry, animationAnalysis) {
+  // dedupe:false — a copy-harvest must reproduce the source page's sections 1:1.
+  // The default adjacent-duplicate collapse silently deletes real content sections
+  // (e.g. a body section adjacent to the hero that also classifies as HERO).
+  const { mappedSections, gaps } = mapSectionsToArchetypes(rawPage.blocks, [], { dedupe: false });
+
+  const { sections: gatedSections, stats, needsReanalysis } = applyConfidenceGates(mappedSections, {
+    minConfidence: 0.5,
+    verbose: false,
+  });
+
+  // buildSections() reads embedded per-section content off `extractionData.sections`,
+  // matched by index — the same contract the DOM-scoped extraction satisfies.
+  const pageExtraction = {
+    url: rawPage.source_url,
+    sections: rawPage.blocks,
+    textContent: [],
+    assets: {
+      images: rawPage.blocks.flatMap((b) => b.images || []),
+    },
+  };
+
+  const sections = buildSections(pageExtraction, gatedSections, componentRegistry, animationAnalysis);
+
+  // content.ctas is a string[] (identical to the single-URL path). Static HTML
+  // also yields the link target, which would otherwise be discarded, so it is
+  // carried alongside rather than in place of the existing field.
+  const ctasByIndex = new Map(rawPage.blocks.map((b) => [b.index, b.content.ctas || []]));
+  const takenUids = new Set();
+  for (const section of sections) {
+    const tier = section.confidence_tier || getTier(section.confidence);
+    section.generation_guidance = getConfidenceGuidance(tier, section);
+    section.content.cta_links = ctasByIndex.get(section.index) || [];
+
+    // Position of this section in the SOURCE page (0..n-1, source order).
+    // `index` carries the same value today, but source_index is explicit and
+    // survives any downstream renumbering, so ordering stays traceable.
+    section.source_index = section.index;
+    section.section_uid = mintSectionUid(
+      rawPage.page_id,
+      section.archetype,
+      section.variant,
+      section.content.headings,
+      takenUids
+    );
+  }
+
+  assertSectionContract(rawPage.page_id, sections);
+
+  return {
+    // `page_id` is the name build_site_manifest.harvested_pages_to_manifest_pages()
+    // reads first; `id` is the same value under the name the manifest itself emits,
+    // so orchestrate.py can join on a page id without knowing which side produced it.
+    page_id: rawPage.page_id,
+    id: rawPage.page_id,
+    page_type: rawPage.page_type,
+    route: rawPage.route,
+    source_url: rawPage.source_url,
+    title: rawPage.title,
+    nav: rawPage.nav,
+    sections,
+    confidence_stats: stats,
+    gaps,
+    reanalysis: {
+      needed: needsReanalysis.length > 0,
+      sections: needsReanalysis,
+    },
+    harvest: rawPage.harvest,
+  };
+}
+
+/**
+ * Build `pages[]` from an audit capture bundle.
+ *
+ * @param {object} options
+ * @param {Array}  options.captures   Capture records (from `loadCaptures`).
+ * @param {object} [options.componentRegistry]
+ * @param {object} [options.animationAnalysis]
+ * @param {string[]} [options.routes] Route paths to keep. Omit to keep all.
+ * @param {number} [options.maxPages] Cap on page count, applied after filtering.
+ * @returns {Array} Page entries in crawl order.
+ */
+function buildPages(options) {
+  const {
+    captures,
+    componentRegistry = { components: {} },
+    animationAnalysis = null,
+    routes = null,
+    maxPages = null,
+  } = options;
+
+  const wanted = routes && routes.length > 0
+    ? new Set(routes.map((r) => {
+        const trimmed = String(r).replace(/\/+$/, '');
+        return trimmed === '' ? '/' : trimmed;
+      }))
+    : null;
+
+  let usable = pageHarvest.usableCaptures(captures);
+  if (wanted) {
+    usable = usable.filter((c) => {
+      const p = pageHarvest.pathnameOf(c.url).replace(/\/+$/, '');
+      return wanted.has(p === '' ? '/' : p);
+    });
+  }
+  if (maxPages != null && maxPages > 0) usable = usable.slice(0, maxPages);
+
+  const pages = [];
+  const seenIds = new Set();
+  for (const capture of usable) {
+    const rawPage = pageHarvest.harvestPage(capture);
+    if (rawPage.blocks.length === 0) continue;
+    // page_id is the routing key downstream; a collision would silently
+    // overwrite a route's app path.
+    if (seenIds.has(rawPage.page_id)) continue;
+    seenIds.add(rawPage.page_id);
+    pages.push(buildPage(rawPage, componentRegistry, animationAnalysis));
+  }
+  return pages;
+}
+
+// ---------------------------------------------------------------------------
 // Main builder (programmatic)
 // ---------------------------------------------------------------------------
 
@@ -504,6 +738,9 @@ function buildSiteSpec(options) {
     animationAnalysis = null,
     componentRegistry = { components: {} },
     projectName,
+    captures = null,
+    routes = null,
+    maxPages = null,
   } = options;
 
   const { sections: gatedSections, stats, needsReanalysis } = applyConfidenceGates(mappedSections, {
@@ -546,6 +783,19 @@ function buildSiteSpec(options) {
       detected_ui_patterns: [],
     },
   };
+
+  // Multi-page: only present when a capture bundle was supplied, so the
+  // single-URL output stays byte-identical to v2.0.x.
+  if (captures) {
+    siteSpec.pages = buildPages({
+      captures,
+      componentRegistry,
+      animationAnalysis,
+      routes,
+      maxPages,
+    });
+  }
+
   return siteSpec;
 }
 
@@ -562,12 +812,28 @@ function loadJson(filePath, defaultValue) {
   return defaultValue;
 }
 
+/** Split argv into positionals and `--flag value` options. */
+function parseArgs(argv) {
+  const positional = [];
+  const flags = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg.startsWith('--')) {
+      flags[arg.slice(2)] = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true;
+    } else {
+      positional.push(arg);
+    }
+  }
+  return { positional, flags };
+}
+
 function runCLI() {
-  const extractionDir = process.argv[2];
-  const projectName = process.argv[3];
+  const { positional, flags } = parseArgs(process.argv.slice(2));
+  const extractionDir = positional[0];
+  const projectName = positional[1];
 
   if (!extractionDir || !projectName) {
-    console.error('Usage: node build-site-spec.js <extraction-dir> <project-name>');
+    console.error('Usage: node build-site-spec.js <extraction-dir> <project-name> [--captures <dir>] [--routes <a,b>] [--max-pages <n>]');
     console.error('Example: node build-site-spec.js output/extractions/sofi-health-be91e37d sofi-health');
     process.exit(1);
   }
@@ -592,19 +858,36 @@ function runCLI() {
   const registryPath = path.resolve(__dirname, '..', '..', 'skills', 'animation-components', 'component-registry.json');
   const componentRegistry = loadJson(registryPath, { components: {} });
 
+  // Multi-page harvest is opt-in. A malformed or HTML-less bundle must fail the
+  // run loudly — silently emitting a one-page spec is what starved the builder.
+  let captures = null;
+  if (typeof flags.captures === 'string') {
+    captures = pageHarvest.loadCaptures(flags.captures);
+    console.log(`[build-site-spec] Loaded ${captures.length} capture(s) from ${flags.captures}`);
+  }
+
+  const routes = typeof flags.routes === 'string'
+    ? flags.routes.split(',').map((r) => r.trim()).filter(Boolean)
+    : null;
+  const maxPages = typeof flags['max-pages'] === 'string' ? parseInt(flags['max-pages'], 10) : null;
+
   const siteSpec = buildSiteSpec({
     extractionData,
     mappedSections,
     animationAnalysis,
     componentRegistry,
     projectName,
+    captures,
+    routes,
+    maxPages,
   });
 
   const outputDir = path.join('output', projectName);
   fs.mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, 'site-spec.json');
   fs.writeFileSync(outputPath, JSON.stringify(siteSpec, null, 2), 'utf8');
-  console.log(`[build-site-spec] Written to ${outputPath} (${siteSpec.sections.length} sections)`);
+  const pageNote = siteSpec.pages ? `, ${siteSpec.pages.length} pages` : '';
+  console.log(`[build-site-spec] Written to ${outputPath} (${siteSpec.sections.length} sections${pageNote})`);
 }
 
 if (require.main === module) {
@@ -612,6 +895,10 @@ if (require.main === module) {
 } else {
   module.exports = {
     buildSiteSpec,
+    buildPages,
+    buildPage,
+    assertSectionContract,
+    mintSectionUid,
     buildStyleTokens,
     buildSections,
     buildComponentMap,

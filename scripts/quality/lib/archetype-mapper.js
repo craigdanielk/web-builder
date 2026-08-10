@@ -242,9 +242,15 @@ function selectVariant(archetype, section, archetypes) {
  *
  * @param {object[]} sections - Sections from extractReference().sections
  * @param {object[]} textContent - Text content from extractReference().textContent
+ * @param {object} [options]
+ * @param {boolean} [options.dedupe=true] - Collapse adjacent same-archetype sections,
+ *   keeping the higher-confidence one. Default preserves existing behaviour. Copy-harvest
+ *   callers pass false: dropping a section there discards real source content that the
+ *   harvested page is supposed to reproduce 1:1.
  * @returns {{ mappedSections: object[], gaps: object[] }} Mapped sections + gap records for low-confidence mappings
  */
-function mapSectionsToArchetypes(sections, textContent) {
+function mapSectionsToArchetypes(sections, textContent, options = {}) {
+  const dedupe = options.dedupe !== false;
   const archetypes = loadArchetypes();
   const archetypeNames = archetypes.map((a) => a.name);
   const mapped = [];
@@ -435,6 +441,8 @@ function mapSectionsToArchetypes(sections, textContent) {
       });
     }
   }
+
+  if (!dedupe) return { mappedSections: mapped, gaps };
 
   // Deduplicate: if two adjacent sections map to the same archetype,
   // keep the one with higher confidence

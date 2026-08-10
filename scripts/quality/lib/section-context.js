@@ -166,8 +166,9 @@ function buildSectionContext(extractionData, sectionIndex, mappedSection) {
   lines.push('### Instructions');
   lines.push('Use the reference context above to inform your layout and content decisions.');
   lines.push('Match the STRUCTURE and COMPOSITION of the original section while applying');
-  lines.push('the style tokens from the STYLE CONTEXT header. Do NOT copy text verbatim —');
-  lines.push('write equivalent content appropriate for the client brief.');
+  lines.push('the style tokens from the STYLE CONTEXT header. This block describes STRUCTURE,');
+  lines.push('not copy: when a SOURCE COPY block is present, its strings are authoritative and');
+  lines.push('must be reproduced verbatim. Write fresh copy only for slots it does not cover.');
 
   return lines.join('\n');
 }

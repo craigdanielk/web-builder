@@ -404,105 +404,451 @@ function stripStringsAndComments(code) {
 }
 
 // ---------------------------------------------------------------------------
-// detectAndRepairTruncation
+// JSX scanning (generics-aware)
 // ---------------------------------------------------------------------------
 
-/**
- * Detect truncation (e.g. from token limit) and attempt repair.
- *
- * Detection: has export default; JSX open/close tags and self-closing roughly
- * balanced; braces { } equal; last non-empty line ends with export default or }; or }
- *
- * Repair: add missing export default; add missing }; add rough JSX closing tags.
- *
- * @param {string} code – Section component source.
- * @param {string} sectionName – Section identifier for warnings (e.g. "03-about").
- * @returns {{ truncated: boolean, repaired: boolean, code: string, warnings: string[] }}
- */
-function detectAndRepairTruncation(code, sectionName) {
-  const warnings = [];
-  let out = code;
-  let repaired = false;
-  const originalLength = (code || "").length;
+/** Characters that can end an identifier immediately before a `<`. */
+const IDENT_CHAR = /[A-Za-z0-9_$]/;
 
-  if (!code || typeof code !== "string") {
-    return {
-      truncated: true,
-      repaired: false,
-      code: out,
-      warnings: ["Code is empty or not a string."],
-    };
+/** Characters valid inside a JSX tag name (incl. `Foo.Bar` and `data-x` style). */
+const TAG_NAME_CHAR = /[A-Za-z0-9_.$-]/;
+
+/**
+ * Characters that cannot legally appear inside a JSX opening tag at brace
+ * depth 0. Hitting one means the `<` we started from was an operator, not a
+ * tag — e.g. `a < b && c > d`, `count < items.length`.
+ */
+const NOT_IN_TAG = new Set([";", "<", "&", "|", "?", ",", "(", ")", "[", "]", "+", "*", "%", "!"]);
+
+/**
+ * Walk stripped source and match JSX tags with a stack.
+ *
+ * This replaces the old "count `<Tag` occurrences and subtract closers"
+ * arithmetic, which could not tell a JSX element from a TypeScript type
+ * argument. `useRef<HTMLDivElement>(null)`, `useState<Item[]>([])`,
+ * `Array<{...}>` and `React.FC<Props>` all survive stripStringsAndComments()
+ * and each registered as an unmatched opening tag; three of them in one file
+ * was enough to make the repairer append literal `</HTMLDivElement>` to an
+ * already-valid file.
+ *
+ * Disambiguation uses two signals together:
+ *
+ *  1. Adjacency — a `<` glued directly to an identifier character (or `)` /
+ *     `]`) is a type-argument list. JSX in *expression* position always opens
+ *     after `(`, `{`, `return`, `=>`, `,` or whitespace, so its `<` is never
+ *     preceded by part of an identifier. `foo<Bar>` is a generic.
+ *  2. Context — adjacency alone is not enough, because JSX *children* are text
+ *     and text ends in letters: `Balance</span>` and `Hello<br />` both put an
+ *     identifier character immediately before a `<` that is genuinely a tag.
+ *     So adjacency is only read as a generic at stack depth 0, i.e. in
+ *     expression position. Inside an open element every `<` is a tag.
+ *
+ * Closing tags (`</`) and fragments (`<>`) are never type arguments and are
+ * checked before the adjacency rule at all.
+ *
+ * @param {string} stripped – Source with strings and comments removed.
+ * @returns {{ unclosed: string[], mismatched: number, generics: number, opened: number }}
+ */
+function scanJsxStack(stripped) {
+  const stack = [];
+  let mismatched = 0;
+  let generics = 0;
+  let opened = 0;
+  const n = stripped.length;
+  let i = 0;
+
+  while (i < n) {
+    if (stripped[i] !== "<") {
+      i++;
+      continue;
+    }
+
+    const prev = i > 0 ? stripped[i - 1] : "";
+    const next = stripped[i + 1];
+
+    // Fragment: <>  (never a type argument — `Foo<>` is not valid TS)
+    if (next === ">" && stripped[i + 2] !== "=") {
+      stack.push("");
+      opened++;
+      i += 2;
+      continue;
+    }
+
+    // TypeScript type argument list, not a JSX element. Only in expression
+    // position (stack empty) — inside an element, `<` after text is a tag.
+    if (
+      next !== "/" &&
+      stack.length === 0 &&
+      (IDENT_CHAR.test(prev) || prev === ")" || prev === "]")
+    ) {
+      generics++;
+      i++;
+      continue;
+    }
+
+    // Closing tag: </Name>
+    if (next === "/") {
+      let j = i + 2;
+      let name = "";
+      while (j < n && TAG_NAME_CHAR.test(stripped[j])) name += stripped[j++];
+      while (j < n && /\s/.test(stripped[j])) j++;
+      if (stripped[j] !== ">") {
+        i++;
+        continue;
+      }
+      if (stack.length && stack[stack.length - 1] === name) {
+        stack.pop();
+      } else {
+        const at = stack.lastIndexOf(name);
+        if (at > -1) stack.length = at; // close through an unclosed nesting
+        mismatched++;
+      }
+      i = j + 1;
+      continue;
+    }
+
+    if (!next || !/[A-Za-z]/.test(next)) {
+      i++;
+      continue;
+    }
+
+    // Candidate opening tag ------------------------------------------------
+    let j = i + 1;
+    let name = "";
+    while (j < n && TAG_NAME_CHAR.test(stripped[j])) name += stripped[j++];
+    // A real tag name is followed by whitespace, `/` or `>`.
+    if (j < n && !/[\s/>]/.test(stripped[j])) {
+      i++;
+      continue;
+    }
+
+    let depth = 0;
+    let end = -1;
+    let selfClosing = false;
+    let k = j;
+    while (k < n) {
+      const c = stripped[k];
+      if (c === "{") { depth++; k++; continue; }
+      if (c === "}") { depth--; k++; continue; }
+      if (depth > 0) { k++; continue; }
+      if (NOT_IN_TAG.has(c)) break;                       // operator, not a tag
+      if (c === ">") {
+        if (stripped[k - 1] === "=" || stripped[k + 1] === "=") break; // `=>`, `>=`
+        selfClosing = stripped[k - 1] === "/";
+        end = k;
+        break;
+      }
+      k++;
+    }
+
+    if (end === -1) {
+      // Unterminated tag (truncated mid-attribute) or a `<` operator. Either
+      // way there is nothing reliable to push; skip it.
+      i++;
+      continue;
+    }
+
+    opened++;
+    if (!selfClosing) stack.push(name);
+    i = end + 1;
   }
 
+  return { unclosed: stack, mismatched, generics, opened };
+}
+
+const DELIM_CLOSERS = { "(": ")", "[": "]", "{": "}" };
+
+/**
+ * Stack-scan `(`, `[`, `{` over stripped source.
+ *
+ * The unclosed openers, in the order they were opened, tell the repairer the
+ * exact closers a truncated file needs and in which order — which a bare
+ * `openBraces - closeBraces` count cannot, since it loses paren/bracket
+ * nesting entirely and emits `}` where `)` was needed.
+ *
+ * @returns {{ expected: string[], overClosed: number }}
+ */
+function scanDelimiters(stripped) {
+  const stack = [];
+  let overClosed = 0;
+  for (let i = 0; i < stripped.length; i++) {
+    const c = stripped[i];
+    if (DELIM_CLOSERS[c]) {
+      stack.push(DELIM_CLOSERS[c]);
+    } else if (c === ")" || c === "]" || c === "}") {
+      if (stack.length && stack[stack.length - 1] === c) stack.pop();
+      else overClosed++;
+    }
+  }
+  return { expected: stack, overClosed };
+}
+
+/**
+ * Measure the structural balance of a source file.
+ *
+ * Every axis is "lower is better". `score` is the aggregate used to decide
+ * whether a repair candidate is strictly better than its input.
+ */
+function measureStructure(code) {
   const stripped = stripStringsAndComments(code);
+  const jsx = scanJsxStack(stripped);
+  const delims = scanDelimiters(stripped);
 
-  // 1. export default present
-  const hasExport = hasDefaultExport(out);
+  const braceDelta =
+    (stripped.match(/\{/g) || []).length - (stripped.match(/\}/g) || []).length;
+  const parenDelta =
+    (stripped.match(/\(/g) || []).length - (stripped.match(/\)/g) || []).length;
 
-  // 2. JSX tag balance: opening <Tag vs closing </Tag> and self-closing />
-  const openTags = (stripped.match(/<([A-Z][a-zA-Z0-9]*)\b/g) || []).length;
-  const closeTags = (stripped.match(/<\/([A-Z][a-zA-Z0-9]*)\s*>/g) || []).length;
-  const selfClosing = (stripped.match(/\/>/g) || []).length;
-  const jsxBalanced = openTags <= closeTags + selfClosing + 2; // allow small skew
+  const hasExport = hasDefaultExport(code);
 
-  // 3. Brace balance
-  const openBraces = (stripped.match(/\{/g) || []).length;
-  const closeBraces = (stripped.match(/\}/g) || []).length;
-  const bracesBalanced = openBraces === closeBraces;
-
-  // 4. Last non-empty line
   const nonEmptyLines = code.split(/\n/).filter((l) => l.trim().length > 0);
-  const lastLine = nonEmptyLines.length ? nonEmptyLines[nonEmptyLines.length - 1].trim() : "";
+  const lastLine = nonEmptyLines.length
+    ? nonEmptyLines[nonEmptyLines.length - 1].trim()
+    : "";
   const endsProperly =
     /export\s+default\s+.+;?\s*$/.test(lastLine) ||
     /}\s*;\s*$/.test(lastLine) ||
     /}\s*$/.test(lastLine);
 
-  const truncated = !hasExport || !jsxBalanced || !bracesBalanced || !endsProperly;
+  const m = {
+    braceImbalance: Math.abs(braceDelta),
+    braceDelta,
+    parenImbalance: Math.abs(parenDelta),
+    parenDelta,
+    unclosedTags: jsx.unclosed.slice(),
+    unclosedCount: jsx.unclosed.length,
+    mismatchedTags: jsx.mismatched,
+    genericsIgnored: jsx.generics,
+    expectedClosers: delims.expected.slice(),
+    overClosedDelims: delims.overClosed,
+    // A markdown fence surviving into the source means stripStringsAndComments
+    // reads its backticks as a template literal and swallows the rest of the
+    // file — every count below becomes meaningless. Tracked so the repairer
+    // can refuse to act on numbers it cannot trust.
+    codeFences: (code.match(/```/g) || []).length,
+    hasExport,
+    endsProperly,
+  };
 
-  if (!truncated) {
+  m.score =
+    m.braceImbalance +
+    m.parenImbalance +
+    m.unclosedCount +
+    m.mismatchedTags * 2 +
+    m.overClosedDelims * 2 +
+    (m.hasExport ? 0 : 1) +
+    (m.endsProperly ? 0 : 1);
+
+  return m;
+}
+
+/** Per-axis comparison — a candidate may not regress ANY axis. */
+function regressesAnyAxis(before, after) {
+  return (
+    after.braceImbalance > before.braceImbalance ||
+    after.parenImbalance > before.parenImbalance ||
+    after.unclosedCount > before.unclosedCount ||
+    after.mismatchedTags > before.mismatchedTags ||
+    after.overClosedDelims > before.overClosedDelims ||
+    (before.hasExport && !after.hasExport) ||
+    (before.endsProperly && !after.endsProperly)
+  );
+}
+
+/** Public metrics view (no internal-only fields). */
+function publicMetrics(m) {
+  return {
+    score: m.score,
+    braceImbalance: m.braceImbalance,
+    parenImbalance: m.parenImbalance,
+    unclosedTags: m.unclosedCount,
+    mismatchedTags: m.mismatchedTags,
+    genericsIgnored: m.genericsIgnored,
+    unclosedDelimiters: m.expectedClosers.length,
+    overClosedDelimiters: m.overClosedDelims,
+    codeFences: m.codeFences,
+    hasExport: m.hasExport,
+    endsProperly: m.endsProperly,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// detectAndRepairTruncation
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect truncation (e.g. from token limit) and attempt a *proven* repair.
+ *
+ * Detection triggers on the three signals that a truncated file cannot fake:
+ * a missing `export default`, unbalanced braces, or a last line that does not
+ * terminate a block. JSX tag imbalance is measured and reported but is NOT a
+ * trigger on its own — a file whose braces balance, which ends on `}` and
+ * carries a default export cannot have been cut off mid-JSX, so a lone JSX
+ * skew there is a measurement artefact, not truncation. That is the class of
+ * false positive that was appending `</HTMLDivElement>` to valid files.
+ *
+ * Repair contract (mirrors scripts/quality/render-fix-contrast.js):
+ *   measure input -> build candidate -> re-measure candidate -> keep ONLY if
+ *   the candidate scores strictly better AND regresses no individual axis.
+ *   Otherwise the input is returned byte-identical with `reverted: true`.
+ * A repair that cannot be proven to improve the file is never returned.
+ *
+ * @param {string} code – Section component source.
+ * @param {string} sectionName – Section identifier for warnings (e.g. "03-about").
+ * @returns {{ truncated: boolean, repaired: boolean, code: string, warnings: string[],
+ *             reverted: boolean, applied: number, before: object|null, after: object|null }}
+ */
+function detectAndRepairTruncation(code, sectionName) {
+  const warnings = [];
+
+  if (!code || typeof code !== "string") {
     return {
-      truncated: false,
+      truncated: true,
       repaired: false,
-      code: out,
-      warnings: [],
+      code,
+      warnings: ["Code is empty or not a string."],
+      reverted: false,
+      applied: 0,
+      before: null,
+      after: null,
     };
   }
 
-  // --- Repair ---
+  // --- Measure -----------------------------------------------------------
+  const before = measureStructure(code);
 
-  // Component name from const SectionXX or function SectionXX
-  const constMatch = out.match(/(?:export\s+)?const\s+([A-Z][a-zA-Z0-9]*)\s*=/);
-  const fnMatch = out.match(/(?:export\s+)?function\s+([A-Z][a-zA-Z0-9]*)\s*[(\s]/);
-  const componentName = fnMatch ? fnMatch[1] : (constMatch ? constMatch[1] : null);
+  const truncated =
+    before.codeFences > 0 ||
+    !before.hasExport ||
+    before.braceDelta !== 0 ||
+    before.expectedClosers.length > 0 ||
+    before.overClosedDelims > 0 ||
+    !before.endsProperly;
 
-  if (!hasExport && componentName) {
-    out = out.trimEnd();
-    if (!out.endsWith(";")) out += "\n";
-    out += `\nexport default ${componentName};\n`;
-    repaired = true;
-  }
-
-  if (!bracesBalanced && openBraces > closeBraces) {
-    const missing = openBraces - closeBraces;
-    out = out.trimEnd();
-    out += "\n" + "}".repeat(missing);
-    repaired = true;
-  }
-
-  if (!jsxBalanced && openTags > closeTags + selfClosing) {
-    const toClose = openTags - (closeTags + selfClosing);
-    const tagNames = stripped.match(/<([A-Z][a-zA-Z0-9]*)\b/g) || [];
-    const lastOpened = tagNames.slice(-toClose).reverse();
-    out = out.trimEnd();
-    for (const name of lastOpened) {
-      const tagName = name.replace(/^</, "");
-      out += `</${tagName}>`;
+  if (!truncated) {
+    if (before.unclosedCount > 0 || before.mismatchedTags > 0) {
+      warnings.push(
+        `Section ${sectionName}: JSX tag skew observed (${before.unclosedCount} unclosed, ` +
+          `${before.mismatchedTags} mismatched) but braces, export and file ending are all ` +
+          `intact — treated as a measurement artefact, not truncation. No repair attempted.`
+      );
     }
-    repaired = true;
+    return {
+      truncated: false,
+      repaired: false,
+      code,
+      warnings,
+      reverted: false,
+      applied: 0,
+      before: publicMetrics(before),
+      after: publicMetrics(before),
+    };
   }
 
-  if (repaired && Math.abs(out.length - originalLength) > 50) {
+  // A stray markdown fence poisons every measurement (its backticks open a
+  // template literal that swallows the rest of the file), so nothing here can
+  // be proven. Flag it and refuse to touch the file.
+  if (before.codeFences > 0) {
+    warnings.push(
+      `Section ${sectionName} contains ${before.codeFences} markdown code fence(s) — ` +
+        `structural measurement is unreliable and no repair was attempted. ` +
+        `Strip the fence or regenerate the section.`
+    );
+    return {
+      truncated: true,
+      repaired: false,
+      code,
+      warnings,
+      reverted: false,
+      applied: 0,
+      before: publicMetrics(before),
+      after: publicMetrics(before),
+    };
+  }
+
+  // --- Build candidate ---------------------------------------------------
+  // Append in the order a truncated file actually needs closing: innermost
+  // JSX first, then the enclosing braces, then the export statement.
+  let candidate = code.trimEnd();
+  let applied = 0;
+
+  if (before.unclosedCount > 0) {
+    const closers = before.unclosedTags
+      .slice()
+      .reverse()
+      .map((name) => (name === "" ? "</>" : `</${name}>`))
+      .join("");
+    candidate += closers;
+    applied += before.unclosedCount;
+  }
+
+  if (before.expectedClosers.length > 0) {
+    // Reverse order: innermost delimiter closes first. Using the scanned stack
+    // rather than a brace count is what emits `)` where a `return (` is open
+    // instead of blindly appending `}`.
+    candidate += "\n" + before.expectedClosers.slice().reverse().join("");
+    applied += before.expectedClosers.length;
+  }
+
+  if (!before.hasExport) {
+    const fnMatch = code.match(/(?:export\s+)?function\s+([A-Z][a-zA-Z0-9]*)\s*[(\s]/);
+    const constMatch = code.match(/(?:export\s+)?const\s+([A-Z][a-zA-Z0-9]*)\s*[=:]/);
+    const componentName = fnMatch ? fnMatch[1] : constMatch ? constMatch[1] : null;
+    if (componentName) {
+      candidate += `\n\nexport default ${componentName};\n`;
+      applied += 1;
+    } else {
+      warnings.push(
+        `Section ${sectionName} has no default export and no component name could be inferred.`
+      );
+    }
+  }
+
+  if (applied === 0 || candidate === code) {
+    warnings.push(
+      `Section ${sectionName} looks truncated but no repair could be constructed — left unchanged.`
+    );
+    return {
+      truncated: true,
+      repaired: false,
+      code,
+      warnings,
+      reverted: false,
+      applied: 0,
+      before: publicMetrics(before),
+      after: publicMetrics(before),
+    };
+  }
+
+  // --- Re-measure and guard ----------------------------------------------
+  const after = measureStructure(candidate);
+  const improved = after.score < before.score && !regressesAnyAxis(before, after);
+
+  if (!improved) {
+    warnings.push(
+      `Section ${sectionName}: repair candidate REVERTED — it did not measurably improve ` +
+        `structural balance (score ${before.score} -> ${after.score}). File left byte-identical; ` +
+        `regenerate the section instead.`
+    );
+    return {
+      truncated: true,
+      repaired: false,
+      code, // byte-identical input
+      warnings,
+      reverted: true,
+      applied: 0,
+      before: publicMetrics(before),
+      after: publicMetrics(after),
+    };
+  }
+
+  if (after.score > 0) {
+    warnings.push(
+      `Section ${sectionName} was repaired but is still not fully balanced ` +
+        `(residual score ${after.score}) — consider regenerating.`
+    );
+  }
+  if (candidate.length - code.length > 50) {
     warnings.push(
       `Section ${sectionName} was heavily repaired — consider regenerating`
     );
@@ -510,9 +856,13 @@ function detectAndRepairTruncation(code, sectionName) {
 
   return {
     truncated: true,
-    repaired,
-    code: out,
+    repaired: true,
+    code: candidate,
     warnings,
+    reverted: false,
+    applied,
+    before: publicMetrics(before),
+    after: publicMetrics(after),
   };
 }
 
@@ -525,4 +875,8 @@ module.exports = {
   validateComponent,
   processAllSections,
   detectAndRepairTruncation,
+  // Exposed for testing / diagnostics — not used by orchestrate.py.
+  stripStringsAndComments,
+  scanJsxStack,
+  measureStructure,
 };

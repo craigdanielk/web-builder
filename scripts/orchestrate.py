@@ -192,6 +192,126 @@ def reset_token_ledger() -> None:
     TOKEN_LEDGER.clear()
 
 
+# ── Build failure ledger ────────────────────────────────────────────────
+# Stages record real failures here instead of printing a warning and returning
+# normally. main() reads the ledger at the very end to decide BOTH the
+# build_log `status` and the process exit code. Before this existed, a stage
+# could print "FAILED" while the process exited 0 and the build_log said
+# "completed" — the orchestrator's own exit code did not mean what it said.
+BUILD_FAILURES: list[dict] = []
+
+
+def record_build_failure(stage: str, detail: str) -> None:
+    """Record a build-level failure. Non-fatal here, fatal at exit."""
+    BUILD_FAILURES.append({"stage": stage, "detail": detail})
+    print(f"  ✖ BUILD FAILURE [{stage}]: {detail}")
+
+
+def reset_build_failures() -> None:
+    """Start a build with an empty failure ledger (see reset_token_ledger)."""
+    BUILD_FAILURES.clear()
+
+
+# Exit codes. 0 = the build did everything it was asked to and it was measured
+# as passing. Anything else is NOT a success.
+EXIT_OK = 0
+EXIT_FAILED = 1
+EXIT_REVIEW_NEEDED = 2
+
+
+def resolve_build_outcome(render_audit_status: str, deploy_requested: bool) -> tuple[str, int]:
+    """Map recorded failures + render-audit result onto (build_log status, exit code).
+
+    Rules:
+      * Any recorded build failure (dropped section, failed production build,
+        blocked deploy) → 'failed' / exit 1, regardless of the audit.
+      * Deploy was requested and the audit did not PASS → not a success.
+        A 'review_needed' audit logs as 'partial' and gets its own exit code
+        so a caller can tell "defects need a human" apart from "the build
+        broke"; 'failed' and 'skipped' both mean the build was never measured
+        as good → 'failed' / exit 1. `skipped` is deliberately NOT collapsed
+        into success.
+      * Deploy was NOT requested → this run only generated artifacts, so the
+        render audit is not applicable and its 'skipped' value is not held
+        against the run.
+
+    The returned status goes straight into build_log.status, whose CHECK
+    constraint (migrations/20260213192654_init_schema.sql:68) permits only
+    'completed', 'failed' and 'partial' — anything else would make the whole
+    insert fail and lose the row. The precise audit outcome is not lost: it is
+    recorded verbatim in build_log.render_audit_status.
+    """
+    if BUILD_FAILURES:
+        return "failed", EXIT_FAILED
+    if not deploy_requested:
+        return "completed", EXIT_OK
+    if render_audit_status == "passed":
+        return "completed", EXIT_OK
+    if render_audit_status == "review_needed":
+        return "partial", EXIT_REVIEW_NEEDED
+    return "failed", EXIT_FAILED
+
+
+def finish_build(status: str, exit_code: int) -> None:
+    """Print the failure ledger and exit with a code that matches `status`."""
+    if BUILD_FAILURES:
+        print(f"\n  ✖ {len(BUILD_FAILURES)} build failure(s) recorded:")
+        for f in BUILD_FAILURES:
+            print(f"    • [{f['stage']}] {f['detail']}")
+    if exit_code == EXIT_OK:
+        sys.exit(EXIT_OK)
+    print(f"\n  ✖ Build status: {status} (exit {exit_code})")
+    sys.exit(exit_code)
+
+
+# site_dir (resolved str) → did `npm run build` succeed in this process.
+PRODUCTION_BUILD_RESULTS: dict[str, bool] = {}
+
+
+def run_production_build(site_dir: Path, label: str) -> bool:
+    """Run `npm run build` in the generated site. Returns True on success.
+
+    One build per run: the result is memoised per site directory so the
+    deploy stage and the render audit share a single production build
+    instead of compiling the same tree twice.
+    """
+    key = str(site_dir.resolve())
+    prior = PRODUCTION_BUILD_RESULTS.get(key)
+    if prior is True:
+        print(f"  ✓ Reusing production build from earlier in this run ({label})")
+        return True
+    if prior is False:
+        print(f"  ✖ Production build already failed earlier in this run ({label})")
+        return False
+    print(f"  Building Next.js site for production ({label})...")
+    try:
+        result = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=str(site_dir),
+            capture_output=True, text=True, timeout=600,
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        PRODUCTION_BUILD_RESULTS[key] = False
+        record_build_failure("build", f"npm run build could not complete ({label}): {e}")
+        return False
+    if result.returncode != 0:
+        PRODUCTION_BUILD_RESULTS[key] = False
+        tail = (result.stderr.strip() or result.stdout.strip()).splitlines()[-15:]
+        print(f"  ⚠ Next.js production build FAILED ({label}):")
+        for line in tail:
+            print(f"    {line}")
+        record_build_failure("build", f"npm run build failed in {site_dir} ({label})")
+        return False
+    PRODUCTION_BUILD_RESULTS[key] = True
+    print(f"  ✓ Production build succeeded ({label})")
+    return True
+
+
+def production_build_ok(site_dir: Path) -> bool:
+    """True only when `npm run build` has succeeded for this site in this run."""
+    return PRODUCTION_BUILD_RESULTS.get(str(site_dir.resolve())) is True
+
+
 def persist_token_ledger(output_dir: Path) -> dict | None:
     """Write the build's token ledger to output/<project>/token-ledger.json.
 
@@ -445,10 +565,25 @@ SITE_DIR_NAME = "site"  # Rendered Next.js project lives at output/{project}/sit
 
 # --- URL Extraction Stage ---
 
-def stage_url_extract(url: str, project_name: str) -> tuple[str, str, dict, Path, dict | None]:
+def stage_url_extract(
+    url: str,
+    project_name: str,
+    captures_dir: Path | None = None,
+    routes: str | None = None,
+    max_pages: int | None = None,
+) -> tuple[str, str, dict, Path, dict | None]:
     """
     Stage 0: Extract from URL and generate preset + brief.
     Returns (preset_name, brief_content, section_contexts, extraction_dir, site_spec).
+
+    captures_dir: an audit run directory holding captures/ and
+        captures_manifest.json. When given, build-site-spec.js additionally
+        harvests every captured route into site_spec["pages"], which is what
+        turns a one-URL clone into a real multi-page build.
+    routes: CSV of routes to harvest. Load-bearing today — the cape-crypto
+        bundle holds 25 captures (6 real routes + 18 article slugs), and
+        without a route list every article becomes its own static page instead
+        of one /blog/[handle] template.
     """
     print("\n🌐 Stage 0: Extracting from URL...")
     print(f"  URL: {url}")
@@ -547,15 +682,39 @@ console.log(JSON.stringify(contexts));
     print("\n  [0d] Building site-spec.json from extraction data...")
     site_spec_script = QUALITY_DIR / "build-site-spec.js"
     if site_spec_script.exists() and extraction_data_path.exists() and mapped_sections_path.exists():
+        _cmd = [node, str(site_spec_script), str(extraction_dir), project_name]
+        if captures_dir:
+            _cmd += ["--captures", str(captures_dir)]
+            if routes:
+                _cmd += ["--routes", routes]
+            if max_pages:
+                _cmd += ["--max-pages", str(max_pages)]
+            print(f"  Harvesting captured routes from {captures_dir}")
         result = subprocess.run(
-            [node, str(site_spec_script), str(extraction_dir), project_name],
+            _cmd,
             capture_output=True,
             text=True,
             cwd=str(ROOT),
-            timeout=60,
+            # Harvesting 25 captured routes is far more work than one spec.
+            timeout=300 if captures_dir else 60,
         )
         if result.returncode != 0:
-            print(f"  ⚠ build-site-spec.js failed: {result.stderr[:300] if result.stderr else '(no stderr)'}")
+            _err = (result.stderr or "").strip() or "(no stderr)"
+            if captures_dir:
+                # A capture bundle was explicitly requested and could not be
+                # harvested — e.g. the audit ran without --store-html, so the
+                # rows carry an html_length but no html. Falling back to the
+                # single-URL spec here would silently rebuild the one-page
+                # starvation this flag exists to fix, and the build would look
+                # like it succeeded. Fail the run instead.
+                print(f"  ✖ build-site-spec.js failed with --captures: {_err[:600]}")
+                record_build_failure(
+                    "site-spec",
+                    f"capture harvest failed for {captures_dir} (exit {result.returncode}); "
+                    f"refusing to fall back to a single-page spec",
+                )
+                raise SystemExit(EXIT_FAILED)
+            print(f"  ⚠ build-site-spec.js failed: {_err[:300]}")
         else:
             for line in result.stdout.strip().split('\n'):
                 if line.strip():
@@ -564,7 +723,9 @@ console.log(JSON.stringify(contexts));
             if site_spec_path.exists():
                 try:
                     site_spec = json.loads(site_spec_path.read_text(encoding="utf-8"))
-                    print(f"  ✓ site-spec.json generated ({len(site_spec.get('sections', []))} sections)")
+                    _pages = site_spec.get("pages") or []
+                    print(f"  ✓ site-spec.json generated ({len(site_spec.get('sections', []))} sections"
+                          + (f", {len(_pages)} harvested pages" if _pages else "") + ")")
                 except (json.JSONDecodeError, OSError):
                     print("  ⚠ Could not parse site-spec.json")
     else:
@@ -931,6 +1092,275 @@ def parse_preset_section_sequence(preset_name: str) -> list[dict]:
     return result
 
 
+# Archetype aliases. The Supabase section registry stores some archetypes
+# under a longer name than the canonical taxonomy name in
+# skills/section-taxonomy.md (e.g. "FAQ-ACCORDION" vs "FAQ", "CTA-STRIP"
+# vs "CTA"). Collapsing/deduping on the raw string therefore treated the
+# registry entry and the harvested entry as two different sections, and
+# the page ended up with the SAME section twice (cape-crypto shipped both
+# a FAQ-ACCORDION and a FAQ). Dedupe on the canonical key while leaving
+# each section's own `archetype` value untouched, so downstream template
+# lookup (check_template_exists) still resolves the registry name.
+ARCHETYPE_ALIASES = {
+    "FAQ-ACCORDION": "FAQ",
+    "FAQS": "FAQ",
+    "CTA-STRIP": "CTA",
+    "CTA-BANNER": "CTA",
+    "CALL-TO-ACTION": "CTA",
+    "BLOG-PREVIEW": "BLOG",
+    "LOGO-CLOUD": "LOGO-BAR",
+    "SOCIAL-PROOF": "TESTIMONIALS",
+    "NAVBAR": "NAV",
+    "NAVIGATION": "NAV",
+}
+
+
+def canonical_archetype(archetype: str) -> str:
+    """Canonical archetype key — THE join key between registry and source.
+
+    Module-level because it is the only stable way to pair a registry section
+    with the harvested section it corresponds to: registry order and source
+    order are unrelated, and the loop index of one has no meaning in the other.
+    Every per-page join (reconciliation, section contexts) uses this.
+    """
+    arch = (archetype or "").upper().strip()
+    return ARCHETYPE_ALIASES.get(arch, arch)
+
+
+def normalize_page_id(page: dict) -> str:
+    """Page identity used to join site-spec pages to site-manifest pages.
+
+    Prefers an explicit `id`, else derives one from the route: "/" -> homepage,
+    "/wealth" -> wealth, "/blog/index" -> blog-index. Lowercased and
+    slash-free so a route-derived slug and a manifest id compare equal.
+    """
+    raw = page.get("id") or page.get("page_id") or page.get("route") or page.get("path") or ""
+    slug = str(raw).strip().lower().strip("/")
+    slug = slug.replace("/", "-")
+    return slug or "homepage"
+
+
+def page_lookup_keys(page: dict) -> list[str]:
+    """Every identity a manifest page may legitimately be known by.
+
+    site_manifest._page_entry_for_type names a static page `{page_type}-page`
+    ("wealth" -> id "wealth-page") while a site-spec page is keyed on the bare
+    slug. Matching on `id` alone therefore misses every static page and the
+    build silently falls back to generated copy — the exact silent-miss this
+    whole change is meant to remove. Try id, page_type and route, each also
+    without the "-page" suffix.
+    """
+    keys: list[str] = []
+    for raw in (page.get("id"), page.get("page_id"), page.get("page_type"),
+                page.get("route"), page.get("path")):
+        if not raw:
+            continue
+        slug = str(raw).strip().lower().strip("/").replace("/", "-") or "homepage"
+        if slug not in keys:
+            keys.append(slug)
+        if slug.endswith("-page") and slug[:-len("-page")] not in keys:
+            keys.append(slug[:-len("-page")])
+    return keys or ["homepage"]
+
+
+def resolve_page_entry(mapping: dict | None, page: dict):
+    """Look a manifest page up in a page-id-keyed mapping, tolerating aliases."""
+    if not mapping:
+        return None
+    for key in page_lookup_keys(page):
+        if key in mapping:
+            return mapping[key]
+    return None
+
+
+def build_site_spec_by_page(site_spec: dict | None) -> dict[str, dict]:
+    """Split a multi-page site-spec into one page-scoped site_spec per page id.
+
+    Each value is a full site_spec (global `style` preserved, so every page is
+    generated against the same design tokens) whose `sections` are that page's
+    sections. A spec with no `pages` key is single-page and yields {} — the
+    single-page path keeps reading `site_spec["sections"]` unchanged.
+    """
+    if not isinstance(site_spec, dict):
+        return {}
+    pages = site_spec.get("pages")
+    if not isinstance(pages, list) or not pages:
+        return {}
+    shared = {k: v for k, v in site_spec.items() if k not in ("pages", "sections")}
+    by_page: dict[str, dict] = {}
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        page_id = normalize_page_id(page)
+        sections = [s for s in (page.get("sections") or []) if isinstance(s, dict)]
+        by_page[page_id] = {**shared, "sections": sections}
+    return by_page
+
+
+def build_section_contexts_by_page(
+    section_contexts: dict | None,
+    site_spec_by_page: dict[str, dict] | None,
+    site_manifest: dict | None,
+) -> dict[str, dict] | None:
+    """Re-key flat URL-extraction section contexts onto each page's sections.
+
+    `section_contexts` is keyed by SOURCE index (its position in the extracted
+    page), while stage_sections looks up `str(i)` where i is the GENERATION
+    index (its position in the registry-ordered section list). Those two
+    indices are unrelated, so passing the flat dict straight through would
+    attach the source hero's reference block to whatever archetype happens to
+    sit at generation index 0. Join through the archetype instead: source
+    index -> archetype (via the page's site-spec) -> generation index (via the
+    reconciled manifest sections). Returns None when nothing can be joined.
+    """
+    if not section_contexts or not site_spec_by_page or not site_manifest:
+        return None
+    out: dict[str, dict] = {}
+    for page in site_manifest.get("pages", []):
+        page_id = page.get("id", "") or normalize_page_id(page)
+        spec = resolve_page_entry(site_spec_by_page, page)
+        if not spec:
+            continue
+        ctx_by_arch: dict[str, str] = {}
+        for source_section in spec.get("sections", []):
+            key = str(source_section.get("index"))
+            if key in section_contexts:
+                ctx_by_arch[canonical_archetype(source_section.get("archetype", ""))] = section_contexts[key]
+        if not ctx_by_arch:
+            continue
+        page_ctx: dict[str, str] = {}
+        for gen_index, section in enumerate(page.get("sections", [])):
+            ctx = ctx_by_arch.get(canonical_archetype(section.get("archetype", "")))
+            if ctx:
+                page_ctx[str(gen_index)] = ctx
+        if page_ctx:
+            out[page_id] = page_ctx
+    return out or None
+
+
+def section_identity(section: dict, fallback_index: int = 0) -> str:
+    """Durable identity for a section — `section_uid` when the harvest minted one.
+
+    build-site-spec.js mints `section_uid` = sha1(page|archetype|variant|first
+    heading), stable across reordering and regeneration. Everything that needs
+    to name a section (copy manifest, findings lookup, traces) uses this rather
+    than list position, which changes whenever a section is added or dropped.
+    Harvest-less sections (registry gap-fills, legacy scaffold) fall back to
+    their index, which is all the identity they have.
+    """
+    uid = section.get("section_uid")
+    if isinstance(uid, str) and uid.strip():
+        return uid.strip()
+    return str(section.get("source_index", section.get("index", fallback_index)))
+
+
+def reconcile_page_sections(
+    registry_sections: list[dict],
+    harvested_sections: list[dict],
+) -> tuple[list[dict], dict]:
+    """Reconcile ONE page with the HARVEST as the spine and the registry as gap-filler.
+
+    `reconcile_sections` collapses BOTH inputs to one entry per canonical
+    archetype (`_collapse` keeps only the higher `_content_score`). That is
+    correct when the registry defines the page shape, but it is lossy against a
+    real source page: cape-crypto's /about has two ABOUT sections ("Our story"
+    and "Backed by Numeral") and /blog has six CTAs — all real, all distinct
+    copy. Passing them through reconcile_sections drops one ABOUT and five
+    CTAs, verified directly.
+
+    So this reconciler inverts the relationship:
+      * every harvested section survives, in SOURCE order, duplicates included;
+      * a harvested section with no variant borrows the registry's variant for
+        its archetype (registry stays authoritative for shape);
+      * registry archetypes absent from the harvest entirely are appended as
+        gap-fills, so a required-but-missing section is still generated.
+
+    With no harvest it delegates to reconcile_sections, leaving registry-only
+    pages byte-identical to before.
+    """
+    harvested = [s for s in (harvested_sections or []) if isinstance(s, dict)]
+    if not harvested:
+        return reconcile_sections(registry_sections, [])
+
+    registry = [s for s in (registry_sections or []) if isinstance(s, dict)]
+    registry_variant: dict[str, str] = {}
+    registry_direction: dict[str, str] = {}
+    for sec in registry:
+        arch = canonical_archetype(sec.get("archetype", ""))
+        if arch and arch not in registry_variant:
+            registry_variant[arch] = sec.get("variant") or ""
+            registry_direction[arch] = sec.get("content_direction") or ""
+
+    final: list[dict] = []
+    seen_archetypes: set[str] = set()
+    duplicates_kept = 0
+    for position, sec in enumerate(harvested):
+        arch = canonical_archetype(sec.get("archetype", ""))
+        if not arch:
+            continue
+        entry = dict(sec)
+        if arch in seen_archetypes:
+            duplicates_kept += 1
+        seen_archetypes.add(arch)
+        if not (entry.get("variant") or "").strip():
+            entry["variant"] = registry_variant.get(arch) or ""
+        if not (entry.get("content_direction") or "").strip() and registry_direction.get(arch):
+            entry["content_direction"] = registry_direction[arch]
+        entry.setdefault("source_index", sec.get("index", position))
+        final.append(entry)
+
+    gap_filled = 0
+    for sec in registry:
+        arch = canonical_archetype(sec.get("archetype", ""))
+        if not arch or arch in seen_archetypes:
+            continue
+        gap = dict(sec)
+        gap.setdefault("content", {})
+        seen_archetypes.add(arch)
+        final.append(gap)
+        gap_filled += 1
+
+    meta = {
+        "total": len(final),
+        "registry_count": len(registry),
+        "harvest_count": len(harvested),
+        "gap_filled_count": gap_filled,
+        # Under a harvest spine duplicates are KEPT, not resolved. Reported so
+        # the number that used to mean "silently deleted" now means "preserved".
+        "duplicates_resolved": 0,
+        "duplicates_kept": duplicates_kept,
+    }
+    return final, meta
+
+
+def merge_copy_summaries(by_page: dict[str, dict] | None) -> dict | None:
+    """Fold per-page copy summaries into one build-level summary.
+
+    Keeps the single-page summary shape so build_log's harvested_copy_ratio
+    reads the same field either way; the ratio is recomputed over the whole
+    build rather than averaged, so pages with more sections weigh more.
+    """
+    if not by_page:
+        return None
+    harvested = slots = 0
+    counts = {"reproduced": 0, "revised": 0, "generated": 0}
+    for summary in by_page.values():
+        s = (summary or {}).get("summary", {})
+        harvested += s.get("harvested_strings_total", 0)
+        slots += s.get("total_copy_slots", 0)
+        for key in counts:
+            counts[key] += s.get(key, 0)
+    return {
+        "summary": {
+            **counts,
+            "harvested_strings_total": harvested,
+            "total_copy_slots": slots,
+            "harvested_copy_ratio": round(harvested / max(slots, 1), 4) if harvested else 0.0,
+        },
+        "pages": {pid: (s or {}).get("summary", {}) for pid, s in by_page.items()},
+    }
+
+
 def reconcile_sections(
     registry_sections: list[dict],
     harvested_sections: list[dict],
@@ -1028,31 +1458,7 @@ def reconcile_sections(
         # 2. Fall back to an archetype-based sensible default.
         return _ARCH_VARIANTS.get(arch, _DEFAULT_VARIANT)
 
-    # Archetype aliases. The Supabase section registry stores some archetypes
-    # under a longer name than the canonical taxonomy name in
-    # skills/section-taxonomy.md (e.g. "FAQ-ACCORDION" vs "FAQ", "CTA-STRIP"
-    # vs "CTA"). Collapsing/deduping on the raw string therefore treated the
-    # registry entry and the harvested entry as two different sections, and
-    # the page ended up with the SAME section twice (cape-crypto shipped both
-    # a FAQ-ACCORDION and a FAQ). Dedupe on the canonical key while leaving
-    # each section's own `archetype` value untouched, so downstream template
-    # lookup (check_template_exists) still resolves the registry name.
-    _ARCHETYPE_ALIASES = {
-        "FAQ-ACCORDION": "FAQ",
-        "FAQS": "FAQ",
-        "CTA-STRIP": "CTA",
-        "CTA-BANNER": "CTA",
-        "CALL-TO-ACTION": "CTA",
-        "BLOG-PREVIEW": "BLOG",
-        "LOGO-CLOUD": "LOGO-BAR",
-        "SOCIAL-PROOF": "TESTIMONIALS",
-        "NAVBAR": "NAV",
-        "NAVIGATION": "NAV",
-    }
-
-    def _canonical_arch(archetype: str) -> str:
-        arch = (archetype or "").upper().strip()
-        return _ARCHETYPE_ALIASES.get(arch, arch)
+    _canonical_arch = canonical_archetype
 
     # Content richness score — used to pick the populated section when the
     # same archetype appears more than once (e.g. an empty hero vs a
@@ -1147,15 +1553,19 @@ def reconcile_sections(
             final_sections.append(extra)
 
     # 6. Build metadata
+    # Count DISTINCT archetypes that survived, not input rows. Counting rows
+    # made the function misreport its own loss: three harvested sections
+    # collapsing to two still reported harvest_count 3, so the metadata said
+    # everything came through while a section had just been deleted.
     _final_archs = {_canonical_arch(s.get("archetype", "")) for s in final_sections}
-    registry_count = sum(
-        1 for sec in registry_sections
+    registry_count = len({
+        _canonical_arch(sec.get("archetype", "")) for sec in registry_sections
         if _canonical_arch(sec.get("archetype", "")) in _final_archs
-    )
-    harvest_count = sum(
-        1 for sec in harvested_sections
+    })
+    harvest_count = len({
+        _canonical_arch(sec.get("archetype", "")) for sec in harvested_sections
         if _canonical_arch(sec.get("archetype", "")) in _final_archs
-    )
+    })
 
     reconciliation_meta = {
         "total": len(final_sections),
@@ -1381,6 +1791,12 @@ def harvest_verbatim_copy(tenant_id: str) -> dict[str, Any]:
             parser.close()
             section_harvest: dict[str, Any] = {
                 "index": idx,
+                # page_type was selected from audit_captures but thrown away,
+                # which left the harvest un-attributable: there was no way to
+                # tell which page a row's copy came from, so it could not be
+                # scoped to a page without pasting one page's words onto
+                # another. Carry it through (see _page_audit_harvest).
+                "page_type": row.get("page_type") or row.get("route") or "",
                 "headings": parser.headings,
                 "body_text": parser.body_text,
                 "ctas": parser.ctas,
@@ -1435,6 +1851,172 @@ def harvested_copy_strings(content: dict) -> list[str]:
     return out
 
 
+#: How many harvested body strings one section absorbs from the page-level pool.
+AUDIT_BODY_PER_SECTION = 3
+
+
+def allocate_audit_harvest(sections: list[dict], audit_harvest: dict | None) -> dict[int, dict]:
+    """Allocate PAGE-level harvested copy to sections that have no copy of their own.
+
+    `harvest_verbatim_copy` parses whole `audit_captures` HTML rows, so its
+    strings are page-scoped: they carry no archetype and no section boundary,
+    and therefore cannot be *semantically* matched to a generated section.
+    Before this existed the harvest was threaded into stage_sections and read
+    only by the post-loop manifest arithmetic — it inflated
+    `harvested_copy_ratio` while reaching no prompt and changing no generated
+    character.
+
+    Rather than pretend to a match we do not have, this is an explicit,
+    deterministic ALLOCATION: sections that have no per-section source copy
+    take, in order, the next unconsumed heading, up to
+    AUDIT_BODY_PER_SECTION body strings, and the next CTA. Nothing is handed
+    out twice, so two sections never render the same paragraph, and sections
+    that already carry real per-section copy (from site-spec) are left alone —
+    a genuine per-section match always beats this fallback.
+
+    Returns {index in `sections` -> content dict} for the sections it fed.
+    """
+    if not audit_harvest:
+        return {}
+    headings: list[str] = []
+    body: list[str] = []
+    ctas: list[str] = []
+    for src in audit_harvest.get("sections") or []:
+        headings += [h for h in (src.get("headings") or []) if isinstance(h, str) and h.strip()]
+        body += [b for b in (src.get("body_text") or []) if isinstance(b, str) and b.strip()]
+        ctas += _normalize_ctas(src.get("ctas"))
+    if not (headings or body or ctas):
+        return {}
+
+    allocation: dict[int, dict] = {}
+    hi = bi = ci = 0
+    for idx, section in enumerate(sections):
+        if harvested_copy_strings(section_content_dict(section)):
+            continue  # already has real per-section copy — do not override it
+        if hi >= len(headings) and bi >= len(body) and ci >= len(ctas):
+            break  # pool exhausted
+        content: dict = {"headings": [], "body_text": [], "ctas": []}
+        if hi < len(headings):
+            content["headings"].append(headings[hi])
+            hi += 1
+        take = min(AUDIT_BODY_PER_SECTION, len(body) - bi)
+        if take > 0:
+            content["body_text"] = body[bi:bi + take]
+            bi += take
+        if ci < len(ctas):
+            content["ctas"].append(ctas[ci])
+            ci += 1
+        allocation[idx] = content
+    return allocation
+
+
+def section_content_dict(section: dict) -> dict:
+    """The HARVESTED COPY dict for a section — {} when there is none.
+
+    `section["content"]` is overloaded across the pipeline: the scaffold path
+    (parse_scaffold, get_section_sequence) puts a content-DIRECTION *string*
+    there, while the site-spec path puts the harvested copy *dict*
+    {headings, body_text, ctas}. Only the dict is real source copy, so every
+    copy-fidelity consumer must go through here rather than reading
+    section["content"] and hoping.
+    """
+    content = section.get("content")
+    return content if isinstance(content, dict) else {}
+
+
+#: Archetypes whose markup is dominated by a REPEATED item template — cards,
+#: rows, accordion panels, logo tiles. Output scales with the item count, so a
+#: repeater holding six strings emits far more JSX than a prose block holding
+#: the same six strings.
+_REPEATER_ARCHETYPES = frozenset({
+    "FEATURES", "HOW-IT-WORKS", "FAQ", "TESTIMONIALS", "PRICING", "TEAM",
+    "PORTFOLIO", "PRODUCT-SHOWCASE", "BLOG-PREVIEW", "GALLERY", "COMPARISON",
+    "INTEGRATIONS", "STATS", "TRUST-BADGES", "LOGO-BAR",
+})
+
+#: Archetypes that carry a whole layout — two-column splits, nav trees, link
+#: columns, forms — on top of whatever copy they hold.
+_LAYOUT_ARCHETYPES = frozenset({
+    "HERO", "NAV", "FOOTER", "ABOUT", "CONTACT", "PRODUCT-DETAIL",
+})
+
+#: Upper bound on a derived section budget. Stops a pathological harvest (a
+#: blog index with fifty strings) from asking for an unbounded generation.
+SECTION_TOKEN_CEILING = 12288
+
+
+def derive_section_token_budget(
+    section: dict,
+    animation_budget: int | None = None,
+    has_component_source: bool = False,
+) -> int:
+    """Derive a section's max_tokens from the SECTION, not from whether
+    animation extraction data happens to exist.
+
+    The budget used to be `anim_ctx.get("tokenBudget", MAX_TOKENS["section"])`.
+    On the multi-page path there is no per-page extraction dir, so `anim_ctx`
+    is empty for every section and the budget silently fell to the 4096 floor
+    — including for sections carrying a dozen harvested strings. Result: near
+    every section truncated, retried 2-3 times, and some were dropped outright
+    (`02-trust_badges.tsx` on the homepage). The animation context is now an
+    optional UPLIFT over a content-derived floor rather than the sole source.
+
+    Derivation: a fixed component shell, plus the harvested copy itself, plus
+    per-item wrapper markup weighted by whether the archetype repeats a
+    template. Rounded up to a 2048 step so small content differences do not
+    produce budgets that differ by a few dozen tokens.
+    """
+    archetype = (section.get("archetype") or "").upper()
+    strings = harvested_copy_strings(section_content_dict(section))
+
+    # Imports, "use client", motion variants, section wrapper, close.
+    budget = 3072
+    if archetype in _LAYOUT_ARCHETYPES:
+        budget += 2048
+    elif archetype in _REPEATER_ARCHETYPES:
+        budget += 1024
+
+    # The copy is emitted verbatim into JSX (~3 chars/token) …
+    budget += sum(len(s) for s in strings) // 3
+    # … and every item also costs its wrapper, className soup, and — for a
+    # repeater — an entry in the backing data array.
+    budget += len(strings) * (200 if archetype in _REPEATER_ARCHETYPES else 120)
+
+    # Images in the section become <Image>/background blocks of their own.
+    images = section.get("images")
+    if isinstance(images, list):
+        budget += len(images) * 150
+
+    if has_component_source:
+        budget = max(budget, 8192)
+    if animation_budget:
+        budget = max(budget, int(animation_budget))
+
+    step = 2048
+    budget = ((budget + step - 1) // step) * step
+    return max(MAX_TOKENS["section"], min(budget, SECTION_TOKEN_CEILING))
+
+
+def section_content_direction(section: dict) -> str:
+    """The human-readable content direction for a section, whatever the shape.
+
+    Prefers the dedicated `content_direction` key (registry sections), falls
+    back to a string `content` (legacy scaffold), then to the first harvested
+    heading. Never returns a dict, so it is safe to interpolate into a prompt.
+    """
+    direction = section.get("content_direction")
+    if isinstance(direction, str) and direction.strip():
+        return direction.strip()
+    content = section.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    headings = [
+        h for h in (section_content_dict(section).get("headings") or [])
+        if isinstance(h, str) and h.strip()
+    ]
+    return headings[0].strip() if headings else ""
+
+
 def build_source_copy_block(content: dict, finding: dict | None = None) -> str:
     """Build a verbatim-reproduction (or weakness-gated revision) block for a section.
 
@@ -1486,7 +2068,17 @@ def build_source_copy_block(content: dict, finding: dict | None = None) -> str:
         lines += [f"  - {b}" for b in body_text]
     if ctas:
         lines.append("\nCTAS (button / link labels):")
-        lines += [f"  - {c}" for c in ctas]
+        # `content.ctas` is a list of bare label strings; the real hrefs live
+        # alongside in `content.cta_links` (build-site-spec.js keeps them
+        # separate so the single-URL path's string shape is unchanged). Pair
+        # them up so a CTA links where the source linked instead of to "#".
+        hrefs = {}
+        for link in (content.get("cta_links") or []):
+            if isinstance(link, dict) and link.get("text") and link.get("href"):
+                hrefs.setdefault(str(link["text"]).strip(), str(link["href"]).strip())
+        for c in ctas:
+            href = hrefs.get(c)
+            lines.append(f"  - {c}" + (f"  →  href: {href}" if href else ""))
     return "\n".join(lines) + "\n"
 
 
@@ -1739,6 +2331,267 @@ _CONTENT_TOKEN_DEFAULTS: dict[str, str] = {
 _CONTENT_TOKEN_RE = re.compile(r'(?<!["\w.])(\{)([a-z][a-z_0-9]{2,})(\})(?!["\w])')
 
 
+#: Tokens no resolver could fill. Surfaced at the end of a build so an empty
+#: slot is a reported gap rather than a silent one.
+_UNRESOLVED_TOKENS: dict[str, int] = {}
+
+
+def _record_unresolved_token(token_name: str) -> None:
+    _UNRESOLVED_TOKENS[token_name] = _UNRESOLVED_TOKENS.get(token_name, 0) + 1
+
+
+#: Any `{token_name}` in a template body, including inside an attribute string
+#: (`href="{cta_url}"`). Excludes `{obj.field}` — a JS member expression inside
+#: a .map callback.
+_TEMPLATE_TOKEN_RE = re.compile(r'(?<![\w.])\{([a-z][a-z_0-9]*)\}(?![\w])')
+
+#: JSX/JS identifiers that appear in braces but are code, not content slots —
+#: `key={index}` is a React key, not a token anyone can fill.
+_TEMPLATE_RESERVED_IDENTS = frozenset({
+    "index", "key", "children", "item", "feature", "step", "faq", "logo",
+    "product", "testimonial", "stat", "i",
+})
+
+#: `{prefix_N_field}` — one entry of a template's repeated item array.
+_NUMBERED_TOKEN_RE = re.compile(r'^([a-z]+)_(\d+)_(.+)$')
+
+#: What a slot wants, inferred from its field name. The harvest stores copy as
+#: parallel lists rather than typed slots, so the field name is the only signal
+#: available for deciding which list a slot draws from.
+_SLOT_TITLE_FIELDS = frozenset({"title", "name", "question", "label", "heading", "headline"})
+_SLOT_BODY_FIELDS = frozenset({"description", "answer", "body", "text", "subtitle", "subheadline", "quote"})
+_SLOT_IMAGE_FIELDS = frozenset({"image_url", "image", "src", "logo", "avatar"})
+_SLOT_ALT_FIELDS = frozenset({"image_alt", "alt"})
+_SLOT_URL_FIELDS = frozenset({"url", "href", "link"})
+
+
+def parse_template_token_contract(code: str) -> list[str]:
+    """Declared fillable slots, from the template's `// Tokens:` comment.
+
+    `slot_schema` is the column that is *supposed* to carry this contract, but
+    it is an empty object on 72 of the 74 templates in Supabase, so it cannot
+    be the source. Every template does carry a well-formed `// Tokens:` line,
+    so that is parsed instead. Returns the declared names with the `[]`
+    repeater marker stripped (`{faqs[].question}` -> `faqs.question`).
+    """
+    for line in code.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("// Tokens:"):
+            return re.findall(r'\{([^{}]+)\}', stripped[len("// Tokens:"):])
+    return []
+
+
+def _cta_pairs(content: dict) -> list[tuple[str, str]]:
+    """(text, href) for a section's CTAs, preferring the linked form."""
+    pairs: list[tuple[str, str]] = []
+    for link in (content.get("cta_links") or []):
+        if isinstance(link, dict) and (link.get("text") or "").strip():
+            pairs.append((link["text"].strip(), (link.get("href") or "").strip()))
+    if not pairs:
+        for text in _normalize_ctas(content.get("ctas")):
+            pairs.append((text, ""))
+    return pairs
+
+
+def build_template_fill(section: dict) -> tuple[dict[str, str], dict]:
+    """Map a template's tokens to this section's HARVESTED copy.
+
+    Values come only from `section["content"]` and `section["images"]` — the
+    real strings the crawler took off the source page. Nothing is drawn from
+    `_CONTENT_TOKEN_DEFAULTS` / `_NUMBERED_TOKEN_DEFAULTS` / `_NUMBERED_VARIETY`
+    here: a slot the harvest cannot fill is reported as unfilled rather than
+    invented, so the coverage number means what it says.
+
+    Returns (values, coverage) where `values` maps token name -> harvested
+    string and `coverage` counts filled/empty slots.
+
+    KNOWN LIMITATION, reported rather than papered over: the harvest flattens a
+    section into parallel `headings[]` / `body_text[]` lists with no item
+    grouping, so pairing heading[i] with body[i] for a repeater is positional
+    inference, not a real join. Where a section has one more body string than
+    it has items, that leading string is treated as the section subtitle. That
+    rule is right for HOW-IT-WORKS on this site and off-by-one for FEATURES.
+    Fixing it properly means the harvester emitting `items[]`.
+    """
+    content = section_content_dict(section)
+    headings = [h.strip() for h in (content.get("headings") or []) if isinstance(h, str) and h.strip()]
+    bodies = [b.strip() for b in (content.get("body_text") or []) if isinstance(b, str) and b.strip()]
+    ctas = _cta_pairs(content)
+    images = [im for im in (section.get("images") or []) if isinstance(im, dict) and im.get("src")]
+
+    section_title = headings[0] if headings else ""
+    item_titles = headings[1:]
+    # A body string per item, plus possibly one leading section subtitle.
+    if item_titles and len(bodies) > len(item_titles):
+        section_subtitle, item_bodies = bodies[0], bodies[1:]
+    elif item_titles:
+        section_subtitle, item_bodies = "", bodies
+    else:
+        section_subtitle, item_bodies = (bodies[0] if bodies else ""), bodies[1:]
+
+    values: dict[str, str] = {}
+
+    def scalar(name: str) -> str:
+        if name in ("headline", "section_title", "title", "section_label"):
+            return section_title
+        if name in ("subheadline", "section_subtitle", "section_body", "subtitle", "description"):
+            return section_subtitle
+        if name == "section_body_2":
+            return item_bodies[0] if item_bodies else ""
+        if name in ("cta_text", "primary_cta_text"):
+            return ctas[0][0] if ctas else ""
+        if name in ("cta_url", "primary_cta_url"):
+            return ctas[0][1] if ctas else ""
+        if name == "secondary_cta_text":
+            return ctas[1][0] if len(ctas) > 1 else ""
+        if name == "secondary_cta_url":
+            return ctas[1][1] if len(ctas) > 1 else ""
+        if name in ("image_url", "image_src"):
+            return images[0]["src"] if images else ""
+        if name in ("image_alt",):
+            return (images[0].get("alt") or "") if images else ""
+        return ""
+
+    def numbered(index: int, field: str) -> str:
+        i = index - 1
+        if field in _SLOT_TITLE_FIELDS:
+            return item_titles[i] if i < len(item_titles) else ""
+        if field in _SLOT_BODY_FIELDS:
+            return item_bodies[i] if i < len(item_bodies) else ""
+        if field in _SLOT_IMAGE_FIELDS:
+            return images[i]["src"] if i < len(images) else ""
+        if field in _SLOT_ALT_FIELDS:
+            return (images[i].get("alt") or "") if i < len(images) else ""
+        if field in _SLOT_URL_FIELDS:
+            return ctas[i][1] if i < len(ctas) else ""
+        if field == "number":
+            return str(index)
+        return ""
+
+    filled = empty = 0
+    empty_slots: list[str] = []
+    body = "\n".join(
+        ln for ln in section.get("_template_code", "").splitlines()
+        if not ln.lstrip().startswith("//")
+    )
+    for token in sorted(set(_TEMPLATE_TOKEN_RE.findall(body))):
+        if token in _TEMPLATE_RESERVED_IDENTS:
+            continue
+        m = _NUMBERED_TOKEN_RE.match(token)
+        val = numbered(int(m.group(2)), m.group(3)) if m else scalar(token)
+        values[token] = val
+        if val:
+            filled += 1
+        else:
+            empty += 1
+            empty_slots.append(token)
+
+    return values, {"filled": filled, "empty": empty, "empty_slots": empty_slots}
+
+
+def apply_template_fill(code: str, values: dict[str, str]) -> str:
+    """Substitute harvested values into a template, then drop dead repeater rows.
+
+    An item array entry whose every value came out empty is removed rather than
+    rendered as a blank card — the source page has four features, not six, and
+    padding it to six is the fabrication this whole exercise is about.
+    """
+    def _sub(m: re.Match) -> str:
+        name = m.group(1)
+        if name in _TEMPLATE_RESERVED_IDENTS or name not in values:
+            return m.group(0)  # real JS, or a token this fill never claimed
+        return values[name]
+
+    # Comment lines (notably `// Tokens:`) declare the contract; substituting
+    # into them rewrites the declaration and destroys the record of what the
+    # template asked for.
+    filled = "\n".join(
+        ln if ln.lstrip().startswith("//") else _TEMPLATE_TOKEN_RE.sub(_sub, ln)
+        for ln in code.splitlines()
+    )
+
+    kept: list[str] = []
+    for line in filled.splitlines():
+        stripped = line.strip().rstrip(",")
+        if stripped.startswith("{") and stripped.endswith("}") and ":" in stripped:
+            quoted = re.findall(r":\s*'([^']*)'", stripped) + re.findall(r':\s*"([^"]*)"', stripped)
+            if quoted and not any(v.strip() for v in quoted):
+                continue  # every slot in this item row is empty — drop the row
+        kept.append(line)
+    return "\n".join(kept) + ("\n" if filled.endswith("\n") else "")
+
+
+#: Memoization for template resolution, independent of `build_cache`.
+#:
+#: `check_template_exists(archetype, variant, cache)` needs only the archetype
+#: and the variant — both of which every section carries, whether its sequence
+#: came from the industry registry, a preset, or the harvest. The BuildCache it
+#: takes is a per-build memo; its industry/page_type fields are never consulted
+#: on that path. But the call site was gated on `build_cache`, which is only
+#: built under `--industry`, so a `--preset` build never looked at the template
+#: library at all and sent all 54 sections to the LLM — while 45 of them
+#: existed in Supabase as reviewed components. This cache keeps the lookup
+#: memoized without making template resolution imply industry mode.
+_TEMPLATE_CACHE = None
+
+
+def template_memo():
+    """A BuildCache used purely as a template-lookup memo (never `.load()`ed)."""
+    global _TEMPLATE_CACHE
+    if _TEMPLATE_CACHE is None and BuildCache is not None:
+        _TEMPLATE_CACHE = BuildCache(industry="", page_type="")
+    return _TEMPLATE_CACHE
+
+
+def resolve_section_templates(sections: list[dict], cache=None) -> tuple[dict, dict]:
+    """Classify every section as local-template / Supabase-template / LLM.
+
+    Returns (counts, misses) where counts has keys local/db/llm and misses maps
+    "ARCHETYPE|variant" -> count for the sections that found no template. Pure
+    lookup: no generation, and the results land in the shared memo so the
+    generation pass re-reads them for free.
+    """
+    counts = {"local": 0, "db": 0, "llm": 0}
+    misses: dict[str, int] = {}
+    if not (SUPABASE_AVAILABLE and check_template_exists):
+        counts["llm"] = len(sections)
+        return counts, misses
+    memo = cache or template_memo()
+    for sec in sections:
+        archetype = sec.get("archetype", "") or ""
+        variant = sec.get("variant", "") or ""
+        tpl = check_template_exists(archetype, variant, memo)
+        if isinstance(tpl, Path):
+            counts["local"] += 1
+        elif isinstance(tpl, str):
+            counts["db"] += 1
+        else:
+            counts["llm"] += 1
+            key = f"{archetype}|{variant}"
+            misses[key] = misses.get(key, 0) + 1
+    return counts, misses
+
+
+def report_template_resolution(sections: list[dict], label: str, cache=None) -> dict:
+    """Print the resolution split BEFORE generating anything.
+
+    This number is the measurement that says whether the pipeline is a
+    deterministic assembler or an LLM improviser, so it is reported up front
+    rather than inferred from the build log afterwards.
+    """
+    counts, misses = resolve_section_templates(sections, cache=cache)
+    total = sum(counts.values()) or 1
+    deterministic = counts["local"] + counts["db"]
+    print(f"\n  🧱 Template resolution ({label}): {total} section(s) — "
+          f"{counts['local']} local, {counts['db']} Supabase, {counts['llm']} LLM "
+          f"({100 * deterministic // total}% deterministic)")
+    if misses:
+        print("     LLM fallbacks (no template for archetype|variant):")
+        for key, n in sorted(misses.items(), key=lambda kv: -kv[1]):
+            print(f"       {n:>2}x {key}")
+    return {"counts": counts, "misses": misses}
+
+
 def _replace_content_tokens(code: str) -> str:
     """Replace {token_name} content placeholders in Supabase code_templates with string literals.
     Only replaces tokens listed in _CONTENT_TOKEN_DEFAULTS or matching the Tokens: comment."""
@@ -1875,6 +2728,18 @@ def stage_sections(
     # Copy Fidelity Node: per-section copy classification manifest + revision trace
     _copy_manifest: list[dict] = []
     _copy_trace: list[dict] = []
+    #: Per-template slot coverage: how much of each template the harvest filled.
+    _tpl_fill_stats: list[dict] = []
+
+    # Page-level audit-capture copy, allocated to the sections that have none
+    # of their own. Computed once, before the loop, so the allocation is a
+    # property of the whole section list rather than of iteration order.
+    _audit_allocation = allocate_audit_harvest(sections, audit_harvest)
+    if _audit_allocation:
+        print(
+            f"  📋 Audit harvest allocated to {len(_audit_allocation)} section(s) "
+            f"with no per-section source copy"
+        )
 
     for i, section in enumerate(sections):
         num = f"{i + 1:02d}"
@@ -1884,7 +2749,9 @@ def stage_sections(
         # Get per-section injection blocks
         anim_ctx = animation_contexts.get(str(i), {})
         animation_block = anim_ctx.get("animationContext", "")
-        token_budget = anim_ctx.get("tokenBudget", MAX_TOKENS["section"])
+        token_budget = derive_section_token_budget(
+            section, animation_budget=anim_ctx.get("tokenBudget")
+        )
 
         asset_ctx = asset_contexts.get(str(i), {})
         asset_block = asset_ctx.get("assetContext", "")
@@ -1893,8 +2760,14 @@ def stage_sections(
         print(f"  [{num}/{len(sections):02d}] {section['archetype']} | {section['variant']}{budget_label}...")
 
         # ── Template-first check: local file, then Supabase code_template, else LLM ──
-        if SUPABASE_AVAILABLE and build_cache:
-            tpl = check_template_exists(section["archetype"], section["variant"], build_cache)
+        # Template resolution depends on archetype+variant only, so it must not
+        # be gated on `build_cache` (which exists only under --industry). A
+        # --preset or harvest-driven build has exactly the same right to the
+        # reviewed component library.
+        if SUPABASE_AVAILABLE:
+            tpl = check_template_exists(
+                section["archetype"], section["variant"], build_cache or template_memo()
+            )
             if tpl is not None:
                 if isinstance(tpl, Path):
                     print(f"      ↳ TEMPLATE FOUND: {tpl.name} (local) — skipping LLM generation")
@@ -1903,8 +2776,11 @@ def stage_sections(
                     print(f"      ↳ TEMPLATE FOUND: Supabase code_template — skipping LLM generation")
                     template_code = tpl
 
-                # Inject brand tokens from build cache style config
-                style = build_cache.style_config
+                # Inject brand tokens from build cache style config. A build
+                # without --industry has no BuildCache and therefore no
+                # industry style; brand-token injection is simply skipped
+                # rather than crashing the template path.
+                style = build_cache.style_config if build_cache else {}
                 if style:
                     # Replace placeholder tokens with actual brand values
                     palette = style.get("palette", {})
@@ -1953,10 +2829,30 @@ def stage_sections(
                     template_code = template_code.replace("{{asset.src}}", "")
                     template_code = template_code.replace("{{asset.type}}", "")
 
-                # Replace content placeholder tokens {token_name} with string literals
-                # so JSX doesn't reference undefined variables at render time.
-                # Matches bare {word_word} patterns in JSX (not {var} inside .map callbacks etc.)
-                template_code = _replace_content_tokens(template_code)
+                # ── Slot fill from the HARVEST, not from the default tables ──
+                # This used to be `_replace_content_tokens(template_code)`,
+                # which filled every slot from _CONTENT_TOKEN_DEFAULTS — so a
+                # South African crypto exchange shipped "Discover Our
+                # Collection" while "Buy Bitcoin South Africa" sat unread in
+                # this very section's `content`. Slots the harvest cannot fill
+                # are left empty and counted, never invented.
+                section["_template_code"] = template_code
+                _fill_values, _fill_cov = build_template_fill(section)
+                template_code = apply_template_fill(template_code, _fill_values)
+                section.pop("_template_code", None)
+                _tpl_fill_stats.append({
+                    "file": filename,
+                    "archetype": section["archetype"],
+                    "variant": section["variant"],
+                    "filled": _fill_cov["filled"],
+                    "empty": _fill_cov["empty"],
+                    "empty_slots": _fill_cov["empty_slots"],
+                })
+                _cov_note = (f"{_fill_cov['filled']} filled / {_fill_cov['empty']} empty"
+                             if (_fill_cov["filled"] or _fill_cov["empty"]) else "no slots")
+                print(f"      ↳ slots: {_cov_note}")
+                if _fill_cov["empty_slots"]:
+                    print(f"        unfilled: {', '.join(_fill_cov['empty_slots'][:8])}")
 
                 sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
                 out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
@@ -2139,7 +3035,8 @@ Do NOT use placeholder image URLs or generic placeholder images when a bound ass
                 "archetype": sec_data.get("archetype", "FEATURES"),
                 "variant": sec_data.get("variant", "icon-grid"),
                 "confidence": sec_data.get("confidence", 1.0),
-                "content": sec_data.get("content", {}),
+                "content": section_content_dict(sec_data),
+                "content_direction": section_content_direction(sec_data),
                 "images": sec_data.get("images", []),
                 "icons": sec_data.get("icons", {}),
                 "animations": sec_data.get("animations", {}),
@@ -2148,12 +3045,7 @@ Do NOT use placeholder image URLs or generic placeholder images when a bound ass
             }, indent=2)
 
             # Resolve content direction for display
-            content_dir = sec_data.get("content", {})
-            if isinstance(content_dir, dict):
-                headings = content_dir.get("headings", [])
-                content_display = headings[0] if headings else "(content from site-spec)"
-            else:
-                content_display = str(content_dir)
+            content_display = section_content_direction(sec_data) or "(content from site-spec)"
 
             style_and_spec_block = f"""STYLE TOKENS (use these exact values — colors as hex, fonts as names, spacing as rem):
 {style_json}
@@ -2177,11 +3069,8 @@ slots. Do NOT paraphrase, shorten, translate, or invent placeholder copy over th
 Number: {i + 1} of {len(sections)}
 Archetype: {section['archetype']}
 Variant: {section['variant']}
-Content Direction: {section['content']}"""
-            content_display = section.get("content", "")
-            if isinstance(content_display, dict):
-                headings = content_display.get("headings", [])
-                content_display = headings[0] if headings else ""
+Content Direction: {section_content_direction(section)}"""
+            content_display = section_content_direction(section)
 
         # Build optional brief context block
         brief_block = ""
@@ -2212,18 +3101,29 @@ For background images, use: style={{backgroundImage: 'url("{asset_src}")'}}
         # Threads the harvested content.{headings, body_text, ctas} into the prompt as
         # authoritative copy. When a finding targets this section, switches that section to
         # revise-from-source (Phase 2). '' when the section has no harvested copy → generate.
-        _sec_content = section.get("content", {})
+        _sec_content = section_content_dict(section)
+        _from_audit = False
+        if not harvested_copy_strings(_sec_content) and i in _audit_allocation:
+            # No per-section copy for this slot — fall back to this page's
+            # allocated share of the audit-capture harvest (see
+            # allocate_audit_harvest). Routed through the same block, so it
+            # arrives under "REPRODUCE VERBATIM" like any other source copy.
+            _sec_content = _audit_allocation[i]
+            _from_audit = True
         _finding = None
         if copy_findings:
+            # section_uid first: it survives reordering and regeneration, so a
+            # finding raised against a section still targets that section after
+            # the page changes shape. Positional keys remain as a fallback for
+            # findings authored before uids existed.
             _finding = (
-                copy_findings.get(str(section.get("index", i)))
+                copy_findings.get(section_identity(section, i))
+                or copy_findings.get(str(section.get("index", i)))
                 or copy_findings.get(str(i))
                 or copy_findings.get(filename)
             )
-        source_copy_block = ""
-        _harvested = harvested_copy_strings(_sec_content) if isinstance(_sec_content, dict) else []
-        if isinstance(_sec_content, dict):
-            source_copy_block = build_source_copy_block(_sec_content, finding=_finding)
+        _harvested = harvested_copy_strings(_sec_content)
+        source_copy_block = build_source_copy_block(_sec_content, finding=_finding)
         if source_copy_block:
             source_copy_block = "\n" + source_copy_block
 
@@ -2235,14 +3135,18 @@ For background images, use: style={{backgroundImage: 'url("{asset_src}")'}}
         else:
             _copy_status = "generated"
         _copy_manifest.append({
+            "section_uid": section_identity(section, i),
+            "source_index": section.get("source_index", section.get("index", i)),
             "index": section.get("index", i),
             "file": filename,
             "archetype": section.get("archetype"),
             "status": _copy_status,
             "harvested_strings": len(_harvested),
+            "copy_source": "audit_captures" if _from_audit else ("site_spec" if _harvested else "generated"),
         })
         if _copy_status == "revised":
             _copy_trace.append({
+                "section_uid": section_identity(section, i),
                 "index": section.get("index", i),
                 "file": filename,
                 "finding_id": _finding.get("rule_id") or _finding.get("id"),
@@ -2284,8 +3188,14 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
 
         # Retry loop: if truncated and not repairable, retry with higher budget / conciseness
         if section_is_truncated:
+            # `_call_claude_cli` builds its argv from the prompt and model only
+            # — max_tokens_override never reaches it. So under the CLI backend
+            # a "retry with a bigger budget" re-sends a byte-identical request
+            # and burns a full generation to re-roll the dice. When the budget
+            # lever is inert, go straight to the lever that is not: the prompt.
+            _budget_lever_works = _llm_mode() != "cli"
             for retry_num in range(1, 3):  # max 2 retries
-                if retry_num == 1:
+                if retry_num == 1 and _budget_lever_works:
                     retry_budget = int(token_budget * 1.5)
                     retry_prompt = prompt
                     print(f"    🔄 {filename}: truncated, retry {retry_num} with max_tokens {retry_budget} (was {token_budget})")
@@ -2315,6 +3225,15 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
 
             if section_is_truncated:
                 print(f"    ❌ {filename}: truncated after 2 retries — skipping broken section")
+                # A dropped section is a BUILD FAILURE, not a warning: the page
+                # ships without a section the spec asked for. Record it so the
+                # exit code and build_log status say so (previously this
+                # `continue` was invisible past this print).
+                record_build_failure(
+                    "sections",
+                    f"{output_subdir or 'sections'}/{filename} dropped: "
+                    f"still truncated after 2 retries",
+                )
                 continue  # Skip this section, don't write a broken file
 
         # Post-process: ensure "use client" directive for components using
@@ -2372,14 +3291,20 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
             _cm_name = "copy-manifest.json"
 
         # ── Audit harvest integration ──────────────────────────────
-        # Count total harvested strings: site-spec harvest (per-section) + audit harvest
+        # Every harvested string that reached a prompt is already counted in a
+        # per-section manifest entry — including the audit strings, now that
+        # they are allocated INTO sections. Adding the whole audit harvest on
+        # top (as this did) double-counted it and, worse, counted strings that
+        # never reached any prompt: the ratio moved while the generated output
+        # did not. Count what was actually used, and report the available and
+        # used audit totals separately so the gap between them is visible.
         _harvested_total = sum(
             _m.get("harvested_strings", 0) for _m in _copy_manifest
         )
-        _audit_total = 0
-        if audit_harvest:
-            _audit_total = audit_harvest.get("harvested_strings", 0)
-            _harvested_total += _audit_total
+        _audit_available = audit_harvest.get("harvested_strings", 0) if audit_harvest else 0
+        _audit_total = sum(
+            len(harvested_copy_strings(_c)) for _c in _audit_allocation.values()
+        )
 
         # Total copy slots: site-spec harvested sections + generated sections = all sections
         _total_copy_slots = len(_copy_manifest)
@@ -2392,7 +3317,8 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
         _manifest_data: dict = {
             "summary": {
                 **_counts,
-                "audit_harvest_strings": _audit_total,
+                "audit_harvest_strings": _audit_available,
+                "audit_harvest_used": _audit_total,
                 "harvested_strings_total": _harvested_total,
                 "total_copy_slots": _total_copy_slots,
                 "harvested_copy_ratio": _harvested_copy_ratio,
@@ -2403,7 +3329,9 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
             _manifest_data["audit_harvest"] = {
                 "source_rows": audit_harvest.get("source_rows", 0),
                 "section_count": len(audit_harvest.get("sections", [])),
-                "harvested_strings": _audit_total,
+                "harvested_strings": _audit_available,
+                "strings_used_in_prompts": _audit_total,
+                "sections_fed": len(_audit_allocation),
             }
 
         write_file(_cm_dir / _cm_name, json.dumps(_manifest_data, indent=2))
@@ -2413,12 +3341,31 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
             f"  ✓ Copy manifest: {_counts['reproduced']} reproduced, "
             f"{_counts['revised']} revised, {_counts['generated']} generated"
         )
-        if _audit_total > 0:
+        if _audit_available > 0:
             print(
-                f"    Audit harvest: {_audit_total} strings from "
-                f"{audit_harvest.get('source_rows', 0)} capture(s) | "
+                f"    Audit harvest: {_audit_total}/{_audit_available} strings used in prompts "
+                f"from {audit_harvest.get('source_rows', 0)} capture(s) | "
                 f"ratio: {_harvested_copy_ratio}"
             )
+        _copy_summary = _manifest_data
+
+    if _tpl_fill_stats:
+        _tf = sum(s["filled"] for s in _tpl_fill_stats)
+        _te = sum(s["empty"] for s in _tpl_fill_stats)
+        _tot = _tf + _te
+        print(
+            f"  🧩 Template slot coverage: {_tf}/{_tot} filled from harvest, "
+            f"{_te} left empty ({100 * _tf // _tot if _tot else 0}%) "
+            f"across {len(_tpl_fill_stats)} template section(s)"
+        )
+        if isinstance(_copy_summary, dict):
+            _copy_summary["template_slot_coverage"] = {
+                "filled": _tf, "empty": _te, "sections": _tpl_fill_stats,
+            }
+        else:
+            _copy_summary = {"template_slot_coverage": {
+                "filled": _tf, "empty": _te, "sections": _tpl_fill_stats,
+            }}
 
     return section_files, _copy_summary
 
@@ -2850,6 +3797,51 @@ def stage_scaffold_multipage(
     return manifest
 
 
+def _findings_are_page_scoped(copy_findings: dict | None) -> bool:
+    """True when --copy-findings is keyed by page id rather than by slot.
+
+    Page-scoped: {"wealth": {"0": {...}}}. Slot-scoped (the original single-page
+    shape): {"0": {...}} / {"03-features.tsx": {...}}. Distinguished by whether
+    every value is itself a mapping of slots — a finding dict has scalar fields
+    (rule_id, detail), so a mapping-of-mappings is page scoping.
+    """
+    if not isinstance(copy_findings, dict) or not copy_findings:
+        return False
+    return all(
+        isinstance(v, dict) and v and all(isinstance(inner, dict) for inner in v.values())
+        for v in copy_findings.values()
+    )
+
+
+def _page_audit_harvest(audit_harvest: dict | None, page: dict) -> dict | None:
+    """Narrow a tenant-wide audit harvest to the rows belonging to ONE page.
+
+    `harvest_verbatim_copy` returns tenant-wide rows tagged with `page_type`.
+    Handing every page the whole tenant's copy would paste the same strings
+    across the site, so a page only ever sees rows matching its own page_type
+    (or its id/route). No tagged match → None, and that page generates rather
+    than borrowing another page's words.
+    """
+    if not audit_harvest or not audit_harvest.get("sections"):
+        return None
+    keys = set(page_lookup_keys(page))
+    matched = [
+        s for s in audit_harvest["sections"]
+        if str(s.get("page_type", "")).strip().lower().strip("/").replace("/", "-") in keys
+    ]
+    if not matched:
+        return None
+    return {
+        "tenant_id": audit_harvest.get("tenant_id"),
+        "sections": matched,
+        "source_rows": len(matched),
+        "harvested_strings": sum(
+            len(s.get("headings") or []) + len(s.get("body_text") or []) + len(s.get("ctas") or [])
+            for s in matched
+        ),
+    }
+
+
 def stage_sections_multipage(
     manifest: dict,
     preset: str,
@@ -2857,38 +3849,77 @@ def stage_sections_multipage(
     build_cache: "BuildCache | None" = None,
     identification: dict | None = None,
     brief: str | None = None,
-) -> dict[str, list[Path]]:
-    """Layer 6: Generate sections for each page; write to output/{project}/sections/{page_id}/."""
+    site_spec_by_page: dict[str, dict] | None = None,
+    section_contexts_by_page: dict[str, dict] | None = None,
+    extraction_dir_by_page: dict[str, Path] | None = None,
+    audit_harvest: dict | None = None,
+    copy_findings: dict | None = None,
+) -> tuple[dict[str, list[Path]], dict[str, dict]]:
+    """Layer 6: Generate sections for each page; write to output/{project}/sections/{page_id}/.
+
+    Every content input is per-page. Before this, all of them were hardcoded
+    None at the stage_sections call, so a multi-page build structurally could
+    not carry a single character of real extracted content — it generated every
+    page from the registry archetype list alone.
+
+    Returns (section_files_by_page, copy_summary_by_page); the per-page copy
+    summary was previously discarded, taking harvested_copy_ratio with it.
+    """
     print("\n🔨 Layer 6: Sections (multi-page)...")
     section_files_by_page: dict[str, list[Path]] = {}
+    copy_summary_by_page: dict[str, dict] = {}
     for page in manifest.get("pages", []):
         page_id = page.get("id", "")
         sections = page.get("sections", [])
         if page_id == "not-found" or not sections:
             section_files_by_page[page_id] = []
             continue
-        print(f"  Page: {page_id} ({len(sections)} sections)")
-        # Add index to each section for compatibility with stage_sections
+        _page_spec = resolve_page_entry(site_spec_by_page, page)
+        _page_harvest = _page_audit_harvest(audit_harvest, page)
+        _harvested_here = sum(
+            len(harvested_copy_strings(section_content_dict(s))) for s in sections
+        )
+        print(
+            f"  Page: {page_id} ({len(sections)} sections, "
+            f"{_harvested_here} harvested source string(s))"
+        )
         sections_with_index = []
         for j, s in enumerate(sections):
             s = dict(s)
-            s.setdefault("content", s.get("content_direction", ""))
+            # `content` carries the HARVESTED COPY DICT and must not be
+            # clobbered. This previously did
+            # `s.setdefault("content", s.get("content_direction", ""))`, which
+            # made `content` a STRING for every multipage section — failing the
+            # isinstance(dict) gate below so build_source_copy_block never ran.
+            # That single line disabled the entire verbatim-copy path for
+            # multi-page builds, whatever content was threaded in.
+            s.setdefault("content_direction", "")
+            if not isinstance(s.get("content"), dict):
+                s["content"] = {}
+            s.setdefault("index", j)
             sections_with_index.append(s)
-        files, _ = stage_sections(
+        files, _page_summary = stage_sections(
             sections_with_index,
             preset,
             project_name,
-            section_contexts=None,
-            extraction_dir=None,
+            section_contexts=resolve_page_entry(section_contexts_by_page, page),
+            extraction_dir=resolve_page_entry(extraction_dir_by_page, page),
             identification=identification,
-            site_spec=None,
+            site_spec=_page_spec,
             build_cache=build_cache,
             output_subdir=f"sections/{page_id}",
             section_file_names=None,
             brief=brief,
+            copy_findings=(
+                resolve_page_entry(copy_findings, page)
+                if _findings_are_page_scoped(copy_findings) else copy_findings
+            ),
+            audit_harvest=_page_harvest,
         )
         section_files_by_page[page_id] = files
-    return section_files_by_page
+        if _page_summary:
+            copy_summary_by_page[page_id] = _page_summary
+    return section_files_by_page, copy_summary_by_page
 
 
 def stage_assemble_multipage(
@@ -2932,14 +3963,20 @@ export default function Page{params_type} {{
             (pages_dir / f"{page_id}.tsx").write_text(page_code, encoding="utf-8")
             print(f"  {page_id}: placeholder (no sections)")
             continue
-        imports = []
-        components = []
-        for i, (sec, fpath) in enumerate(zip(sections, files)):
-            num = f"{i + 1:02d}"
-            comp_name = f"Section{num}{sec.get('archetype', '').replace('-', '')}"
-            rel = f"@/components/sections/{page_id}/{fpath.name.replace('.tsx', '')}"
-            imports.append(f'import {comp_name} from "{rel}";')
-            components.append(f"      <{comp_name} />")
+        # Filename-driven, exactly like the single-page path (_build_page_imports).
+        # Zipping the `sections` metadata against the files on disk by index
+        # misnames every import after a section that failed to generate — and
+        # drops the tail when the lists differ in length. cape-crypto/wealth is
+        # missing 02-trust_badges.tsx, so index 1 onwards named the wrong
+        # component. The files on disk are the ground truth.
+        if len(files) != len(sections):
+            print(
+                f"  ⚠ {page_id}: {len(sections)} section(s) planned but "
+                f"{len(files)} file(s) on disk — assembling from files"
+            )
+        imports, components = _build_page_imports(
+            files, f"@/components/sections/{page_id}/"
+        )
         params_type = ""
         components_nl = chr(10).join(components)
         if page.get("dynamic") and "[handle]" in page.get("route", ""):
@@ -4274,8 +5311,13 @@ export default async function Page({ params }: { params: Promise<{ page: string 
                 if field in ("title", "name", "label", "question") and val == prefix.title():
                     return f"{val} {num_str}"
                 return val
-            # Field not in known defaults — use humanized field name
-            return field.replace("_", " ").title()
+            # Field not in known defaults. Previously this returned
+            # `field.replace("_", " ").title()`, which is how "Primary Cta
+            # Text" — a *variable name* — shipped as visible copy on the
+            # homepage hero. An unresolvable token is recorded and left empty;
+            # it is never humanized into English that looks like content.
+            _record_unresolved_token(token_name)
+            return ""
         # Match non-numbered patterns: prefix_field (e.g. hero_title, section_heading)
         m2 = re.match(r'^([a-z]+)_(.+)$', token_name)
         if m2:
@@ -4902,6 +5944,17 @@ async function downloadOne(url) {{
     except ImportError:
         pass  # gate_a module not available; non-fatal
 
+    # ── Production build ──
+    # Deploy-prep may NOT claim success until the site actually compiles.
+    # Previously the only `npm run build` in the pipeline lived inside
+    # stage_render_audit, which runs later and only when a deploy happened —
+    # so a site that could not compile still printed "Site deployed".
+    # run_production_build memoises its result per site dir, so the render
+    # audit reuses this build instead of compiling the tree a second time.
+    if not run_production_build(site_dir, "deploy-prep"):
+        print(f"  ✖ Deploy prep FAILED for output/{project_name}/site/ (build errors above)")
+        return
+
     print(f"  ✓ Site deployed to output/{project_name}/site/")
     print(f"  Run: cd output/{project_name}/site && npm run dev")
 
@@ -4920,8 +5973,13 @@ def stage_vercel_env_and_webhooks(site_dir: Path, project_name: str):
 
     print("\n🔑 Setting Shopify env vars on Vercel...")
     for key, val in env_vars.items():
+        # The value is a SECRET and is passed on stdin — never interpolated
+        # into a shell command. `bash -c 'echo "<token>" | ...'` put the token
+        # in the process list for any local user to read, and corrupted (or
+        # executed) any value containing a quote, `$` or a backtick.
         result = subprocess.run(
-            ["bash", "-c", f'echo "{val}" | vercel env add {key} production --yes'],
+            ["vercel", "env", "add", key, "production", "--yes"],
+            input=val + "\n",
             capture_output=True, text=True, cwd=str(site_dir), timeout=30,
         )
         if result.returncode == 0:
@@ -5334,17 +6392,10 @@ def stage_render_audit(project_name: str, site_manifest: dict | None = None) -> 
             print(f"  → Render audit SKIPPED")
             return "skipped"
 
-    # Build the Next.js site (production build)
-    print("  Building Next.js site for audit...")
-    result = subprocess.run(
-        ["npm", "run", "build"],
-        cwd=str(site_dir),
-        capture_output=True, text=True, timeout=300,
-    )
-    if result.returncode != 0:
-        print(f"  ⚠ Next.js build failed for render audit")
-        for line in result.stderr.strip().splitlines()[-5:]:
-            print(f"    {line}")
+    # Build the Next.js site (production build). stage_deploy already ran this
+    # build for the same site dir, so run_production_build returns the memoised
+    # result rather than compiling twice; it records the failure itself.
+    if not run_production_build(site_dir, "render audit"):
         print(f"  → Render audit mark: FAILED (build error)")
         return "failed"
 
@@ -6093,6 +7144,18 @@ def main():
                         help="Tenant coordinate (tenant_id UUID or slug). When provided, loads tenant "
                              "capture (phase0_field_values / creative_assets / competitor_profiles) and "
                              "threads brand/palette into the style path. Absent = registry/file behavior.")
+    parser.add_argument("--captures", default=None, metavar="DIR",
+                        help="Audit run directory holding captures/ and captures_manifest.json. "
+                             "With --from-url, every captured route is harvested into "
+                             "site-spec pages[] and the build goes multi-page. A capture "
+                             "bundle that cannot be harvested FAILS the run — it is never "
+                             "downgraded to a single-page build.")
+    parser.add_argument("--routes", default=None, metavar="CSV",
+                        help="Routes to harvest from --captures, e.g. '/,/wealth,/about'. "
+                             "Omit to harvest every captured route (which turns each article "
+                             "slug into its own static page).")
+    parser.add_argument("--max-pages", type=int, default=None, metavar="N",
+                        help="Cap the number of harvested pages from --captures.")
     parser.add_argument("--publish", action="store_true",
                         help="After a successful build+deploy, run `vercel --yes --prod` and record the "
                              "deployed URL in build_log.deploy_url (BRIEF #33299). Default off.")
@@ -6194,8 +7257,17 @@ def main():
         print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M')}")
         print(f"{'═' * 60}")
 
+        _captures = None
+        if getattr(args, "captures", None):
+            _captures = Path(args.captures).expanduser().resolve()
+            if not _captures.exists():
+                print(f"\n❌ --captures directory not found: {_captures}")
+                sys.exit(EXIT_FAILED)
         preset, brief, section_contexts, extraction_dir, site_spec = stage_url_extract(
-            args.from_url, args.project
+            args.from_url, args.project,
+            captures_dir=_captures,
+            routes=getattr(args, "routes", None),
+            max_pages=getattr(args, "max_pages", None),
         )
         save_checkpoint(output_dir, "extract", args.project)
 
@@ -6298,42 +7370,86 @@ def main():
             _resume_single_page = True
             print("  ↳ Resuming existing single-page build (no site-manifest.json); staying single-page.")
 
-    if not args.from_url and not _resume_single_page and site_manifest_lib:
+    # Load site_spec from file when not set (e.g. --skip-to after a from_url
+    # run). Read BEFORE the mode fork, because the number of pages it carries
+    # is now what decides single- vs multi-page.
+    if site_spec is None:
+        site_spec_path = OUTPUT_DIR / args.project / "site-spec.json"
+        if site_spec_path.exists():
+            try:
+                site_spec = json.loads(site_spec_path.read_text(encoding="utf-8"))
+                print(f"  ✓ site-spec.json loaded ({len(site_spec.get('sections', []))} sections)")
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    # Page count is a property of the SITE, not of the flags on this run.
+    # `--from-url` used to suppress multi-page outright, which made "clone this
+    # site" and "build more than one page" mutually exclusive: a 25-route
+    # source could only ever come out as a single page. A URL-cloned spec that
+    # describes N>1 pages is a multi-page site and builds as one; a spec with
+    # one page (or none) stays on the single-page path exactly as before.
+    _spec_page_ids = list(build_site_spec_by_page(site_spec))
+    _spec_is_multipage = len(_spec_page_ids) > 1
+    if args.from_url and _spec_is_multipage:
+        print(f"  ✓ site-spec describes {len(_spec_page_ids)} pages → multi-page build")
+
+    if not _resume_single_page and site_manifest_lib and (not args.from_url or _spec_is_multipage):
         if getattr(args, "site_manifest", None):
             manifest_path = Path(args.site_manifest)
             if not manifest_path.is_absolute():
                 manifest_path = (ROOT / manifest_path).resolve()
             site_manifest = site_manifest_lib.load_site_manifest(manifest_path)
             print(f"  ✓ Site manifest loaded: {args.site_manifest} ({len(site_manifest.get('pages', []))} pages)")
+        elif _spec_is_multipage:
+            # Spec-driven: map the harvested pages 1:1 (build_site_manifest's
+            # harvested mode — no reconciliation, no not-found injection, N in
+            # → N out) rather than re-inventing routes from page-type names.
+            # That also keeps the manifest ids identical to the site-spec ids,
+            # so the two can never disagree about what a page is called.
+            from build_site_manifest import build_site_manifest as _build_manifest_from_pages
+            site_manifest = _build_manifest_from_pages(
+                args.project,
+                args.industry or preset or "ecommerce",
+                harvested_pages=site_spec.get("pages") or [],
+                output_path=output_dir / "site-manifest.json",
+            )
+            print(f"  ✓ Site manifest from site-spec pages: {len(site_manifest.get('pages', []))} pages "
+                  f"({', '.join(p.get('id', '?') for p in site_manifest.get('pages', []))})")
         elif args.industry:
-            industry_meta = get_industry_metadata(args.industry) if SUPABASE_AVAILABLE and get_industry_metadata else None
+            industry_meta = get_industry_metadata(args.industry) if args.industry and SUPABASE_AVAILABLE and get_industry_metadata else None
+            # A spec-driven build may have no --industry at all; the manifest
+            # still needs a label for it.
+            _mp_industry = args.industry or preset or "ecommerce"
             arch_path = None
             if getattr(args, "compiled_dir", None):
                 arch_path = Path(args.compiled_dir) / "architecture.json"
                 if not arch_path.exists():
                     arch_path = None
-            # Enumerate the industry's real page-types from the registry so EVERY
-            # page-type it defines is built (e.g. fintech: homepage, pricing,
-            # signup, kyc, account, checkout, legal) — not just the generic
-            # 5-page e-commerce fallback. Absent DB access → fallback unchanged.
+            # Page source, in priority order: the extracted site-spec's own
+            # pages (the real site), then the industry's registry page-types,
+            # then the generic fallback inside generate_site_manifest.
             _page_types = None
-            if not (arch_path and arch_path.exists()) and SUPABASE_AVAILABLE and get_all_page_sections:
+            _src = "default"
+            if _spec_is_multipage:
+                _page_types = _spec_page_ids
+                _src = f"{len(_page_types)} site-spec pages"
+            elif not (arch_path and arch_path.exists()) and args.industry and SUPABASE_AVAILABLE and get_all_page_sections:
                 try:
                     _page_sections = get_all_page_sections(args.industry) or {}
                     _page_types = [pt for pt, secs in _page_sections.items() if secs]
+                    _src = f"{len(_page_types)} registry page-types" if _page_types else "default"
                 except Exception as _e:
                     print(f"  ⚠ Could not enumerate industry page-types ({_e}); using default pages")
                     _page_types = None
             site_manifest = site_manifest_lib.generate_site_manifest(
                 args.project,
-                args.industry,
+                _mp_industry,
                 output_dir,
                 industry_metadata=industry_meta,
                 architecture_path=arch_path,
                 write_file=True,
                 page_types=_page_types,
             )
-            _src = f"{len(_page_types)} registry page-types" if _page_types else "default"
             print(f"  ✓ Site manifest generated: {len(site_manifest.get('pages', []))} pages ({_src})")
 
     # ── Common Pipeline ─────────────────────────────────────────────
@@ -6344,6 +7460,7 @@ def main():
     # The ledger is module-level; clear it so a second run in one process
     # does not report the previous build's calls as part of this one.
     reset_token_ledger()
+    reset_build_failures()
     if args.industry and SUPABASE_AVAILABLE and BuildCache:
         build_cache = BuildCache(industry=args.industry, page_type=args.page).load()
         if not build_cache.section_sequence:
@@ -6405,15 +7522,30 @@ def main():
             except (json.JSONDecodeError, OSError):
                 print("  ⚠ Could not load identification.json")
 
-    # Load site_spec from file when not set (e.g. --skip-to after a from_url run)
-    if site_spec is None:
-        site_spec_path = OUTPUT_DIR / args.project / "site-spec.json"
-        if site_spec_path.exists():
-            try:
-                site_spec = json.loads(site_spec_path.read_text(encoding="utf-8"))
-                print(f"  ✓ site-spec.json loaded ({len(site_spec.get('sections', []))} sections)")
-            except (json.JSONDecodeError, OSError):
-                pass
+    # ── Audit Captures Harvester (BOTH modes) ─────────────────────
+    # Hoisted above the mode fork. Its only call site used to be 70-odd lines
+    # INSIDE the single-page tail, i.e. after the multipage branch had already
+    # returned — so a multi-page build never harvested a single verbatim
+    # string no matter how the tenant was configured.
+    _audit_harvest = None
+    _copy_summary: dict | None = None
+    if tenant_id:
+        _audit_harvest = harvest_verbatim_copy(tenant_id)
+        if _audit_harvest and _audit_harvest.get("harvested_strings", 0) > 0:
+            print(f"  📋 Audit captures: {_audit_harvest['harvested_strings']} verbatim string(s) "
+                  f"harvested from {_audit_harvest['source_rows']} row(s)")
+        else:
+            print(f"  📋 Audit captures: no verbatim strings harvested (tenant_id={tenant_id})")
+
+    # Per-page site-spec sections, keyed by page id. `site_spec["pages"]` is
+    # the multi-page shape; a spec with only `sections` is single-page and
+    # contributes nothing here.
+    _site_spec_by_page = build_site_spec_by_page(site_spec)
+    if _site_spec_by_page:
+        print(
+            f"  ✓ site-spec carries {len(_site_spec_by_page)} page(s) of extracted content: "
+            + ", ".join(sorted(_site_spec_by_page))
+        )
 
     # ── Layer 6: Multi-page pipeline (when site_manifest is set) ─────
     if site_manifest:
@@ -6421,8 +7553,11 @@ def main():
         if not industry:
             print("  ⚠ Site manifest has no industry; multipage requires --industry. Skipping multipage.")
             site_manifest = None
-        elif not get_section_sequence:
-            print("  ⚠ Supabase not available; multipage requires database. Skipping multipage.")
+        elif not get_section_sequence and not _site_spec_by_page:
+            # The registry is only REQUIRED when it is the sole source of
+            # sections. A site-spec that carries per-page sections is itself a
+            # section source, so multi-page no longer depends on Supabase.
+            print("  ⚠ Supabase not available and site-spec has no pages; multipage needs one of them. Skipping multipage.")
             site_manifest = None
 
     if site_manifest:
@@ -6437,24 +7572,41 @@ def main():
         save_checkpoint(output_dir, "scaffold_mp", args.project)
 
         # ── Section Reconciliation Node (multi-page) ──────────────────
-        # For each page in the manifest, reconcile the registry-required
-        # sections (from Supabase) with any harvested sections (none yet
-        # in multi-page mode, but the node normalizes variants and
-        # resolves duplicates/empties regardless).
+        # The HARVEST is the spine: a page's sections are the sections the real
+        # source page has, in source order, and the registry only fills in
+        # archetypes the source lacks. This used to pass `[]` as the harvest —
+        # hardcoding "there is no extracted content" — so every page was built
+        # from the registry sequence alone.
         _reconciliation_meta = None
+        _recon_total_dups_kept = 0
         _recon_total_registry = 0
         _recon_total_harvest = 0
         _recon_total_gaps = 0
         _recon_total_dups = 0
         for _page in site_manifest.get("pages", []):
             _raw = _page.get("sections", [])
-            if _raw:
-                _reconciled, _meta = reconcile_sections(_raw, [])
+            _harvested_page = (resolve_page_entry(_site_spec_by_page, _page) or {}).get("sections", [])
+            # NAV/FOOTER are shared layout components in multi-page mode, so the
+            # registry sequence has them stripped in stage_scaffold_multipage.
+            # The harvest did not, and every crawled page carries both — which
+            # generated a per-page NAV and FOOTER section that assembly then
+            # imported *inside* <main>, under the layout's own Navigation and
+            # above its Footer. Two navs and two footers on all six pages.
+            if site_manifest_lib:
+                _harvested_page = site_manifest_lib.filter_nav_footer_from_sections(_harvested_page)
+            if not _raw and _harvested_page:
+                # No registry sections for this page (no Supabase, or a page
+                # type the registry does not know): the harvest IS the page.
+                _raw = _harvested_page
+                _harvested_page = []
+            if _raw or _harvested_page:
+                _reconciled, _meta = reconcile_page_sections(_raw, _harvested_page)
                 _page["sections"] = _reconciled
                 _recon_total_registry += _meta["registry_count"]
                 _recon_total_harvest += _meta["harvest_count"]
                 _recon_total_gaps += _meta["gap_filled_count"]
                 _recon_total_dups += _meta["duplicates_resolved"]
+                _recon_total_dups_kept += _meta.get("duplicates_kept", 0)
         _recon_total = sum(
             len(p.get("sections", []))
             for p in site_manifest.get("pages", [])
@@ -6465,14 +7617,27 @@ def main():
             "harvest_count": _recon_total_harvest,
             "gap_filled_count": _recon_total_gaps,
             "duplicates_resolved": _recon_total_dups,
+            "duplicates_kept": _recon_total_dups_kept,
         }
         if _recon_total > 0:
             print(
                 f"\n  🔄 Section reconciliation ({len(site_manifest.get('pages', []))} pages): "
                 f"{_recon_total} total "
                 f"({_recon_total_registry} registry, {_recon_total_harvest} harvested, "
-                f"{_recon_total_gaps} gap-filled, {_recon_total_dups} duplicates resolved)"
+                f"{_recon_total_gaps} gap-filled, "
+                f"{_recon_total_dups_kept} same-archetype duplicates preserved)"
             )
+
+        # ── Template resolution preflight ─────────────────────────────
+        # Reported BEFORE generation, because "how much of this site is
+        # assembled from reviewed components vs improvised by an LLM" is the
+        # measurement that characterises the pipeline. Purely a lookup; the
+        # results are memoized for the generation pass that follows.
+        _template_resolution = report_template_resolution(
+            [s for p in site_manifest.get("pages", []) for s in p.get("sections", [])],
+            f"{len(site_manifest.get('pages', []))} pages",
+            cache=build_cache or template_memo(),
+        )
 
         # ── Per-section asset binding (BRIEF #33297) ──
         # Bind tenant creative_assets onto manifest sections BEFORE generation so
@@ -6480,18 +7645,32 @@ def main():
         # assets → 0 bound, manifest untouched (no regression).
         _assets_bound = bind_section_assets(tenant_context, site_manifest, output_dir)
 
-        section_files_by_page = stage_sections_multipage(
+        section_files_by_page, _copy_summary_by_page = stage_sections_multipage(
             site_manifest, preset, args.project,
             build_cache=build_cache, identification=identification, brief=brief,
+            site_spec_by_page=_site_spec_by_page,
+            section_contexts_by_page=build_section_contexts_by_page(
+                section_contexts, _site_spec_by_page, site_manifest,
+            ),
+            extraction_dir_by_page=None,
+            audit_harvest=_audit_harvest,
+            copy_findings=copy_findings,
         )
+        _copy_summary = merge_copy_summaries(_copy_summary_by_page)
         save_checkpoint(output_dir, "sections_mp", args.project, {"section_files_by_page_keys": list(section_files_by_page.keys())})
         stage_assemble_multipage(site_manifest, section_files_by_page, args.project)
         save_checkpoint(output_dir, "assemble", args.project)
         deploy_ran = False
-        if args.deploy or args.skip_to == "deploy":
+        deploy_requested = bool(args.deploy or args.skip_to == "deploy")
+        if deploy_requested:
             validation = stage_validate(args.project)  # May have fewer checks for multipage
             if not validation["passed"] and not args.force:
                 print("\n  ⚠ Pre-flight validation had issues. Use --force to deploy anyway.")
+                # A requested deploy that never ran is a failed build, not a
+                # successful one. --force still overrides the block itself.
+                record_build_failure(
+                    "validate", "pre-flight validation blocked the requested deploy (no --force)"
+                )
             if validation["passed"] or args.force:
                 stage_deploy(
                     sections=[],  # unused when manifest set
@@ -6506,8 +7685,10 @@ def main():
                     target_platform=args.target_platform,
                 )
                 save_checkpoint(output_dir, "deploy", args.project)
-                deploy_ran = True
-                if getattr(args, "set_vercel_env", False):
+                # Only a site that actually compiled counts as deployed; a
+                # failed production build is already in the failure ledger.
+                deploy_ran = production_build_ok(OUTPUT_DIR / args.project / SITE_DIR_NAME)
+                if deploy_ran and getattr(args, "set_vercel_env", False):
                     stage_vercel_env_and_webhooks(
                         OUTPUT_DIR / args.project / SITE_DIR_NAME,
                         args.project,
@@ -6552,14 +7733,23 @@ def main():
             push_policy=getattr(args, "push_policy", "off"),
         ) if deploy_ran else None
 
+        # ── Build outcome: status + exit code must agree with reality ──
+        _build_status, _exit_code = resolve_build_outcome(_render_audit_status, deploy_requested)
+
         if build_cache and SUPABASE_AVAILABLE:
             all_sections = []
             for p in site_manifest.get("pages", []):
                 for s in p.get("sections", []):
                     all_sections.append(s)
+            # Count the section files ACTUALLY WRITTEN, not the ones planned:
+            # a section dropped mid-generation must not be logged as built.
+            _sections_written = sum(len(f) for f in section_files_by_page.values())
             _local_count = _db_count = _llm_count = 0
             for sec in all_sections:
-                tpl = check_template_exists(sec.get("archetype", ""), sec.get("variant", ""), build_cache)
+                tpl = check_template_exists(
+                    sec.get("archetype", ""), sec.get("variant", ""),
+                    build_cache or template_memo(),
+                )
                 if isinstance(tpl, Path):
                     _local_count += 1
                 elif isinstance(tpl, str):
@@ -6573,9 +7763,9 @@ def main():
                 sections_from_template=_local_count,
                 db_template_count=_db_count,
                 sections_from_llm=_llm_count,
-                total_sections=len(all_sections),
+                total_sections=_sections_written,
                 build_duration_ms=_build_duration_ms,
-                status="completed",
+                status=_build_status,
                 target_platform=args.target_platform,
                 bos_line_items=_bos_line_items,
                 sections_reconciled=_reconciliation_meta,
@@ -6587,6 +7777,11 @@ def main():
                 render_audit_status=_render_audit_status,
                 published_sha=_published_sha,
                 token_ledger=_token_summary,
+                # Multipage discarded the per-page copy summary entirely, so
+                # this column was always NULL for multi-page builds.
+                harvested_copy_ratio=(
+                    (_copy_summary or {}).get("summary", {}).get("harvested_copy_ratio")
+                ),
             )
             _recon_str = ""
             if _reconciliation_meta:
@@ -6598,12 +7793,16 @@ def main():
                 )
             print(f"  📊 Build logged to Supabase (multipage, {len(site_manifest.get('pages', []))} pages — {_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str})")
         print(f"\n{'═' * 60}")
-        print(f"  ✅ Layer 6 multi-page complete")
+        if _exit_code == EXIT_OK:
+            print(f"  ✅ Layer 6 multi-page complete")
+        else:
+            print(f"  ❌ Layer 6 multi-page INCOMPLETE — status: {_build_status}")
         print(f"  Output: output/{args.project}/")
         if deploy_ran:
             print(f"  Site:   output/{args.project}/site/")
+        print(f"  Render audit: {_render_audit_status}")
         print(f"{'═' * 60}\n")
-        return
+        finish_build(_build_status, _exit_code)
 
     # ── Single-page pipeline ────────────────────────────────────────
     if args.skip_to:
@@ -6640,9 +7839,12 @@ def main():
             sections = parse_scaffold(scaffold)
 
     # ── Section Reconciliation Node ──────────────────────────────────
-    # Merge registry-required sections with harvested sections into the
-    # true per-page section list, normalizing variants and resolving
-    # gaps/duplicates. Records reconciliation metadata for build_log.
+    # Same harvest-spine reconciler as the multi-page path: the sections the
+    # source page actually has, in source order, with the registry filling in
+    # archetypes the source lacks. This used the collapsing reconciler, so a
+    # clone of a page with two FEATURES blocks shipped one — the same fidelity
+    # loss as the multipage path, and having one faithful path and one lossy
+    # path meant nobody could say which had built a given site.
     _reconciliation_meta = None
     if site_spec:
         _registry_for_recon = []
@@ -6652,14 +7854,15 @@ def main():
             _registry_for_recon = parse_preset_section_sequence(preset)
         _harvested_for_recon = site_spec.get("sections", [])
         if _registry_for_recon or _harvested_for_recon:
-            sections, _reconciliation_meta = reconcile_sections(
+            sections, _reconciliation_meta = reconcile_page_sections(
                 _registry_for_recon, _harvested_for_recon,
             )
             _rc = _reconciliation_meta
             print(
                 f"\n  🔄 Section reconciliation: {_rc['total']} total "
                 f"({_rc['registry_count']} registry, {_rc['harvest_count']} harvested, "
-                f"{_rc['gap_filled_count']} gap-filled, {_rc['duplicates_resolved']} duplicates resolved)"
+                f"{_rc['gap_filled_count']} gap-filled, "
+                f"{_rc.get('duplicates_kept', 0)} same-archetype duplicates preserved)"
             )
 
     if not sections:
@@ -6669,18 +7872,8 @@ def main():
 
     print(f"\n  Parsed {len(sections)} sections from scaffold")
 
-    # ── Audit Captures Harvester ──────────────────────────────────
-    # When a tenant is present, harvest verbatim copy from the audit_captures table
-    # so it feeds into the copy manifest and harvested_copy_ratio tracking.
-    _audit_harvest = None
-    _copy_summary: dict | None = None
-    if tenant_id:
-        _audit_harvest = harvest_verbatim_copy(tenant_id)
-        if _audit_harvest and _audit_harvest.get("harvested_strings", 0) > 0:
-            print(f"  📋 Audit captures: {_audit_harvest['harvested_strings']} verbatim string(s) "
-                  f"harvested from {_audit_harvest['source_rows']} row(s)")
-        else:
-            print(f"  📋 Audit captures: no verbatim strings harvested (tenant_id={tenant_id})")
+    # (The audit-capture harvest now runs above the mode fork — see
+    # "Audit Captures Harvester (BOTH modes)" — so multipage gets it too.)
 
     # ── Per-section asset binding (BRIEF #33297) ──
     # Bind tenant creative_assets onto sections BEFORE generation so
@@ -6723,16 +7916,23 @@ def main():
 
     # Stage 5.5: Pre-flight validation (before deploy)
     deploy_ran = False
-    if args.deploy or args.skip_to == "deploy":
+    deploy_requested = bool(args.deploy or args.skip_to == "deploy")
+    if deploy_requested:
         validation = stage_validate(args.project)
         if not validation['passed']:
             print("\n  ⚠ Pre-flight validation found critical issues.")
             if not args.force:
                 print("  Use --force to deploy anyway, or fix the issues above.")
+                # Requested deploy never ran → failed build. --force still
+                # overrides the block itself.
+                record_build_failure(
+                    "validate", "pre-flight validation blocked the requested deploy (no --force)"
+                )
         if validation['passed'] or args.force:
             stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform)
             save_checkpoint(output_dir, "deploy", args.project)
-            deploy_ran = True
+            # Only a site that actually compiled counts as deployed.
+            deploy_ran = production_build_ok(OUTPUT_DIR / args.project / SITE_DIR_NAME)
 
     # ── Stage 6: Post-build render audit (single-page) ──
     _render_audit_status = stage_render_audit(
@@ -6763,11 +7963,16 @@ def main():
     # ── Token ledger: on disk first, Supabase second ──
     _token_summary = persist_token_ledger(output_dir)
 
-    if build_cache and SUPABASE_AVAILABLE:
+    # ── Build outcome: status + exit code must agree with reality ──
+    _build_status, _exit_code = resolve_build_outcome(_render_audit_status, deploy_requested)
+
+    if SUPABASE_AVAILABLE:
         # Count local / db / LLM sections (cache used so no extra Supabase reads)
         _local_count = _db_count = _llm_count = 0
         for sec in sections:
-            tpl = check_template_exists(sec["archetype"], sec["variant"], build_cache)
+            tpl = check_template_exists(
+                sec["archetype"], sec["variant"], build_cache or template_memo()
+            )
             if isinstance(tpl, Path):
                 _local_count += 1
             elif isinstance(tpl, str):
@@ -6785,9 +7990,9 @@ def main():
             sections_from_template=_local_count,
             db_template_count=_db_count,
             sections_from_llm=_llm_count,
-            total_sections=len(sections),
+            total_sections=len(section_files),
             build_duration_ms=_build_duration_ms,
-            status="completed",
+            status=_build_status,
             target_platform=args.target_platform,
             bos_line_items=_bos_line_items,
             sections_reconciled=_reconciliation_meta,
@@ -6812,7 +8017,10 @@ def main():
 
     mode_label = "URL Clone" if args.from_url else ("Database" if args.industry else "Pipeline")
     print(f"\n{'═' * 60}")
-    print(f"  ✅ {mode_label} complete")
+    if _exit_code == EXIT_OK:
+        print(f"  ✅ {mode_label} complete")
+    else:
+        print(f"  ❌ {mode_label} INCOMPLETE — status: {_build_status}")
     print(f"  Output: output/{args.project}/")
     if deploy_ran:
         print(f"  Site:   output/{args.project}/site/")
@@ -6823,7 +8031,10 @@ def main():
         print(f"  Industry: {args.industry}")
         print(f"  Page: {getattr(args, 'page', 'homepage')}")
         print(f"  Build time: {_build_duration_ms/1000:.1f}s")
+    if deploy_requested:
+        print(f"  Render audit: {_render_audit_status}")
     print(f"{'═' * 60}\n")
+    finish_build(_build_status, _exit_code)
 
 
 if __name__ == "__main__":
