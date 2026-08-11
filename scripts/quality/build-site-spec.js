@@ -13,6 +13,9 @@
  *                      extracted sections. Without it the output is unchanged.
  *   --routes <list>    Comma-separated route paths to keep (e.g. "/,/about,/blog").
  *   --max-pages <n>    Keep at most n pages (in crawl order).
+ *   --out <dir>        Directory to write site-spec.json into. Default
+ *                      `output/<project-name>` relative to the CWD, which is
+ *                      wrong for any caller that re-roots its output tree.
  *
  * @module build-site-spec
  */
@@ -908,7 +911,15 @@ function runCLI() {
     maxPages,
   });
 
-  const outputDir = path.join('output', projectName);
+  // `output/<project>` is relative to the CWD, which is the web-builder repo.
+  // Under `--output-root` the orchestrator reads the spec from the re-rooted
+  // directory instead, so writing to the default put the spec somewhere the
+  // caller never looked: `site_spec` came back None, `pages[]` with it, and a
+  // 6-page captures build silently took the single-page path. `--out` lets the
+  // caller name the directory it will actually read from.
+  const outputDir = typeof flags.out === 'string' && flags.out
+    ? flags.out
+    : path.join('output', projectName);
   fs.mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, 'site-spec.json');
   fs.writeFileSync(outputPath, JSON.stringify(siteSpec, null, 2), 'utf8');

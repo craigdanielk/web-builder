@@ -2,8 +2,8 @@
   "version": "1.0.0",
   "generated": "2026-02-13",
   "total_archetypes": 26,
-  "total_variants": 75,
-  "templates_available": 75,
+  "total_variants": 76,
+  "templates_available": 76,
   "archetypes": {
     "ABOUT": {
       "directory": "section-templates/ABOUT/",
@@ -565,6 +565,12 @@
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
           "file_name": "inline-strip.tsx"
+        },
+        {
+          "name": "icon-strip",
+          "has_template": true,
+          "template_path": "section-templates/TRUST-BADGES/icon-strip.tsx",
+          "file_name": "icon-strip.tsx"
         }
       ]
     },

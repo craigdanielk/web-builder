@@ -33,6 +33,17 @@ TOKEN_RE = re.compile(r'(?<![\w.])\{([a-z][a-z_0-9]*)\}(?![\w])')
 #: `{prefix_N_field}` — one field of one entry of a repeated item array.
 NUMBERED_RE = re.compile(r'^([a-z]+)_(\d+)_(.+)$')
 
+#: `{prefix[].field}` — one field of a repeater whose LENGTH THE TEMPLATE DOES
+#: NOT FIX. The numbered form above spells out N rows in the source, so the
+#: template can only ever render at most N and the fill's job is to drop the
+#: surplus; 17 archetypes in the corpus are shaped that way and each one caps
+#: a real page at whatever number the template author happened to type. This
+#: form declares the row ONCE and the fill emits it once per harvested item —
+#: three badges from a page with three, six from a page with six, none from a
+#: page with none. New templates use this; the numbered form stays supported
+#: only for the templates already written against it.
+REPEATER_RE = re.compile(r'\{([a-z][a-z_0-9]*)\[\]\.([a-z][a-z_0-9]*)\}')
+
 #: `{prefix_N}` — a bare indexed slot with no field (`{filter_1}`,
 #: `{product_image_2}`; the prefix may itself contain underscores).
 BARE_NUMBERED_RE = re.compile(r'^([a-z][a-z_]*[a-z])_(\d+)$')
@@ -233,6 +244,28 @@ def _is_slot(token: str, declared: set[str], numbered, no_declaration: bool) -> 
     return False
 
 
+def repeater_fields(code: str) -> dict:
+    """Variable-arity repeaters a template declares, from its BODY.
+
+    Returns ``{prefix: {"fields": [...], "field_types": {...}}}``. Read off the
+    body rather than the header so a `// Tokens: {badges[].label}` line
+    documents the contract without creating one — the same rule the scalar and
+    numbered paths already follow.
+
+    No `RESERVED_IDENTS` check is needed here: `{badges[].label}` cannot be
+    mistaken for a JS identifier in JSX braces, which is what the reserved list
+    exists to protect against.
+    """
+    out: dict[str, dict] = {}
+    for prefix, field in REPEATER_RE.findall(strip_comments(code)):
+        entry = out.setdefault(prefix, {"fields": set(), "field_types": {}})
+        entry["fields"].add(field)
+        entry["field_types"][field] = infer_type(field)
+    for entry in out.values():
+        entry["fields"] = sorted(entry["fields"])
+    return out
+
+
 def template_contract(code: str, slot_schema=None) -> dict:
     """The fillable-slot contract of one template.
 
@@ -242,12 +275,16 @@ def template_contract(code: str, slot_schema=None) -> dict:
           "scalars": {name: {"type": ...}},
           "arrays":  {prefix: {"arity": int, "indices": [...],
                                "fields": [...], "field_types": {...}}},
+          "repeaters": {prefix: {"fields": [...], "field_types": {...}}},
           "code_idents": [...],   # brace tokens rejected as JS, for audit
         }
 
     `arity` is what the template *hardcodes* — TEAM/headshot-grid-square
     structurally declares 8 member rows. It is the ceiling, not the count to
     render: the count comes from the harvest, and rows beyond it are dropped.
+
+    `repeaters` carries no arity at all, because the template fixes none: the
+    row is written once and emitted once per harvested item.
     """
     body = strip_comments(code)
     declared = declared_slots(code)
@@ -286,5 +323,6 @@ def template_contract(code: str, slot_schema=None) -> dict:
     return {
         "scalars": scalars,
         "arrays": arrays,
+        "repeaters": repeater_fields(code),
         "code_idents": sorted(code_idents),
     }

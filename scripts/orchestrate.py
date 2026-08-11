@@ -696,7 +696,13 @@ console.log(JSON.stringify(contexts));
     print("\n  [0d] Building site-spec.json from extraction data...")
     site_spec_script = QUALITY_DIR / "build-site-spec.js"
     if site_spec_script.exists() and extraction_data_path.exists() and mapped_sections_path.exists():
-        _cmd = [node, str(site_spec_script), str(extraction_dir), project_name]
+        # Name the output directory explicitly. The script's default is
+        # `output/<project>` relative to its CWD (the repo), while the spec is
+        # read back from OUTPUT_DIR — the two only agree when --output-root is
+        # absent, and when they disagree the spec silently goes missing and a
+        # multi-page build degrades to single-page.
+        _cmd = [node, str(site_spec_script), str(extraction_dir), project_name,
+                "--out", str(OUTPUT_DIR / project_name)]
         if captures_dir:
             _cmd += ["--captures", str(captures_dir)]
             if routes:
@@ -2706,12 +2712,43 @@ def build_template_fill(
                     spec["field_types"][field],
                 )
 
+    # ── Variable-arity repeaters ──────────────────────────────────────────
+    # A fixed-arity array can only ever shrink: the template spells out N rows
+    # and the block above drops the surplus, so a page with more items than the
+    # template anticipated silently loses the remainder. A repeater has no N —
+    # the row is written once as `{badges[].label}` and emitted here once per
+    # harvested item, so the render count is the harvest count in both
+    # directions. `apply_template_fill` does the emitting; this only decides
+    # what each row holds.
+    repeat_rows: dict[str, list[dict[str, str]]] = {}
+    for prefix, spec in sorted(contract.get("repeaters", {}).items()):
+        limit = item_count if grouped else max(
+            (supply.get(spec["field_types"][f], 0) for f in spec["fields"]),
+            default=0,
+        )
+        rows: list[dict[str, str]] = []
+        for idx in range(1, limit + 1):
+            row = {f: item_value(idx, f) for f in spec["fields"]}
+            if not any(row.values()):
+                break  # the harvest is exhausted; emitting blank rows is the
+                       # fabrication this whole path exists to avoid
+            rows.append(row)
+            for field in spec["fields"]:
+                # Named for the row so two rows' `label`s cannot collide, and
+                # unmatchable by `_TEMPLATE_TOKEN_RE`, so recording it here
+                # cannot make the substituter rewrite anything.
+                record(f"{prefix}[{idx}].{field}", row[field],
+                       spec["field_types"][field])
+        repeat_rows[prefix] = rows
+
     filled = sum(1 for v in values.values() if v)
     coverage = {
         "filled": filled,
         "empty": len(values) - filled,
         "empty_slots": empty_slots,
         "arity": arity,
+        # prefix -> the rows to emit. Empty list = the block renders zero times.
+        "repeat_rows": repeat_rows,
         # Which join produced the values, so a build report can separate a fill
         # that rests on the DOM from one that rests on list position.
         "join": "grouped" if grouped else "positional",
@@ -2722,6 +2759,117 @@ def build_template_fill(
     return values, coverage, provenance
 
 
+#: `/* repeat:badges */` … `/* /repeat */` — the block a variable-arity
+#: repeater emits once per harvested row. A block comment (not `//`) because
+#: `apply_template_fill` treats `//` lines as contract declarations and passes
+#: them through untouched.
+_REPEAT_OPEN_RE = re.compile(r'^\s*/\*\s*repeat:([a-z][a-z_0-9]*)\s*\*/\s*$')
+_REPEAT_CLOSE_RE = re.compile(r'^\s*/\*\s*/repeat\s*\*/\s*$')
+
+
+def _quote_context(prefix: str) -> str | None:
+    """The string literal the end of `prefix` sits inside, or None for JSX text.
+
+    Line-scoped, which is what the substituter is: a slot token always sits on
+    one line, inside at most one single-line literal.
+    """
+    quote = None
+    i = 0
+    while i < len(prefix):
+        ch = prefix[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in "\"'`":
+            quote = ch
+        i += 1
+    return quote
+
+
+def _escape_slot_value(value: str, quote: str | None) -> str:
+    """A harvested string as it can safely sit where the token sat.
+
+    Substitution used to be raw, and real page copy is full of apostrophes:
+    `description: '{feature_3_description}'` filled with "cryptocurrency's full
+    potential" closes the literal three words early and the file stops
+    compiling. Four of this build's template sections broke exactly that way.
+
+    Inside a literal the delimiter is backslash-escaped. In JSX text it is not
+    — a backslash there is a literal backslash on the page — so quotes become
+    character entities instead, which render identically and also keep a lone
+    apostrophe from reading as an unterminated string to any tool scanning the
+    file (the truncation detector included). Braces and angle brackets are
+    entity-escaped in text position for the same reason: unescaped, they are
+    JSX syntax rather than copy.
+    """
+    value = value.replace("\r", " ").replace("\n", " ")
+    if quote == "'":
+        return value.replace("\\", "\\\\").replace("'", "\\'")
+    if quote == '"':
+        return value.replace("\\", "\\\\").replace('"', '\\"')
+    if quote == "`":
+        return (value.replace("\\", "\\\\").replace("`", "\\`")
+                     .replace("${", "\\${"))
+    for raw, entity in (("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"),
+                        ('"', "&quot;"), ("'", "&apos;"),
+                        ("{", "&#123;"), ("}", "&#125;")):
+        value = value.replace(raw, entity)
+    return value
+
+
+def expand_repeaters(code: str, repeat_rows: dict[str, list[dict[str, str]]]) -> str:
+    """Emit each `/* repeat:PREFIX */` block once per harvested row.
+
+    This is the half of the fill that a fixed-arity array cannot do. Trimming
+    can only remove rows the template already spelled out, so `{member_8_name}`
+    caps the render at eight no matter what the page holds; a repeater block is
+    written once and emitted `len(rows)` times — six for a page with six items,
+    zero for a page with none, and the markers themselves are dropped either
+    way so nothing about the mechanism reaches the output.
+
+    A block whose prefix has no entry in `repeat_rows` is left exactly as it
+    is, tokens and all, so a missing fill shows up as a Gate A token violation
+    rather than as a silently empty section.
+    """
+    if not repeat_rows:
+        return code
+    out: list[str] = []
+    lines = code.splitlines()
+    i = 0
+    while i < len(lines):
+        opened = _REPEAT_OPEN_RE.match(lines[i])
+        if not opened:
+            out.append(lines[i])
+            i += 1
+            continue
+        prefix = opened.group(1)
+        body: list[str] = []
+        i += 1
+        while i < len(lines) and not _REPEAT_CLOSE_RE.match(lines[i]):
+            body.append(lines[i])
+            i += 1
+        i += 1  # consume the closing marker
+        if prefix not in repeat_rows:
+            out.append(f"    /* repeat:{prefix} */")
+            out.extend(body)
+            out.append("    /* /repeat */")
+            continue
+        for row in repeat_rows[prefix]:
+            for line in body:
+                for field, value in row.items():
+                    token = f"{{{prefix}[].{field}}}"
+                    at = line.find(token)
+                    while at != -1:
+                        escaped = _escape_slot_value(value, _quote_context(line[:at]))
+                        line = line[:at] + escaped + line[at + len(token):]
+                        at = line.find(token, at + len(escaped))
+                out.append(line)
+    return "\n".join(out) + ("\n" if code.endswith("\n") else "")
+
+
 def apply_template_fill(code: str, values: dict[str, str], coverage: dict | None = None) -> str:
     """Substitute harvested values into a template, trimming arrays to the harvest.
 
@@ -2730,6 +2878,10 @@ def apply_template_fill(code: str, values: dict[str, str], coverage: dict | None
     fabrication this whole exercise is about. A row left holding only empty
     values is dropped too, as a backstop for arrays the contract did not size.
     """
+    # Repeaters first: their rows are emitted before any other substitution, so
+    # everything downstream (trimming, the empty-row drop) sees ordinary lines.
+    code = expand_repeaters(code, (coverage or {}).get("repeat_rows") or {})
+
     arity = (coverage or {}).get("arity") or {}
     trimmed: list[str] = []
     for line in code.splitlines():
@@ -2747,17 +2899,33 @@ def apply_template_fill(code: str, values: dict[str, str], coverage: dict | None
         if not surplus:
             trimmed.append(line)
 
-    def _sub(m: re.Match) -> str:
-        name = m.group(1)
-        if name in _TEMPLATE_RESERVED_IDENTS or name not in values:
-            return m.group(0)  # real JS, or a token this fill never claimed
-        return values[name]
+    def _sub_in(line: str) -> str:
+        """Substitute every claimed slot on one line, escaped for where it sits.
+
+        `re.sub` cannot do this on its own: the escaping depends on the token's
+        POSITION (inside `'…'`, inside `"…"`, or in JSX text), and each
+        substitution shifts the positions after it, so the line is rebuilt left
+        to right instead.
+        """
+        out: list[str] = []
+        pos = 0
+        for m in _TEMPLATE_TOKEN_RE.finditer(line):
+            name = m.group(1)
+            if name in _TEMPLATE_RESERVED_IDENTS or name not in values:
+                continue  # real JS, or a token this fill never claimed
+            out.append(line[pos:m.start()])
+            out.append(_escape_slot_value(
+                values[name], _quote_context("".join(out))
+            ))
+            pos = m.end()
+        out.append(line[pos:])
+        return "".join(out)
 
     # Comment lines (notably `// Tokens:`) declare the contract; substituting
     # into them rewrites the declaration and destroys the record of what the
     # template asked for.
     filled = "\n".join(
-        ln if ln.lstrip().startswith("//") else _TEMPLATE_TOKEN_RE.sub(_sub, ln)
+        ln if ln.lstrip().startswith("//") else _sub_in(ln)
         for ln in trimmed
     )
 
@@ -3133,6 +3301,8 @@ def stage_sections(
                     "empty": _fill_cov["empty"],
                     "empty_slots": _fill_cov["empty_slots"],
                     "arity": _fill_cov["arity"],
+                    "repeaters": {_p: len(_r) for _p, _r
+                                  in _fill_cov["repeat_rows"].items()},
                     "omit_section": _fill_cov["omit_section"],
                     "join": _fill_cov["join"],
                     "item_count": _fill_cov["item_count"],
@@ -3146,6 +3316,8 @@ def stage_sections(
                     if _ar["harvested"] < _ar["declared"]:
                         print(f"        {_pfx}[]: {_ar['harvested']}/{_ar['declared']} rows "
                               f"(trimmed to harvest)")
+                for _pfx, _rows in _fill_cov["repeat_rows"].items():
+                    print(f"        {_pfx}[]: {len(_rows)} rows (sized by harvest)")
                 if _fill_cov["empty_slots"]:
                     print(f"        unfilled: {', '.join(_fill_cov['empty_slots'][:8])}")
                 if _fill_cov["omit_section"]:
