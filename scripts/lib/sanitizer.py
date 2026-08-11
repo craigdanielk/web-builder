@@ -248,9 +248,15 @@ def sanitize_tokens(code: str, context: dict | None = None) -> tuple[str, list[d
 
             token_inner = token[1:-1]  # strip { }
             replacement = _resolve_token(token_inner, context)
-            if replacement is None:
-                # Last resort: humanize the token name
-                replacement = token_inner.replace("_", " ").title()
+            unresolved = replacement is None
+            if unresolved:
+                # This used to humanize the token name as a last resort, which
+                # is how `{primary_cta_text}` shipped as the visible words
+                # "Primary Cta Text" on a live homepage hero. An unresolvable
+                # token renders as nothing and is recorded in the returned
+                # replacement records with `"unresolved": True`, so the gap is
+                # reported rather than disguised as copy.
+                replacement = ""
 
             # Determine quoting based on surrounding context
             start, end = match.start(), match.end()
@@ -273,6 +279,7 @@ def sanitize_tokens(code: str, context: dict | None = None) -> tuple[str, list[d
                 "token": token,
                 "replacement": replacement,
                 "line": line_num,
+                "unresolved": unresolved,
             })
 
         result_lines.append(new_line)
@@ -342,9 +349,14 @@ def sanitize_directory(
                 for r in replacements:
                     all_replacements.append({**r, "file": rel})
 
+    unresolved = [r for r in all_replacements if r.get("unresolved")]
     return {
         "files_sanitized": files_sanitized,
         "total_replacements": len(all_replacements),
+        # Tokens no resolver could fill. They render as nothing; surfacing the
+        # count here is what turns an empty slot into a reported gap.
+        "unresolved_count": len(unresolved),
+        "unresolved_tokens": sorted({r["token"] for r in unresolved}),
         "details": all_replacements,
     }
 

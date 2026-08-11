@@ -40,6 +40,18 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 
+# Which brace tokens in a template body are fillable slots and which are JS
+# identifiers, what each slot wants, and how many entries each repeated array
+# hardcodes. Derived from the template body because `slot_schema` — the column
+# meant to carry this — is populated on 2 of 74 rows.
+from lib.slot_contract import (
+    TOKEN_RE as _TEMPLATE_TOKEN_RE,
+    RESERVED_IDENTS as _TEMPLATE_RESERVED_IDENTS,
+    template_contract,
+    infer_type as _slot_type,
+    BARE_FIELD as _BARE_FIELD,
+)
+
 try:
     from anthropic import Anthropic
 except ImportError:
@@ -53,6 +65,7 @@ try:
     from lib.supabase_client import (
         BuildCache,
         check_template_exists,
+        get_slot_schema,
         log_build,
         is_supabase_configured,
         get_industry_metadata,
@@ -63,6 +76,7 @@ try:
 except ImportError:
     SUPABASE_AVAILABLE = False
     BuildCache = None  # type: ignore
+    get_slot_schema = None  # type: ignore
     get_industry_metadata = None  # type: ignore
     get_section_sequence = None  # type: ignore
     get_all_page_sections = None  # type: ignore
@@ -2340,45 +2354,6 @@ def _record_unresolved_token(token_name: str) -> None:
     _UNRESOLVED_TOKENS[token_name] = _UNRESOLVED_TOKENS.get(token_name, 0) + 1
 
 
-#: Any `{token_name}` in a template body, including inside an attribute string
-#: (`href="{cta_url}"`). Excludes `{obj.field}` — a JS member expression inside
-#: a .map callback.
-_TEMPLATE_TOKEN_RE = re.compile(r'(?<![\w.])\{([a-z][a-z_0-9]*)\}(?![\w])')
-
-#: JSX/JS identifiers that appear in braces but are code, not content slots —
-#: `key={index}` is a React key, not a token anyone can fill.
-_TEMPLATE_RESERVED_IDENTS = frozenset({
-    "index", "key", "children", "item", "feature", "step", "faq", "logo",
-    "product", "testimonial", "stat", "i",
-})
-
-#: `{prefix_N_field}` — one entry of a template's repeated item array.
-_NUMBERED_TOKEN_RE = re.compile(r'^([a-z]+)_(\d+)_(.+)$')
-
-#: What a slot wants, inferred from its field name. The harvest stores copy as
-#: parallel lists rather than typed slots, so the field name is the only signal
-#: available for deciding which list a slot draws from.
-_SLOT_TITLE_FIELDS = frozenset({"title", "name", "question", "label", "heading", "headline"})
-_SLOT_BODY_FIELDS = frozenset({"description", "answer", "body", "text", "subtitle", "subheadline", "quote"})
-_SLOT_IMAGE_FIELDS = frozenset({"image_url", "image", "src", "logo", "avatar"})
-_SLOT_ALT_FIELDS = frozenset({"image_alt", "alt"})
-_SLOT_URL_FIELDS = frozenset({"url", "href", "link"})
-
-
-def parse_template_token_contract(code: str) -> list[str]:
-    """Declared fillable slots, from the template's `// Tokens:` comment.
-
-    `slot_schema` is the column that is *supposed* to carry this contract, but
-    it is an empty object on 72 of the 74 templates in Supabase, so it cannot
-    be the source. Every template does carry a well-formed `// Tokens:` line,
-    so that is parsed instead. Returns the declared names with the `[]`
-    repeater marker stripped (`{faqs[].question}` -> `faqs.question`).
-    """
-    for line in code.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("// Tokens:"):
-            return re.findall(r'\{([^{}]+)\}', stripped[len("// Tokens:"):])
-    return []
 
 
 def _cta_pairs(content: dict) -> list[tuple[str, str]]:
@@ -2393,109 +2368,385 @@ def _cta_pairs(content: dict) -> list[tuple[str, str]]:
     return pairs
 
 
-def build_template_fill(section: dict) -> tuple[dict[str, str], dict]:
-    """Map a template's tokens to this section's HARVESTED copy.
+def _item_sub_value(item: dict, j: int, kind: str) -> str:
+    """Entry `j` (0-based) of one of a harvested item's own inner lists.
+
+    A harvested item carries `headings` / `body_text` / `ctas` / `images` — its
+    full contents, not just the `heading` / `body` / `cta` / `image` summary
+    fields. A nested repeater slot (`{col_1_link_2_href}`) indexes into those.
+    """
+    if kind in ("image", "alt"):
+        images = [im for im in (item.get("images") or []) if isinstance(im, dict)]
+        if j >= len(images):
+            return ""
+        return (images[j].get("src") if kind == "image" else images[j].get("alt")) or ""
+    if kind in ("url", "cta"):
+        ctas = [c for c in (item.get("ctas") or []) if isinstance(c, dict)]
+        if j >= len(ctas):
+            return ""
+        return (ctas[j].get("href") if kind == "url" else ctas[j].get("text")) or ""
+    if kind == "text-long":
+        bodies = [b for b in (item.get("body_text") or []) if isinstance(b, str)]
+        return bodies[j].strip() if j < len(bodies) else ""
+    if kind == "text-short":
+        heads = [h for h in (item.get("headings") or []) if isinstance(h, str)]
+        return heads[j].strip() if j < len(heads) else ""
+    # `data` / `unclassified`: no supply in the harvest, as at the top level.
+    return ""
+
+
+def build_template_fill(
+    section: dict,
+    code: str | None = None,
+    slot_schema=None,
+) -> tuple[dict[str, str], dict, list[dict]]:
+    """Map a template's slots to this section's HARVESTED copy.
 
     Values come only from `section["content"]` and `section["images"]` — the
     real strings the crawler took off the source page. Nothing is drawn from
     `_CONTENT_TOKEN_DEFAULTS` / `_NUMBERED_TOKEN_DEFAULTS` / `_NUMBERED_VARIETY`
-    here: a slot the harvest cannot fill is reported as unfilled rather than
+    here: a slot the harvest cannot fill is left empty and counted, never
     invented, so the coverage number means what it says.
 
-    Returns (values, coverage) where `values` maps token name -> harvested
-    string and `coverage` counts filled/empty slots.
+    Which brace tokens count as slots comes from `template_contract()`, not
+    from a regex sweep of the body. That distinction is load-bearing: a sweep
+    also matches `variants={container}` and `key={j}`, and substituting an
+    empty harvest value into those yields `variants={}` / `key={}` — a
+    component that does not compile. 8 templates use `{container}` and 4 use
+    `{j}`.
 
-    KNOWN LIMITATION, reported rather than papered over: the harvest flattens a
-    section into parallel `headings[]` / `body_text[]` lists with no item
-    grouping, so pairing heading[i] with body[i] for a repeater is positional
-    inference, not a real join. Where a section has one more body string than
-    it has items, that leading string is treated as the section subtitle. That
-    rule is right for HOW-IT-WORKS on this site and off-by-one for FEATURES.
-    Fixing it properly means the harvester emitting `items[]`.
+    Returns `(values, coverage, provenance)`:
+
+      values      slot name -> harvested string (empty string when unfilled)
+      coverage    filled/empty counts, unfilled slot names, and per-array
+                  `{declared, harvested}` arity so a trimmed section is
+                  visible as a trim rather than as a mystery
+      provenance  one `{section_uid, slot, value, source}` record per slot,
+                  `source` being "harvested" or "empty"
+
+    Two joins are possible, and which one ran is recorded per value:
+
+      grouped   `content.items[]` exists — the harvester found the section's
+                repeating run in the DOM and joined each item's heading, body,
+                CTA and image at the item boundary. Item N fills slot index N,
+                and section-level slots come from `content.section_headings` /
+                `content.section_body_text`, which are the strings *no item
+                claimed*. Nothing is inferred. Array arity comes from
+                `item_count`, so a template hardcoding 6 feature cards or 8
+                team rows renders exactly as many as the page has, and
+                `item_count == 0` renders none. A nested repeater
+                (`{col_1_link_2_href}`) indexes the item's own inner lists.
+      positional  no `items[]` — the legacy fallback. Parallel `headings[]` /
+                `body_text[]` lists are paired by position, which is inference,
+                not a join: where a section has one more body string than it
+                has items the leading string is treated as the subtitle, a rule
+                that is right for HOW-IT-WORKS and off-by-one for FEATURES.
+                Every value resting on it is marked `pairing: inferred`.
     """
+    if code is None:
+        code = section.get("_template_code", "")
+    contract = template_contract(code, slot_schema)
+
     content = section_content_dict(section)
     headings = [h.strip() for h in (content.get("headings") or []) if isinstance(h, str) and h.strip()]
     bodies = [b.strip() for b in (content.get("body_text") or []) if isinstance(b, str) and b.strip()]
     ctas = _cta_pairs(content)
     images = [im for im in (section.get("images") or []) if isinstance(im, dict) and im.get("src")]
 
-    section_title = headings[0] if headings else ""
-    item_titles = headings[1:]
-    # A body string per item, plus possibly one leading section subtitle.
-    if item_titles and len(bodies) > len(item_titles):
-        section_subtitle, item_bodies = bodies[0], bodies[1:]
-    elif item_titles:
-        section_subtitle, item_bodies = "", bodies
+    items = [it for it in (content.get("items") or []) if isinstance(it, dict)]
+    grouped = bool(items)
+
+    if grouped:
+        # `item_count` is the harvester's own arity for the section. Trusting it
+        # over `len(items)` would let a spec whose two fields disagree size the
+        # render off a number with no items behind it; the site-spec contract
+        # check already fails that case, so they agree, and the min is a belt.
+        declared_count = content.get("item_count")
+        item_count = (min(len(items), declared_count)
+                      if isinstance(declared_count, int) else len(items))
+        items = items[:item_count]
+
+        sect_headings = [h.strip() for h in (content.get("section_headings") or [])
+                         if isinstance(h, str) and h.strip()]
+        sect_bodies = [b.strip() for b in (content.get("section_body_text") or [])
+                       if isinstance(b, str) and b.strip()]
+        section_title = sect_headings[0] if sect_headings else ""
+        section_subtitle = sect_bodies[0] if sect_bodies else ""
+        # A section-level CTA is one no item claimed. Without this subtraction a
+        # card grid's first card link becomes the section's own button.
+        claimed = {(it.get("cta") or {}).get("text", "") for it in items
+                   if isinstance(it.get("cta"), dict)}
+        section_ctas = [c for c in ctas if c[0] not in claimed] or ctas
+        # Only images no item claimed back a section-level image slot.
+        claimed_src = {(it.get("image") or {}).get("src", "") for it in items
+                       if isinstance(it.get("image"), dict)}
+        section_images = [im for im in images if im.get("src") not in claimed_src] or images
+        item_bodies = sect_bodies[1:]  # for `section_body_2` only
+        pairing_inferred = False
     else:
-        section_subtitle, item_bodies = (bodies[0] if bodies else ""), bodies[1:]
+        section_title = headings[0] if headings else ""
+        item_titles = headings[1:]
+        # A body string per item, plus possibly one leading section subtitle.
+        # When the counts differ this is a guess, not a join — see the docstring
+        # — and `pairing_inferred` marks every value that rests on it.
+        pairing_inferred = bool(item_titles) and len(bodies) != len(item_titles)
+        if item_titles and len(bodies) > len(item_titles):
+            section_subtitle, item_bodies = bodies[0], bodies[1:]
+        elif item_titles:
+            section_subtitle, item_bodies = "", bodies
+        else:
+            section_subtitle, item_bodies = (bodies[0] if bodies else ""), bodies[1:]
+        section_ctas = ctas
+        section_images = images
 
-    values: dict[str, str] = {}
+    # How many harvested strings back each slot type, used only by the
+    # positional fallback to size an array. On the grouped path an array's
+    # arity comes from `item_count`, not from counting flat strings.
+    supply = {
+        "text-short": len(headings[1:]),
+        "text-long": len(item_bodies),
+        "image": len(images),
+        "alt": len(images),
+        "url": len(ctas),
+        "cta": len(ctas),
+        "data": 0,
+        "unclassified": 0,
+    }
 
-    def scalar(name: str) -> str:
-        if name in ("headline", "section_title", "title", "section_label"):
-            return section_title
-        if name in ("subheadline", "section_subtitle", "section_body", "subtitle", "description"):
-            return section_subtitle
+    def scalar(name: str) -> tuple[str, str]:
+        """(value, kind) for a section-level slot.
+
+        `kind` is which harvest list the slot draws from, so an empty result
+        can say whether the harvest ran out (`text-short`, `url`, …) or never
+        carries this sort of value at all (`data`, `unclassified`).
+        """
+        if name in ("headline", "section_title", "title", "page_title", "section_label"):
+            return section_title, "text-short"
+        if name in ("subheadline", "section_subtitle", "section_body", "subtitle",
+                    "description", "page_subtitle"):
+            return section_subtitle, "text-long"
         if name == "section_body_2":
-            return item_bodies[0] if item_bodies else ""
+            return (item_bodies[0] if item_bodies else ""), "text-long"
         if name in ("cta_text", "primary_cta_text"):
-            return ctas[0][0] if ctas else ""
-        if name in ("cta_url", "primary_cta_url"):
-            return ctas[0][1] if ctas else ""
+            return (section_ctas[0][0] if section_ctas else ""), "cta"
+        if name in ("cta_url", "cta_href", "primary_cta_url"):
+            return (section_ctas[0][1] if section_ctas else ""), "url"
         if name == "secondary_cta_text":
-            return ctas[1][0] if len(ctas) > 1 else ""
-        if name == "secondary_cta_url":
-            return ctas[1][1] if len(ctas) > 1 else ""
-        if name in ("image_url", "image_src"):
-            return images[0]["src"] if images else ""
-        if name in ("image_alt",):
-            return (images[0].get("alt") or "") if images else ""
-        return ""
+            return (section_ctas[1][0] if len(section_ctas) > 1 else ""), "cta"
+        if name in ("secondary_cta_url", "secondary_cta_href"):
+            return (section_ctas[1][1] if len(section_ctas) > 1 else ""), "url"
+        kind = _slot_type(name)
+        if kind == "image":
+            return (section_images[0]["src"] if section_images else ""), kind
+        if kind == "alt":
+            return ((section_images[0].get("alt") or "") if section_images else ""), kind
+        return "", kind
 
-    def numbered(index: int, field: str) -> str:
+    def grouped_value(index: int, field: str) -> str:
+        """One field of item `index` (1-based) of `content.items[]`.
+
+        Every field of a value comes off the SAME item, because the harvester
+        joined them at the item's DOM boundary. This is the whole difference
+        from the positional path: `feature_1_description` is item 1's body, not
+        `body_text[1]`, so a section carrying its own intro paragraph no longer
+        shifts every card's copy by one.
+        """
         i = index - 1
-        if field in _SLOT_TITLE_FIELDS:
-            return item_titles[i] if i < len(item_titles) else ""
-        if field in _SLOT_BODY_FIELDS:
-            return item_bodies[i] if i < len(item_bodies) else ""
-        if field in _SLOT_IMAGE_FIELDS:
-            return images[i]["src"] if i < len(images) else ""
-        if field in _SLOT_ALT_FIELDS:
-            return (images[i].get("alt") or "") if i < len(images) else ""
-        if field in _SLOT_URL_FIELDS:
-            return ctas[i][1] if i < len(ctas) else ""
+        if i >= len(items):
+            return ""
+        item = items[i]
+
+        # ── Nested repeaters ──────────────────────────────────────────────
+        # FOOTER/mega spells its link columns `{col_1_link_2_href}`: an array
+        # (`col`) whose entries hold an array of their own. `template_contract`
+        # flattens that to prefix `col`, index 1, field `link_2_href`, so the
+        # sub-index is only recoverable from the field name. Without this the
+        # whole column collapses onto the item's FIRST link — three rows all
+        # pointing at /about, none of them labelled. Each item carries its own
+        # `headings` / `body_text` / `ctas` / `images` lists, which are exactly
+        # the column's contents, so the sub-index reads straight off them.
+        nested = re.fullmatch(r'([a-z][a-z_]*?)_(\d+)(?:_([a-z][a-z_]*))?', field)
+        if nested:
+            sub_field = nested.group(3)
+            if sub_field:
+                sub_kind = _slot_type(sub_field)
+            else:
+                # A bare `{col_1_link_2}` renders as the link's visible text.
+                # `infer_type("link")` says "url" because a field NAMED link
+                # usually holds one; here the href lives in the `_href` sibling.
+                sub_kind = _slot_type(nested.group(1))
+                if sub_kind == "url":
+                    sub_kind = "cta"
+            return _item_sub_value(item, int(nested.group(2)) - 1, sub_kind)
+
+        kind = _slot_type(field)
+        image = item.get("image") if isinstance(item.get("image"), dict) else None
+        cta = item.get("cta") if isinstance(item.get("cta"), dict) else None
+        if kind == "image":
+            return (image or {}).get("src") or ""
+        if kind == "alt":
+            return (image or {}).get("alt") or ""
+        if kind == "url":
+            return (cta or {}).get("href") or ""
+        if kind == "cta":
+            return (cta or {}).get("text") or ""
+        if kind == "text-long":
+            return (item.get("body") or "").strip()
         if field == "number":
             return str(index)
+        if kind == "text-short":
+            return (item.get("heading") or "").strip()
+        # `data` (a price, a date, an icon name) and `unclassified`: the
+        # harvest holds nothing of this kind. Empty, and recorded as empty.
         return ""
 
-    filled = empty = 0
+    def positional_value(index: int, field: str) -> str:
+        """One field of item `index` (1-based), paired by list position.
+
+        Fallback for a section the harvester found no repeating run in. Kept so
+        a spec without `items[]` — an older capture, or a section whose markup
+        has no detectable repeat — fills exactly as it did before.
+        """
+        i = index - 1
+        item_titles = headings[1:]
+        kind = _slot_type(field)
+        if kind == "image":
+            return images[i]["src"] if i < len(images) else ""
+        if kind == "alt":
+            return (images[i].get("alt") or "") if i < len(images) else ""
+        if kind == "url":
+            return ctas[i][1] if i < len(ctas) else ""
+        if kind == "cta":
+            return ctas[i][0] if i < len(ctas) else ""
+        if kind == "text-long":
+            return item_bodies[i] if i < len(item_bodies) else ""
+        if field == "number":
+            return str(index)
+        if kind == "text-short":
+            return item_titles[i] if i < len(item_titles) else ""
+        return ""
+
+    item_value = grouped_value if grouped else positional_value
+
+    values: dict[str, str] = {}
+    provenance: list[dict] = []
     empty_slots: list[str] = []
-    body = "\n".join(
-        ln for ln in section.get("_template_code", "").splitlines()
-        if not ln.lstrip().startswith("//")
-    )
-    for token in sorted(set(_TEMPLATE_TOKEN_RE.findall(body))):
-        if token in _TEMPLATE_RESERVED_IDENTS:
-            continue
-        m = _NUMBERED_TOKEN_RE.match(token)
-        val = numbered(int(m.group(2)), m.group(3)) if m else scalar(token)
-        values[token] = val
-        if val:
-            filled += 1
+    uid = section.get("section_uid") or section_identity(section, section.get("index", 0))
+
+    def record(slot: str, value: str, kind: str) -> None:
+        values[slot] = value
+        entry = {
+            "section_uid": uid,
+            "slot": slot,
+            "value": value,
+            "source": "harvested" if value else "empty",
+        }
+        if not value:
+            entry["reason"] = (
+                "no-harvest-supply" if kind in ("data", "unclassified")
+                else "harvest-exhausted"
+            )
+        elif kind in ("text-short", "text-long"):
+            # Sourced — and by which join. "grouped" is a DOM fact; "inferred"
+            # is list position standing in for one.
+            if grouped:
+                entry["pairing"] = "grouped"
+            elif pairing_inferred:
+                entry["pairing"] = "inferred"
+        provenance.append(entry)
+        if not value:
+            empty_slots.append(slot)
+            _record_unresolved_token(slot)
+
+    for name in sorted(contract["scalars"]):
+        record(name, *scalar(name))
+
+    # ── Fixed-arity arrays ────────────────────────────────────────────────
+    # `declared_arity` is what the template hardcodes (TEAM/headshot-grid-square
+    # structurally declares 8 member rows). Rendering all 8 from a harvest of 3
+    # is how "invented content" becomes "broken content": five cards reading
+    # "Name / Role". The rendered count comes from the harvest, and the surplus
+    # rows are dropped before substitution.
+    #
+    # On the grouped path the count is `item_count` — the number of items the
+    # harvester actually found in the DOM — rather than a max over how many
+    # loose strings of each type the section happens to hold. `item_count == 0`
+    # renders zero rows, and a section whose every slot then comes out empty is
+    # flagged `omit_section` for the caller to drop entirely.
+    arity: dict[str, dict] = {}
+    # The contract stores an array's indices and fields as separate sets, so
+    # their cross-product can name slots the template never uses.
+    present = set(_TEMPLATE_TOKEN_RE.findall(code))
+    for prefix, spec in sorted(contract["arrays"].items()):
+        declared = spec["arity"]
+        if grouped:
+            harvested = min(declared, item_count)
+            # An array whose fields the items cannot supply at all — an image
+            # strip against text-only items — renders nothing rather than N
+            # blank tiles. Counted as a leading run so trimming stays by index.
+            while harvested and not any(
+                grouped_value(harvested, f) for f in spec["fields"]
+            ):
+                harvested -= 1
         else:
-            empty += 1
-            empty_slots.append(token)
+            harvested = min(
+                declared,
+                max((supply.get(spec["field_types"][f], 0) for f in spec["fields"]), default=0),
+            )
+        arity[prefix] = {"declared": declared, "harvested": harvested}
+        for idx in spec["indices"]:
+            for field in spec["fields"]:
+                slot = (f"{prefix}_{idx}" if field == _BARE_FIELD
+                        else f"{prefix}_{idx}_{field}")
+                if slot not in present:
+                    continue
+                record(
+                    slot,
+                    item_value(idx, field) if idx <= harvested else "",
+                    spec["field_types"][field],
+                )
 
-    return values, {"filled": filled, "empty": empty, "empty_slots": empty_slots}
+    filled = sum(1 for v in values.values() if v)
+    coverage = {
+        "filled": filled,
+        "empty": len(values) - filled,
+        "empty_slots": empty_slots,
+        "arity": arity,
+        # Which join produced the values, so a build report can separate a fill
+        # that rests on the DOM from one that rests on list position.
+        "join": "grouped" if grouped else "positional",
+        "item_count": item_count if grouped else None,
+        # Nothing harvested for any slot: the section has no substance to show.
+        "omit_section": bool(values) and filled == 0,
+    }
+    return values, coverage, provenance
 
 
-def apply_template_fill(code: str, values: dict[str, str]) -> str:
-    """Substitute harvested values into a template, then drop dead repeater rows.
+def apply_template_fill(code: str, values: dict[str, str], coverage: dict | None = None) -> str:
+    """Substitute harvested values into a template, trimming arrays to the harvest.
 
-    An item array entry whose every value came out empty is removed rather than
-    rendered as a blank card — the source page has four features, not six, and
-    padding it to six is the fabrication this whole exercise is about.
+    Rows beyond the harvested count are dropped by index before substitution —
+    the source page has four features, not six, and padding it to six is the
+    fabrication this whole exercise is about. A row left holding only empty
+    values is dropped too, as a backstop for arrays the contract did not size.
     """
+    arity = (coverage or {}).get("arity") or {}
+    trimmed: list[str] = []
+    for line in code.splitlines():
+        if line.lstrip().startswith("//"):
+            trimmed.append(line)
+            continue
+        surplus = False
+        for prefix, counts in arity.items():
+            for idx in range(counts["harvested"] + 1, counts["declared"] + 1):
+                if re.search(rf'\{{{re.escape(prefix)}_{idx}(?:_[a-z_0-9]+)?\}}', line):
+                    surplus = True
+                    break
+            if surplus:
+                break
+        if not surplus:
+            trimmed.append(line)
+
     def _sub(m: re.Match) -> str:
         name = m.group(1)
         if name in _TEMPLATE_RESERVED_IDENTS or name not in values:
@@ -2507,18 +2758,34 @@ def apply_template_fill(code: str, values: dict[str, str]) -> str:
     # template asked for.
     filled = "\n".join(
         ln if ln.lstrip().startswith("//") else _TEMPLATE_TOKEN_RE.sub(_sub, ln)
-        for ln in code.splitlines()
+        for ln in trimmed
     )
 
     kept: list[str] = []
-    for line in filled.splitlines():
+    for before, line in zip(trimmed, filled.splitlines()):
         stripped = line.strip().rstrip(",")
         if stripped.startswith("{") and stripped.endswith("}") and ":" in stripped:
             quoted = re.findall(r":\s*'([^']*)'", stripped) + re.findall(r':\s*"([^"]*)"', stripped)
             if quoted and not any(v.strip() for v in quoted):
                 continue  # every slot in this item row is empty — drop the row
+        # A self-contained one-line element whose slots all came out empty:
+        # `<a href="{secondary_cta_url}">{secondary_cta_text}</a>` becomes an
+        # unlabeled button linking nowhere. The source page has one CTA, not
+        # two; render one.
+        element = re.fullmatch(r'<(\w+)\b[^>]*>(.*)</\1>', stripped)
+        if (
+            _TEMPLATE_TOKEN_RE.search(before)
+            and element
+            and not element.group(2).strip()  # no visible text left
+        ):
+            content_attrs = [
+                value for name, value in re.findall(r'(\w+)\s*=\s*"([^"]*)"', stripped)
+                if name not in ("className", "class")
+            ]
+            if content_attrs and not any(v.strip() for v in content_attrs):
+                continue
         kept.append(line)
-    return "\n".join(kept) + ("\n" if filled.endswith("\n") else "")
+    return "\n".join(kept) + ("\n" if code.endswith("\n") else "")
 
 
 #: Memoization for template resolution, independent of `build_cache`.
@@ -2606,8 +2873,13 @@ def _replace_content_tokens(code: str) -> str:
         token = m.group(2)
         if token not in declared and token not in _CONTENT_TOKEN_DEFAULTS:
             return m.group(0)  # Not a content token — leave as-is
-        val = _CONTENT_TOKEN_DEFAULTS.get(token, token.replace("_", " ").title())
-        return f'{{"{val}"}}'
+        if token not in _CONTENT_TOKEN_DEFAULTS:
+            # Declared but with no default. This used to humanize the token
+            # name — `{primary_cta_text}` became the visible words "Primary Cta
+            # Text". Record it and render nothing.
+            _record_unresolved_token(token)
+            return '{""}'
+        return f'{{"{_CONTENT_TOKEN_DEFAULTS[token]}"}}'
 
     return _CONTENT_TOKEN_RE.sub(_replacer, code)
 
@@ -2730,6 +3002,12 @@ def stage_sections(
     _copy_trace: list[dict] = []
     #: Per-template slot coverage: how much of each template the harvest filled.
     _tpl_fill_stats: list[dict] = []
+    #: One record per slot: {section_uid, slot, value, source}. Nothing
+    #: downstream could previously tell sourced copy from invented copy, which
+    #: is what kept this defect invisible.
+    _slot_provenance: list[dict] = []
+    #: Sections dropped because the harvest filled none of their slots.
+    _omitted_sections: list[dict] = []
 
     # Page-level audit-capture copy, allocated to the sections that have none
     # of their own. Computed once, before the loop, so the allocation is a
@@ -2765,8 +3043,9 @@ def stage_sections(
         # --preset or harvest-driven build has exactly the same right to the
         # reviewed component library.
         if SUPABASE_AVAILABLE:
+            _tpl_cache = build_cache or template_memo()
             tpl = check_template_exists(
-                section["archetype"], section["variant"], build_cache or template_memo()
+                section["archetype"], section["variant"], _tpl_cache
             )
             if tpl is not None:
                 if isinstance(tpl, Path):
@@ -2836,23 +3115,50 @@ def stage_sections(
                 # Collection" while "Buy Bitcoin South Africa" sat unread in
                 # this very section's `content`. Slots the harvest cannot fill
                 # are left empty and counted, never invented.
-                section["_template_code"] = template_code
-                _fill_values, _fill_cov = build_template_fill(section)
-                template_code = apply_template_fill(template_code, _fill_values)
-                section.pop("_template_code", None)
+                _slot_schema = (
+                    get_slot_schema(section["archetype"], section["variant"], _tpl_cache)
+                    if get_slot_schema else None
+                )
+                _fill_values, _fill_cov, _fill_prov = build_template_fill(
+                    section, template_code, _slot_schema
+                )
+                template_code = apply_template_fill(template_code, _fill_values, _fill_cov)
+                _slot_provenance.extend(_fill_prov)
                 _tpl_fill_stats.append({
                     "file": filename,
+                    "section_uid": section.get("section_uid"),
                     "archetype": section["archetype"],
                     "variant": section["variant"],
                     "filled": _fill_cov["filled"],
                     "empty": _fill_cov["empty"],
                     "empty_slots": _fill_cov["empty_slots"],
+                    "arity": _fill_cov["arity"],
+                    "omit_section": _fill_cov["omit_section"],
+                    "join": _fill_cov["join"],
+                    "item_count": _fill_cov["item_count"],
                 })
                 _cov_note = (f"{_fill_cov['filled']} filled / {_fill_cov['empty']} empty"
                              if (_fill_cov["filled"] or _fill_cov["empty"]) else "no slots")
-                print(f"      ↳ slots: {_cov_note}")
+                _join_note = (f"grouped, {_fill_cov['item_count']} items"
+                              if _fill_cov["join"] == "grouped" else "positional (no items[])")
+                print(f"      ↳ slots: {_cov_note} [{_join_note}]")
+                for _pfx, _ar in _fill_cov["arity"].items():
+                    if _ar["harvested"] < _ar["declared"]:
+                        print(f"        {_pfx}[]: {_ar['harvested']}/{_ar['declared']} rows "
+                              f"(trimmed to harvest)")
                 if _fill_cov["empty_slots"]:
                     print(f"        unfilled: {', '.join(_fill_cov['empty_slots'][:8])}")
+                if _fill_cov["omit_section"]:
+                    # Nothing harvested for any slot. Writing this file ships a
+                    # section of blanks; skipping it ships the page without it.
+                    print("        ⚠ omitted: harvest filled no slot in this section")
+                    _omitted_sections.append({
+                        "file": filename,
+                        "section_uid": section.get("section_uid"),
+                        "archetype": section["archetype"],
+                        "variant": section["variant"],
+                    })
+                    continue
 
                 sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
                 out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
@@ -3358,6 +3664,32 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
             f"{_te} left empty ({100 * _tf // _tot if _tot else 0}%) "
             f"across {len(_tpl_fill_stats)} template section(s)"
         )
+        if _omitted_sections:
+            print(f"  ⊘ {len(_omitted_sections)} section(s) omitted — harvest filled no slot: "
+                  + ", ".join(s["file"] for s in _omitted_sections))
+
+        # ── Per-slot provenance ───────────────────────────────────────────
+        # {section_uid, slot, value, source}. This is the artifact that makes
+        # invented copy distinguishable from sourced copy; without it a page of
+        # placeholder text and a page of real copy look identical downstream.
+        _prov_name = (
+            f"slot-provenance-{output_subdir.replace('/', '_')}.json"
+            if output_subdir else "slot-provenance.json"
+        )
+        write_file(OUTPUT_DIR / project_name / _prov_name, json.dumps({
+            "schema": "aurelix.slot_provenance.v1",
+            "summary": {
+                "slots": len(_slot_provenance),
+                "harvested": _tf,
+                "empty": _te,
+                "default": 0,  # the fill path draws from no default table
+                "coverage": round(_tf / _tot, 4) if _tot else 0.0,
+                "sections_omitted": len(_omitted_sections),
+            },
+            "omitted_sections": _omitted_sections,
+            "slots": _slot_provenance,
+        }, indent=2))
+
         if isinstance(_copy_summary, dict):
             _copy_summary["template_slot_coverage"] = {
                 "filled": _tf, "empty": _te, "sections": _tpl_fill_stats,
@@ -5354,7 +5686,10 @@ export default async function Page({ params }: { params: Promise<{ page: string 
                 token = m.group(2)     # e.g. "feature_1_title"
                 resolved = _resolve_numbered_token(token)
                 if resolved is None:
-                    resolved = token.replace("_", " ").title()
+                    # `{primary_cta_text}` used to humanize to the visible words
+                    # "Primary Cta Text". Unresolvable is recorded, not rendered.
+                    _record_unresolved_token(token)
+                    resolved = ""
                 return f"{key_part}'{resolved}'"
             _cleaned = re.sub(
                 r"(\w+:\s*)'\{([a-z][a-z_0-9]+)\}'",
@@ -5368,9 +5703,15 @@ export default async function Page({ params }: { params: Promise<{ page: string 
             # Order matters: handle quoted tokens FIRST (to avoid double-quoting)
 
             # 3a: Double-quoted tokens: "{feature_1_title}" → "Feature 1"
+            def _replace_double_quoted(m: re.Match) -> str:
+                resolved = _resolve_numbered_token(m.group(1))
+                if not resolved:
+                    _record_unresolved_token(m.group(1))
+                    return '""'  # never the humanized token name
+                return f'"{resolved}"'
             _cleaned = re.sub(
                 r'"\{([a-z]+_\d+(?:_\d+)?_[a-z_]+)\}"',
-                lambda m: '"' + (_resolve_numbered_token(m.group(1)) or m.group(1).replace("_", " ").title()) + '"',
+                _replace_double_quoted,
                 _cleaned,
             )
             # 3b: Bare tokens NOT already inside quotes: {feature_1_title} → "Feature 1"
@@ -5563,8 +5904,30 @@ export default async function Page({ params }: { params: Promise<{ page: string 
         _sn_result = _sanitize_dir(site_dir, context=_sanitizer_ctx)
         if _sn_result["total_replacements"] > 0:
             print(f"  ✓ Safety-net sanitizer fixed {_sn_result['total_replacements']} remaining token(s) in {_sn_result['files_sanitized']} file(s)")
+        if _sn_result.get("unresolved_count"):
+            print(f"  ⚠ {_sn_result['unresolved_count']} token(s) left EMPTY — no harvest, no default: "
+                  + ", ".join(_sn_result["unresolved_tokens"][:10]))
     except ImportError:
         pass  # sanitizer module not available; non-fatal
+
+    # ── Unresolved-slot report ────────────────────────────────────────────
+    # Every slot that reached a rendering path with nothing to put in it. This
+    # is the number that used to be hidden by humanizing token names into
+    # English: a page of blanks and a page of copy looked the same.
+    if _UNRESOLVED_TOKENS:
+        _ut_total = sum(_UNRESOLVED_TOKENS.values())
+        print(f"  ⚠ Unresolved slots: {_ut_total} occurrence(s) across "
+              f"{len(_UNRESOLVED_TOKENS)} distinct token(s)")
+        for _tok, _n in sorted(_UNRESOLVED_TOKENS.items(), key=lambda kv: -kv[1])[:12]:
+            print(f"      {_n:>3}x {_tok}")
+        write_file(
+            OUTPUT_DIR / project_name / "unresolved-slots.json",
+            json.dumps({
+                "schema": "aurelix.unresolved_slots.v1",
+                "total_occurrences": _ut_total,
+                "tokens": dict(sorted(_UNRESOLVED_TOKENS.items(), key=lambda kv: -kv[1])),
+            }, indent=2),
+        )
 
     # ── Copy animation components from library ──
     anim_components_dir = SKILLS_DIR / "animation-components"
