@@ -49,6 +49,22 @@ function loadRegistry() {
 }
 
 /**
+ * Load the full animation registry (1034 components).
+ * Used by selectAnimation for archetype-based selection.
+ */
+function loadFullRegistry() {
+  const fullRegistryPath = path.resolve(__dirname, '../../../skills/animation-components/registry/animation_registry.json');
+  try {
+    const raw = fs.readFileSync(fullRegistryPath, 'utf8');
+    const data = JSON.parse(raw);
+    return data;
+  } catch (err) {
+    console.warn(`[animation-injector] Could not load full registry: ${err.message}`);
+    return { components: [] };
+  }
+}
+
+/**
  * Look up a component in the registry by pattern name.
  * Returns null if not found or if it's a placeholder.
  * @param {string} patternName
@@ -257,7 +273,37 @@ const ARCHETYPE_PATTERN_MAP = {
 // ---------------------------------------------------------------------------
 
 /**
- * Select the best animation pattern for an archetype using affinity scores
+ * Derive animation intensity from component characteristics.
+ * Based on real registry fields: duration, animation_type, and risk factors.
+ *
+ * @param {Object} comp - Component from animation registry
+ * @returns {string} 'subtle' | 'moderate' | 'dramatic'
+ */
+function deriveComponentIntensity(comp) {
+  // Subtle: very quick, simple entrance/exit only, all low risks
+  if (comp.duration_range_ms[1] <= 300 &&
+      (comp.animation_type === 'entrance' || comp.animation_type === 'exit') &&
+      comp.motion_stacking_risk === 'low' &&
+      comp.causes_layout_shift_risk === 'low' &&
+      comp.scroll_coupling_risk === 'low') {
+    return 'subtle';
+  }
+
+  // Dramatic: high duration, complex animation types, or any medium/high risks
+  if (comp.duration_range_ms[1] >= 1000 ||
+      ['scroll', 'interactive', 'background', 'layout', 'loading'].includes(comp.animation_type) ||
+      comp.motion_stacking_risk === 'medium' ||
+      comp.causes_layout_shift_risk === 'medium' ||
+      comp.scroll_coupling_risk === 'medium') {
+    return 'dramatic';
+  }
+
+  // Moderate: everything else (medium duration entrance/exit, hover, effects)
+  return 'moderate';
+}
+
+/**
+ * Select the best animation pattern for an archetype using section_archetypes
  * from the component registry, filtered by engine compatibility, intensity,
  * and deduplication across sections.
  *
@@ -268,47 +314,41 @@ const ARCHETYPE_PATTERN_MAP = {
  * @returns {string|null} Best pattern name, or null if no candidates
  */
 function selectAnimation(archetype, presetIntensity, engine, usedPatterns) {
-  var registry = loadRegistry();
-  var intensityRank = { subtle: 1, moderate: 2, expressive: 3, dramatic: 4 };
+  var data = loadFullRegistry();
+  var reg = data.components || [];
+
+  var intensityRank = { subtle: 1, moderate: 2, dramatic: 3 };
   var presetRank = intensityRank[presetIntensity] || 2;
 
   var candidates = [];
 
-  var entries = Object.entries(registry.components);
-  for (var i = 0; i < entries.length; i++) {
-    var name = entries[i][0];
-    var comp = entries[i][1];
+  // Iterate through array of components
+  for (var i = 0; i < reg.length; i++) {
+    var comp = reg[i];
+    var name = comp.animation_id || '';
 
-    // Filter: engine match (or css/css+react/css+framer which work with both)
-    var compEngine = comp.engine || 'framer-motion';
-    if (compEngine !== 'css' && compEngine !== 'css+react' && compEngine !== 'css+framer' && compEngine !== engine) continue;
+    // Filter: must have section_archetypes for this archetype
+    if (!comp.section_archetypes || comp.section_archetypes.indexOf(archetype) === -1) continue;
 
-    // Filter: intensity <= preset intensity (don't use expressive on subtle preset)
-    var compRank = intensityRank[comp.intensity] || 2;
+    // Filter: engine match
+    var compEngine = comp.framework || comp.engine || 'framer-motion';
+    if (compEngine !== 'framer-motion' && compEngine !== 'gsap') continue;
+    if (compEngine !== engine) continue;
+
+    // Filter: derive and check intensity <= preset intensity
+    var compIntensity = deriveComponentIntensity(comp);
+    var compRank = intensityRank[compIntensity] || 2;
     if (compRank > presetRank) continue;
-
-    // Filter: must have affinity data for this archetype
-    var affinity = comp.affinity || {};
-    var score = affinity[archetype] || 0;
-    if (score === 0) continue;
 
     // Filter: not already used in recent sections (deduplication)
     if (usedPatterns.indexOf(name) !== -1) continue;
 
-    // Filter: must be "ready" status
-    if (comp.status !== 'ready') continue;
-
-    candidates.push({ name: name, score: score, intensity: comp.intensity });
+    candidates.push({ name: name, intensity: compIntensity });
   }
 
   if (candidates.length === 0) return null;
 
-  // Sort: highest affinity first, break ties by preferring higher intensity
-  candidates.sort(function (a, b) {
-    if (b.score !== a.score) return b.score - a.score;
-    return (intensityRank[b.intensity] || 0) - (intensityRank[a.intensity] || 0);
-  });
-
+  // Return first match
   return candidates[0].name;
 }
 
@@ -1328,6 +1368,7 @@ module.exports = {
   buildCardEmbeddedDemos,
   getPluginRecommendationsForSection,
   selectAnimation,
+  deriveComponentIntensity,
   loadRegistry,
   CARD_ANIMATION_MAP,
   CARD_EMBEDDED_DEMOS,
