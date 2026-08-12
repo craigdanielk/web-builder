@@ -217,6 +217,9 @@ web-builder/
 │       ├── cursor-trail.md            ← Mouse-following trail effect
 │       └── image-patterns.md          ← CSS backgroundImage rendering patterns
 │
+├── benchmarks/                        ← NEW 2026-08-13: market design benchmarks
+│   └── crypto-exchange.json           ← measured, provenance-stamped, patterns-only
+│
 ├── templates/                         ← Prompt templates per pipeline stage
 │   ├── scaffold-prompt.md             ← Stage 1 prompt template
 │   ├── section-prompt.md              ← Stage 2 prompt template
@@ -447,6 +450,22 @@ Runs after extraction, before scaffold generation. Calls `pattern-identifier.js`
 ## Known Issues & Workarounds
 
 ### Active Issues
+
+> **⚠ This section predates 2026-08-13 and several entries below are RESOLVED or
+> WRONG. `../docs/PIPELINE_ARCHITECTURE.md` §10–§11 is canonical where they
+> disagree — it is execution-verified. Status as of 2026-08-13:**
+>
+> | Entry below | Actual status |
+> |---|---|
+> | Content tokens not populated | **Resolved differently than described.** Tokens are filled from the HARVEST, never from a default table. Slots the harvest cannot fill are left empty and counted; a section with no sourced content is omitted and recorded in `omitted-sections.json`. "Sourced or empty, never invented." |
+> | Nav links redirect to store domain | **Resolved.** Harvested hrefs are joined against built routes (`lib/nav_harvest.localise_hrefs`). Measured on cape-crypto: nav 4/8 rewritten local, the rest genuinely external and counted in `link-mapping.json` |
+> | Missing default placeholder assets | **Deliberate, not a bug.** An unresolvable asset is never placeheld — it is recorded unresolved in `image-jobs.json` and the element does not render. `<Image src="">` THROWS in next/image, so an empty src must never ship |
+>
+> **New, and more important than any of the above:** the design-token chain was
+> broken in four places until 2026-08-13, the worst being `globals.css` emitting
+> two hardcoded stone constants and no `--accent` at all. See §11 of the
+> architecture doc. A template only obeys the design system if it reads the CSS
+> custom properties; **4 of 74 do.**
 
 **Content tokens not populated in Supabase templates** (v3.1.0)
 - Supabase `code_template` entries use `{content_token}` syntax (e.g., `{feature_1_title}`, `{testimonial_1_quote}`, `{stat_1_value}`) for placeholder content. When templates are pulled directly (bypassing LLM generation in `--industry` mode), these tokens render as visible text on the deployed site.
