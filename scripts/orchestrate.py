@@ -3091,6 +3091,62 @@ console.log(JSON.stringify(result));
     return None
 
 
+def _origin_for(tpl) -> str:
+    """Which resolver produced this section's body.
+
+    `check_template_exists()` (the value bound to `tpl` at the call site)
+    returns a `Path` for a local `section-templates/` file, a `str` for a
+    Supabase `code_template` row, or `None` when neither resolved and the LLM
+    path ran instead. That Path-vs-str distinction is exactly what the
+    "TEMPLATE FOUND: ... (local)" vs "TEMPLATE FOUND: Supabase code_template"
+    print already branches on — there is no `tpl.is_local` attribute anywhere
+    on these return types.
+    """
+    if tpl is None:
+        return "llm"
+    return "local_template" if isinstance(tpl, Path) else "supabase_template"
+
+
+def _emit_section_artifact(
+    project_name: str,
+    page_dir: str,
+    out_name: str,
+    tsx: str,
+    section: dict,
+    section_uid: str,
+    intensity: str,
+    origin: str,
+    provenance: list,
+) -> None:
+    """Write the SectionArtifact companion JSON alongside a written .tsx.
+
+    Mirrors the .tsx location: `sections_base.name` is "sections" for a
+    single-page build (one call to stage_sections, no collision risk) and the
+    page id (e.g. "home", "about") for a Layer 6 multipage build, where
+    `output_subdir` is `sections/{page_id}` — so two pages' artifacts land in
+    different `section-artifacts/{page_id}/` directories and never collide.
+    """
+    from lib.section_artifact import SectionArtifact
+
+    artifact = SectionArtifact(
+        tsx=tsx,
+        archetype=section["archetype"],
+        variant=section.get("variant", ""),
+        section_uid=section_uid,
+        intensity=intensity,
+        origin=origin,
+        provenance=[r for r in (provenance or []) if r.get("section_uid") == section_uid],
+        assets=[],
+        animation=None,
+    )
+    art_dir = OUTPUT_DIR / project_name / "section-artifacts" / page_dir
+    art_dir.mkdir(parents=True, exist_ok=True)
+    art_name = Path(out_name).stem + ".json"
+    (art_dir / art_name).write_text(
+        json.dumps(artifact.to_dict(), indent=2), encoding="utf-8"
+    )
+
+
 def stage_sections(
     sections: list[dict],
     preset: str,
@@ -3135,6 +3191,17 @@ def stage_sections(
 
     taxonomy = read_file(SKILLS_DIR / "section-taxonomy.md")
     engine = detect_animation_engine(preset_content)
+
+    # SectionArtifact.intensity — there is no `preset_intensity` anywhere in
+    # this file. The real field is `site_spec["style"]["animation"]["intensity"]`,
+    # written by build-site-spec.js (`animationAnalysis.intensity.level`,
+    # one of subtle/moderate/expressive/dramatic — the same vocabulary
+    # SectionArtifact.validate() enforces) and defaulted to "moderate" when
+    # animation isn't detected. --preset builds carry no site_spec at all, so
+    # "moderate" is also the fallback here.
+    section_intensity = (
+        ((site_spec or {}).get("style") or {}).get("animation") or {}
+    ).get("intensity") or "moderate"
 
     # Load engine-specific instruction template
     if engine == "gsap":
@@ -3205,6 +3272,12 @@ def stage_sections(
         num = f"{i + 1:02d}"
         name = section["archetype"].lower().replace("-", "_")
         filename = f"{num}-{name}.tsx"
+        # Same fallback build_template_fill() uses internally (its local `uid`
+        # var) — section_uid is only ever set on the dict when build-site-
+        # spec.js minted one; LLM-path and registry gap-fill sections have
+        # none, and `section.get("section_uid", "")` would ship an artifact
+        # that fails validate()'s "section_uid is empty" check.
+        section_uid = section_identity(section, i)
 
         # Get per-section injection blocks
         anim_ctx = animation_contexts.get(str(i), {})
@@ -3352,6 +3425,18 @@ def stage_sections(
                 filepath.parent.mkdir(parents=True, exist_ok=True)
                 filepath.write_text(template_code, encoding="utf-8")
                 section_files.append(filepath)
+
+                _emit_section_artifact(
+                    project_name=project_name,
+                    page_dir=sections_base.name,
+                    out_name=out_name,
+                    tsx=template_code,
+                    section=section,
+                    section_uid=section_uid,
+                    intensity=section_intensity,
+                    origin=_origin_for(tpl),
+                    provenance=_fill_prov,
+                )
                 continue  # Skip LLM generation for this section
 
         # Try to find structural reference in taxonomy
@@ -3754,6 +3839,18 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
         filepath = sections_base / out_name
         write_file(filepath, code)
         section_files.append(filepath)
+
+        _emit_section_artifact(
+            project_name=project_name,
+            page_dir=sections_base.name,
+            out_name=out_name,
+            tsx=code,
+            section=section,
+            section_uid=section_uid,
+            intensity=section_intensity,
+            origin=_origin_for(None),
+            provenance=[],
+        )
 
         if not output_subdir:
             save_checkpoint(OUTPUT_DIR / project_name, "sections", project_name, {"last_section_index": i, "section_count": len(sections)})
