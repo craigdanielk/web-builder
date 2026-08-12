@@ -231,9 +231,12 @@ def reset_build_failures() -> None:
 EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_REVIEW_NEEDED = 2
+EXIT_NOT_MEASURED = 3
 
 
-def resolve_build_outcome(render_audit_status: str, deploy_requested: bool) -> tuple[str, int]:
+def resolve_build_outcome(
+    render_audit_status: str, deploy_requested: bool, audit_ran: bool = True
+) -> tuple[str, int]:
     """Map recorded failures + render-audit result onto (build_log status, exit code).
 
     Rules:
@@ -248,6 +251,15 @@ def resolve_build_outcome(render_audit_status: str, deploy_requested: bool) -> t
       * Deploy was NOT requested → this run only generated artifacts, so the
         render audit is not applicable and its 'skipped' value is not held
         against the run.
+      * `audit_ran=False` means the audit never produced a verdict at all
+        (missing tooling, server timeout, subprocess timeout/exception) —
+        this is NOT the same failure as "the audit ran and found defects".
+        A build whose only problem is an audit that could not run gets its
+        own exit code (3, NOT_MEASURED) so callers can't mistake "we never
+        measured this" for "we measured it and it's broken" (exit 1) or,
+        worse, for success (exit 0). This case is checked after the
+        'passed'/'review_needed' short-circuits above so an audit that DID
+        produce a verdict is never downgraded by a stale audit_ran=False.
 
     The returned status goes straight into build_log.status, whose CHECK
     constraint (migrations/20260213192654_init_schema.sql:68) permits only
@@ -263,6 +275,8 @@ def resolve_build_outcome(render_audit_status: str, deploy_requested: bool) -> t
         return "completed", EXIT_OK
     if render_audit_status == "review_needed":
         return "partial", EXIT_REVIEW_NEEDED
+    if not audit_ran:
+        return "failed", EXIT_NOT_MEASURED
     return "failed", EXIT_FAILED
 
 
@@ -8269,7 +8283,13 @@ def main():
         ) if deploy_ran else None
 
         # ── Build outcome: status + exit code must agree with reality ──
-        _build_status, _exit_code = resolve_build_outcome(_render_audit_status, deploy_requested)
+        # 'passed'/'review_needed' are the only statuses where the audit
+        # actually produced a verdict; 'failed'/'skipped' both mean it never
+        # measured anything (crashed, timed out, or couldn't start).
+        _audit_ran = _render_audit_status in ("passed", "review_needed")
+        _build_status, _exit_code = resolve_build_outcome(
+            _render_audit_status, deploy_requested, audit_ran=_audit_ran
+        )
 
         if build_cache and SUPABASE_AVAILABLE:
             all_sections = []
@@ -8499,7 +8519,13 @@ def main():
     _token_summary = persist_token_ledger(output_dir)
 
     # ── Build outcome: status + exit code must agree with reality ──
-    _build_status, _exit_code = resolve_build_outcome(_render_audit_status, deploy_requested)
+    # 'passed'/'review_needed' are the only statuses where the audit
+    # actually produced a verdict; 'failed'/'skipped' both mean it never
+    # measured anything (crashed, timed out, or couldn't start).
+    _audit_ran = _render_audit_status in ("passed", "review_needed")
+    _build_status, _exit_code = resolve_build_outcome(
+        _render_audit_status, deploy_requested, audit_ran=_audit_ran
+    )
 
     if SUPABASE_AVAILABLE:
         # Count local / db / LLM sections (cache used so no extra Supabase reads)
