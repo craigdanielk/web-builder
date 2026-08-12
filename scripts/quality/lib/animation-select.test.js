@@ -76,16 +76,40 @@ test('non-existent archetype returns null', () => {
   assert.equal(result, null);
 });
 
-test('subtle intensity ceiling respects derivation', () => {
-  // Get a subtle result
-  const subtleResult = injector.selectLibraryAnimation('HERO', 'subtle', 'framer-motion', []);
+// ============================================================================
+// CRITICAL FIX 1: Ceiling test that actually validates intensity
+// ============================================================================
 
-  if (subtleResult !== null) {
-    // Verify it came from a subtle component by checking against a dramatic fetch
-    const dramaticResult = injector.selectLibraryAnimation('HERO', 'dramatic', 'framer-motion', []);
-    // Subtle should never get something that dramatic rejects
-    assert.ok(subtleResult || dramaticResult !== null, 'Ceiling should prevent inappropriate matches');
-  }
+test('subtle intensity ceiling enforces derived intensity <= subtle', () => {
+  // Get the full registry to look up components
+  const fullRegistry = injector.loadFullRegistry();
+  const componentMap = {};
+  fullRegistry.components.forEach(comp => {
+    componentMap[comp.animation_id] = comp;
+  });
+
+  // For each common archetype, get a subtle result and verify its intensity
+  const testArchetypes = ['HERO', 'GALLERY', 'FEATURES', 'STATS', 'FAQ'];
+
+  testArchetypes.forEach(arch => {
+    const result = injector.selectLibraryAnimation(arch, 'subtle', 'framer-motion', []);
+
+    if (result !== null) {
+      // Look up the component in the full registry
+      const comp = componentMap[result];
+      assert.ok(comp, `Component ${result} not found in registry`);
+
+      // Derive its intensity
+      const derivedIntensity = injector.deriveComponentIntensity(comp);
+
+      // CRITICAL: Assert it is 'subtle' (or would need ceiling filter to fail)
+      // This test FAILS if deriveComponentIntensity returns 'moderate' or 'dramatic'
+      assert.equal(derivedIntensity, 'subtle',
+        `For archetype ${arch}, subtle preset returned component with intensity '${derivedIntensity}' ` +
+        `(animation_id: ${result}). This violates the ceiling: subtle preset must never get ` +
+        `moderate or dramatic components.`);
+    }
+  });
 });
 
 test('usedPatterns deduplication prevents reuse', () => {
@@ -99,30 +123,31 @@ test('usedPatterns deduplication prevents reuse', () => {
 });
 
 // ============================================================================
-// REGRESSION TEST: selectAnimation (old path) is byte-identical to 7507e883
+// CRITICAL FIX 2: Regression test that validates resolvability
 // ============================================================================
 
-test('selectAnimation returns PATTERN_SNIPPETS-compatible names', () => {
-  const injector_imported = require('./animation-injector');
-  const PATTERN_SNIPPETS = {
-    'fade-up-stagger': 'test',
-    'fade-up-single': 'test',
-    'character-reveal': 'test',
-    'word-reveal': 'test',
+test('buildAnimationContext output contains only resolvable pattern names', () => {
+  // Build the set of resolvable names from both keyspaces the prompt path uses
+  const patternSnippets = {
+    'fade-up-stagger': true,
+    'fade-up-single': true,
+    'character-reveal': true,
+    'word-reveal': true,
+    'count-up': true,
+    'marquee': true,
+    'scale-up': true,
+    'slide-in-left': true,
   };
 
-  const result = injector_imported.selectAnimation('HERO', 'moderate', 'framer-motion', []);
-  if (result !== null) {
-    // Result should be one of the keys that exist in PATTERN_SNIPPETS
-    // (or another pattern snippet key)
-    assert.ok(typeof result === 'string');
-    // Regression: should NOT contain '__' (that's animation_id format)
-    assert.ok(!result.includes('__'), `selectAnimation should return snippet-format names, got: ${result}`);
-  }
-});
+  // Also include all keys from the 48-component registry (lookupComponent() path)
+  const registry = injector.loadRegistry();
+  const registryComponentNames = Object.keys(registry.components || {});
+  const resolvableNames = new Set([
+    ...Object.keys(patternSnippets),
+    ...registryComponentNames
+  ]);
 
-test('buildAnimationContext produces valid prompt without unresolvable names', () => {
-  // Exercise the live prompt building path through buildAnimationContext
+  // Exercise buildAnimationContext
   const context = injector.buildAnimationContext(
     {},  // animationAnalysis
     '',  // presetContent
@@ -133,20 +158,41 @@ test('buildAnimationContext produces valid prompt without unresolvable names', (
     ''   // sectionVariant
   );
 
-  // Check that animationContext is generated
-  assert.ok(context.animationContext);
-  assert.ok(typeof context.animationContext === 'string');
+  // Extract all pattern names from the prompt output
+  const patternMatches = context.animationContext.match(/Pattern: (\w+(?:[_-]\w+)*)/g) || [];
+  const extractedPatterns = patternMatches.map(match => match.replace('Pattern: ', ''));
 
-  // Regression check: CRITICAL — prompt must NOT contain unresolvable names like "entrance__blur_fade"
-  // These would be from selectLibraryAnimation leaking into the prompt path
-  // The prompt path should only use names from PATTERN_SNIPPETS or component library
-  const containsLibraryId = context.animationContext.includes('entrance__') ||
-                             context.animationContext.includes('scroll__') ||
-                             context.animationContext.includes('interactive__');
+  // Also look for component imports or IDs (animation_id format has __)
+  const animationIds = context.animationContext.match(/[\w_]+__[\w_]+/g) || [];
 
-  assert.ok(!containsLibraryId,
-    'Regression: prompt contains unresolvable animation_id format (e.g. entrance__blur_fade). ' +
-    'This means selectLibraryAnimation leaked into the prompt building path.');
+  // CRITICAL ASSERTION: Every pattern name must be resolvable
+  extractedPatterns.forEach(pattern => {
+    assert.ok(resolvableNames.has(pattern),
+      `REGRESSION: buildAnimationContext output contains unresolvable pattern name '${pattern}'. ` +
+      `This means selectLibraryAnimation (which returns animation_id format like 'codehagen__hero_badge') ` +
+      `leaked into the prompt building path. The prompt path should only use names from PATTERN_SNIPPETS ` +
+      `or the 48-component registry. Resolvable names: ${Array.from(resolvableNames).slice(0, 10).join(', ')}...`);
+  });
+
+  // CRITICAL: No animation_id format (with __) should appear in output
+  assert.equal(animationIds.length, 0,
+    `REGRESSION: buildAnimationContext contains ${animationIds.length} animation_id-format names: ` +
+    `${animationIds.join(', ')}. This is the exact regression this test exists to catch.`);
+});
+
+// ============================================================================
+// REGRESSION TEST: selectAnimation (old path) is byte-identical to 7507e883
+// ============================================================================
+
+test('selectAnimation returns PATTERN_SNIPPETS-compatible names', () => {
+  const result = injector.selectAnimation('HERO', 'moderate', 'framer-motion', []);
+  // Result should be null (because 48-component registry has no affinity data)
+  // OR a pattern snippet name (never animation_id format with __)
+  if (result !== null) {
+    assert.ok(!result.includes('__'),
+      `selectAnimation returned animation_id format: ${result}. ` +
+      `It should return PATTERN_SNIPPETS keys or null, not animation_ids.`);
+  }
 });
 
 // ============================================================================
