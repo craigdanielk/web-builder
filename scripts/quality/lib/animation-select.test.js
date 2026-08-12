@@ -126,58 +126,123 @@ test('usedPatterns deduplication prevents reuse', () => {
 // CRITICAL FIX 2: Regression test that validates resolvability
 // ============================================================================
 
-test('buildAnimationContext output contains only resolvable pattern names', () => {
-  // Build the set of resolvable names from both keyspaces the prompt path uses
-  const patternSnippets = {
-    'fade-up-stagger': true,
-    'fade-up-single': true,
-    'character-reveal': true,
-    'word-reveal': true,
-    'count-up': true,
-    'marquee': true,
-    'scale-up': true,
-    'slide-in-left': true,
-  };
+// PATTERN_SNIPPETS keys — the reference-code keyspace the prompt path may name.
+const PATTERN_SNIPPET_NAMES = [
+  'fade-up-stagger',
+  'fade-up-single',
+  'character-reveal',
+  'word-reveal',
+  'count-up',
+  'staggered-timeline',
+];
 
-  // Also include all keys from the 48-component registry (lookupComponent() path)
+// The union of every name the prompt path is allowed to emit: PATTERN_SNIPPETS
+// keys plus the 48-component registry keys (the lookupComponent() keyspace).
+function buildResolvableNames() {
   const registry = injector.loadRegistry();
-  const registryComponentNames = Object.keys(registry.components || {});
-  const resolvableNames = new Set([
-    ...Object.keys(patternSnippets),
-    ...registryComponentNames
+  return new Set([
+    ...PATTERN_SNIPPET_NAMES,
+    ...Object.keys(registry.components || {}),
   ]);
+}
 
-  // Exercise buildAnimationContext
-  const context = injector.buildAnimationContext(
-    {},  // animationAnalysis
-    '',  // presetContent
-    'HERO',  // archetype
-    0,   // sectionIndex
-    [],  // usedPatterns
-    {},  // identification
-    ''   // sectionVariant
-  );
+/**
+ * Assert that every pattern name in an animationContext is resolvable, and that
+ * at least one name was found (a vacuous pass is a test failure, not a pass).
+ *
+ * @param {string} context - animationContext string from buildAnimationContext
+ * @param {string} label - which code path produced it
+ * @param {string[]} allowExtra - names admissible for this fixture only (e.g. a
+ *        preset-supplied section_override, which the pipeline passes through by
+ *        design and which is therefore not a leak).
+ */
+function assertOnlyResolvablePatterns(context, label, allowExtra) {
+  const resolvableNames = buildResolvableNames();
+  (allowExtra || []).forEach(n => resolvableNames.add(n));
 
-  // Extract all pattern names from the prompt output
-  const patternMatches = context.animationContext.match(/Pattern: (\w+(?:[_-]\w+)*)/g) || [];
-  const extractedPatterns = patternMatches.map(match => match.replace('Pattern: ', ''));
+  const patternMatches = context.match(/Pattern: (\w+(?:[_-]\w+)*)/g) || [];
+  const extractedPatterns = patternMatches.map(m => m.replace('Pattern: ', ''));
 
-  // Also look for component imports or IDs (animation_id format has __)
-  const animationIds = context.animationContext.match(/[\w_]+__[\w_]+/g) || [];
+  // VACUITY GUARD: an empty extraction must fail, not pass by iterating nothing.
+  assert.ok(extractedPatterns.length > 0,
+    `VACUOUS TEST (${label}): no 'Pattern: <name>' line was found in the ` +
+    `animationContext, so the resolvability assertion below would iterate an ` +
+    `empty array and pass without checking anything. Context was:\n${context.slice(0, 400)}`);
 
-  // CRITICAL ASSERTION: Every pattern name must be resolvable
   extractedPatterns.forEach(pattern => {
     assert.ok(resolvableNames.has(pattern),
-      `REGRESSION: buildAnimationContext output contains unresolvable pattern name '${pattern}'. ` +
-      `This means selectLibraryAnimation (which returns animation_id format like 'codehagen__hero_badge') ` +
-      `leaked into the prompt building path. The prompt path should only use names from PATTERN_SNIPPETS ` +
-      `or the 48-component registry. Resolvable names: ${Array.from(resolvableNames).slice(0, 10).join(', ')}...`);
+      `REGRESSION (${label}): output contains unresolvable pattern name '${pattern}'. ` +
+      `This means selectLibraryAnimation (which returns animation_id format like ` +
+      `'entrance__staggered_grid') leaked into the prompt building path. The prompt ` +
+      `path may only name PATTERN_SNIPPETS keys or 48-component registry keys.`);
   });
 
-  // CRITICAL: No animation_id format (with __) should appear in output
+  // animation_id format (double underscore) must never appear anywhere.
+  const animationIds = context.match(/[A-Za-z0-9]+__[A-Za-z0-9_]+/g) || [];
   assert.equal(animationIds.length, 0,
-    `REGRESSION: buildAnimationContext contains ${animationIds.length} animation_id-format names: ` +
-    `${animationIds.join(', ')}. This is the exact regression this test exists to catch.`);
+    `REGRESSION (${label}): output contains ${animationIds.length} animation_id-format ` +
+    `name(s): ${animationIds.join(', ')}. This is the exact regression this test exists to catch.`);
+}
+
+test('buildAnimationContext TIER 1 (component injection) emits only resolvable pattern names', () => {
+  // Empty analysis + HERO resolves 'character-reveal' from the 48-component
+  // registry and returns via the tier-1 component-injection branch.
+  const context = injector.buildAnimationContext(
+    {}, '', 'HERO', 0, [], {}, ''
+  ).animationContext;
+
+  assertOnlyResolvablePatterns(context, 'tier-1 component injection', []);
+});
+
+test('buildAnimationContext TIER 3 (affinity fallback) emits only resolvable pattern names', () => {
+  // Entry conditions for the tier-3 branch (animation-injector.js:1329):
+  //   1. animationAnalysis is truthy  -> skips the free-design branch (:1147)
+  //   2. archetype resolves a non-null pattern list -> not a static section
+  //   3. tier 1 misses: the resolved pattern has no component in the
+  //      48-component registry. Forced here with a section_overrides entry
+  //      naming a pattern that is deliberately absent from the registry.
+  //   4. tier 2 misses: perSection has no entry for this sectionIndex, so
+  //      there is no extracted animation signature to summarise.
+  // Engine/intensity are set to gsap/dramatic because that is the combination
+  // for which selectLibraryAnimation has a live candidate — i.e. the inputs
+  // under which the historical regression is actually observable.
+  const OVERRIDE = 'no-component-pattern';
+  const preset = [
+    'Motion: scroll-reveal/gsap',
+    'animation_intensity: dramatic',
+    `section_overrides: GALLERY:${OVERRIDE}`,
+  ].join('\n');
+
+  const result = injector.buildAnimationContext(
+    { perSection: {} }, preset, 'GALLERY', 0, [], {}, ''
+  );
+
+  // Prove we are on tier 3: tier 1 would have returned a component context
+  // (which carries an "### Component" block, not a bare Pattern line).
+  assert.ok(result.animationContext.includes('## Animation Context'),
+    'Expected the tier-3 snippet-fallback context shape');
+
+  // The override is preset-supplied and passed through by design, so it is
+  // admissible for this fixture; anything else must be resolvable.
+  assertOnlyResolvablePatterns(result.animationContext, 'tier-3 affinity fallback', [OVERRIDE]);
+});
+
+test('buildAnimationContext FREE-DESIGN path emits only resolvable pattern names', () => {
+  // Free-design branch (animation-injector.js:1147): animationAnalysis is null.
+  // NOTE: with the 48-component registry carrying no affinity data,
+  // selectAnimation returns null here and the branch lands on its generic
+  // fade-up fallback. This case therefore does NOT currently discriminate the
+  // selectAnimation -> selectLibraryAnimation swap (both fall through to the
+  // same fallback). It is kept as a leak guard, not as a mutation detector.
+  const preset = 'Motion: scroll-reveal/gsap\nanimation_intensity: dramatic\n';
+  const context = injector.buildAnimationContext(
+    null, preset, 'GALLERY', 0, [], {}, ''
+  ).animationContext;
+
+  const animationIds = context.match(/[A-Za-z0-9]+__[A-Za-z0-9_]+/g) || [];
+  assert.equal(animationIds.length, 0,
+    `REGRESSION (free-design path): output contains animation_id-format name(s): ` +
+    `${animationIds.join(', ')}.`);
 });
 
 // ============================================================================
