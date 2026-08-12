@@ -3161,6 +3161,7 @@ def stage_sections(
     brief: str | None = None,
     copy_findings: dict | None = None,
     audit_harvest: dict | None = None,
+    known_pages: list[str] | None = None,
 ) -> tuple[list[Path], dict | None]:
     """Stage 2: Generate each section component individually with engine-aware injection.
     When output_subdir and section_file_names are set (e.g. Layer 6 shared components),
@@ -3992,7 +3993,7 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
     if section_files:
         _page_dir = (OUTPUT_DIR / project_name / (output_subdir or "sections")).name
         _preset_intensity = parse_preset_intensity(preset_content)
-        stage_inject_animation(project_name, _page_dir, section_files, _preset_intensity)
+        stage_inject_animation(project_name, _page_dir, section_files, _preset_intensity, known_pages)
 
     return section_files, _copy_summary
 
@@ -4546,6 +4547,12 @@ def stage_sections_multipage(
     print("\n🔨 Layer 6: Sections (multi-page)...")
     section_files_by_page: dict[str, list[Path]] = {}
     copy_summary_by_page: dict[str, dict] = {}
+    # The full current page set, threaded down to stage_inject_animation so
+    # it can prune a stale animation-coverage.json `by_page` slot for a page
+    # that no longer exists in THIS manifest (dropped mid-project, resumed
+    # without --clean) — otherwise that page's old numbers keep counting
+    # toward the site total forever, even after the page itself is gone.
+    _known_pages = [p.get("id", "") for p in manifest.get("pages", []) if p.get("id")]
     for page in manifest.get("pages", []):
         page_id = page.get("id", "")
         sections = page.get("sections", [])
@@ -4593,6 +4600,7 @@ def stage_sections_multipage(
                 if _findings_are_page_scoped(copy_findings) else copy_findings
             ),
             audit_harvest=_page_harvest,
+            known_pages=_known_pages,
         )
         section_files_by_page[page_id] = files
         if _page_summary:
@@ -4716,6 +4724,7 @@ def stage_inject_animation(
     page_dir: str,
     section_files: list[Path],
     preset_intensity: str,
+    known_pages: list[str] | None = None,
 ) -> dict:
     """Decide, per section, which REAL animation-library component (if any)
     should wrap it — and persist that decision for ASSEMBLY to act on.
@@ -4750,6 +4759,16 @@ def stage_inject_animation(
     fallback — the prior design for this stage could report full coverage
     while actually injecting nothing (see task-7 brief); this stage exists
     to make that impossible by construction.
+
+    `known_pages`, when given (multipage builds — `stage_sections_multipage`
+    passes the full page_id list from the manifest), prunes any `by_page`
+    coverage slot that is NOT one of these page IDs before recomputing the
+    aggregate. Per-page keying (fixed in a prior round) stops a repeat run of
+    the SAME page from doubling the total; it does not by itself stop a page
+    that no longer exists in the CURRENT manifest — dropped mid-build,
+    resumed without --clean — from leaving its old slot behind and still
+    counting toward the site total forever. `None` (single-page builds,
+    which only ever have one slot, "sections") skips pruning entirely.
     """
     print(f"\n🎬 Deciding animation components ({page_dir})...")
 
@@ -4917,6 +4936,22 @@ console.log(JSON.stringify({{
         "by_component": tally["by_component"],
         "by_reason": tally["by_reason"],
     }
+
+    # Prune slots for pages that no longer exist in THIS build. Per-page
+    # keying alone stops a repeat run of the same page from doubling; it
+    # does not stop a page dropped from the manifest (resumed without
+    # --clean) from leaving a stale slot that keeps counting toward the
+    # site total forever — the same defect class one level out. Only prune
+    # when the caller knows the full current page set (multipage builds);
+    # single-page builds pass None and are never pruned, since they only
+    # ever have the one "sections" slot.
+    if known_pages is not None:
+        known_page_set = set(known_pages)
+        stale = [p for p in by_page if p not in known_page_set]
+        for p in stale:
+            del by_page[p]
+        if stale:
+            print(f"  ⊘ Pruned stale coverage slot(s) for page(s) no longer in this build: {', '.join(stale)}")
 
     aggregate = {
         "total": 0, "injected": 0, "wrapped_generic": 0, "unchanged": 0,

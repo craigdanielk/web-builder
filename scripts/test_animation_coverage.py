@@ -256,6 +256,78 @@ if node_available:
 
     cleanup_fixture()
 
+# ── CRITICAL regression: a page dropped from the manifest must not leave its
+# old coverage slot counting toward the total forever. Per-page keying (the
+# previous round's fix) stops a repeat run of the SAME page from doubling
+# the total; it does not by itself stop a page that no longer exists in the
+# CURRENT manifest — dropped mid-build, resumed without --clean, which the
+# root CLAUDE.md documents as normal — from leaving its old slot behind.
+# ============================================================================
+PRUNE_PROJECT = "test-animation-coverage-page-prune"
+PRUNE_DIR = orchestrate.OUTPUT_DIR / PRUNE_PROJECT
+
+
+def build_prune_page(page_id, count):
+    sections_dir = PRUNE_DIR / "sections" / page_id
+    art_dir = PRUNE_DIR / "section-artifacts" / page_id
+    sections_dir.mkdir(parents=True, exist_ok=True)
+    art_dir.mkdir(parents=True, exist_ok=True)
+    files = []
+    for i in range(1, count + 1):
+        name = f"{i:02d}-section"
+        (sections_dir / f"{name}.tsx").write_text(SECTION_TEMPLATE.format(n=i), encoding="utf-8")
+        (art_dir / f"{name}.json").write_text(json.dumps({"archetype": "HOW-IT-WORKS"}), encoding="utf-8")
+        files.append(sections_dir / f"{name}.tsx")
+    return files
+
+
+def cleanup_prune_fixture():
+    import shutil
+    if PRUNE_DIR.exists():
+        shutil.rmtree(PRUNE_DIR)
+
+
+if node_available:
+    cleanup_prune_fixture()
+
+    files_a = build_prune_page("page-a", 2)
+    files_b = build_prune_page("page-b", 2)
+
+    # Original build: both pages present, known_pages carries the full manifest.
+    orchestrate.stage_inject_animation(PRUNE_PROJECT, "page-a", files_a, "moderate", known_pages=["page-a", "page-b"])
+    orchestrate.stage_inject_animation(PRUNE_PROJECT, "page-b", files_b, "moderate", known_pages=["page-a", "page-b"])
+
+    before = json.loads((PRUNE_DIR / "animation-coverage.json").read_text(encoding="utf-8"))
+    test("page-prune: both pages present before the drop",
+         set(before["by_page"].keys()) == {"page-a", "page-b"},
+         f"got {list(before['by_page'].keys())}")
+    test("page-prune: total reflects both pages before the drop", before["total"] == 4,
+         f"got {before['total']}")
+
+    # Resumed build WITHOUT --clean: page-b no longer exists in the manifest.
+    # A single call with the new, smaller known_pages set is enough to prune —
+    # pruning doesn't wait for every page to be re-processed.
+    orchestrate.stage_inject_animation(PRUNE_PROJECT, "page-a", files_a, "moderate", known_pages=["page-a"])
+
+    after = json.loads((PRUNE_DIR / "animation-coverage.json").read_text(encoding="utf-8"))
+    test("page-prune: page-b's slot is GONE from by_page after the drop",
+         "page-b" not in after["by_page"], f"by_page keys: {list(after['by_page'].keys())}")
+    test("page-prune: total no longer counts page-b's sections",
+         after["total"] == before["by_page"]["page-a"]["total"], f"got {after['total']}")
+    test("page-prune: unchanged no longer counts page-b's contribution",
+         after["unchanged"] == before["by_page"]["page-a"]["unchanged"], f"got {after['unchanged']}")
+    test("page-prune: by_component no longer includes page-b's contribution",
+         after["by_component"] == before["by_page"]["page-a"]["by_component"])
+    test("page-prune: by_reason no longer includes page-b's contribution",
+         after["by_reason"] == before["by_page"]["page-a"]["by_reason"])
+
+    print("\n  === animation-coverage.json — BEFORE drop (page-a + page-b present) ===")
+    print(json.dumps(before, indent=2))
+    print("\n  === animation-coverage.json — AFTER drop (page-b removed from manifest) ===")
+    print(json.dumps(after, indent=2))
+
+    cleanup_prune_fixture()
+
 # ── If a real build already has a coverage file on disk, validate it too ──
 for candidate in orchestrate.OUTPUT_DIR.glob("*/animation-coverage.json"):
     try:
