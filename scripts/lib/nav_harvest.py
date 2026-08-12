@@ -44,6 +44,7 @@ into generated source and render into `<Link href=...>`. Concretely:
 from __future__ import annotations
 
 import re
+from urllib.parse import urlparse
 
 # http/https/mailto plus relative in-app paths ("/...") and same-page
 # fragments ("#..."). Everything else — javascript:, data:, vbscript:,
@@ -117,6 +118,95 @@ def derive_nav(pages: list, rejected: list | None = None) -> list:
     """
     pairs = (pair for page in (pages or []) for pair in _nav_pairs(page))
     return _dedupe(pairs, rejected=rejected)
+
+
+def localise_hrefs(
+    links: list,
+    routes: list,
+    source_host: str | None = None,
+    unmapped: list | None = None,
+) -> list:
+    """Rewrite harvested absolute hrefs onto built routes. Never invent a route.
+
+    Harvested hrefs point at the SOURCE site, so an untouched nav sends every
+    visitor of the new site back to the one it replaces. The mapping is a JOIN,
+    not a guess: `routes` is the manifest's list of routes actually built, and a
+    harvested path is rewritten only when it equals one of them.
+
+    Rules, in order:
+      - relative, `#fragment`, `mailto:`, `tel:`  -> untouched, uncounted
+      - absolute on a DIFFERENT host              -> untouched, counted
+        (a third-party path that happens to read `/about` is not our `/about`)
+      - absolute on the source host, path matches -> rewritten to the route,
+        preserving query and fragment
+      - absolute on the source host, no match     -> untouched, counted
+      - `source_host` unknown                     -> nothing is rewritten; we
+        cannot assert any absolute URL is ours
+
+    Matching is exact after stripping one trailing slash. A deeper path is never
+    collapsed onto a shorter route: `/wealth/deep` does not become `/wealth`,
+    because that would fabricate a destination the manifest never built.
+
+    `unmapped` collects `{label, href, reason}` so the gap is reported rather
+    than absorbed. Input links are not mutated.
+    """
+    known = {_normalise_route(r) for r in (routes or []) if r}
+    host = _bare_host(source_host)
+    out: list[dict] = []
+
+    for link in links or []:
+        href = (link.get("href") or "").strip()
+        new = href
+        reason = None
+
+        if href and not _SCHEME_RE.match(href) and not href.startswith("#"):
+            pass  # relative path — already local
+        elif href.startswith("#"):
+            pass  # in-page anchor
+        elif href.lower().startswith(("mailto:", "tel:")):
+            pass  # not a navigation target within the site
+        else:
+            parsed = urlparse(href)
+            if parsed.scheme in ("http", "https"):
+                link_host = _bare_host(parsed.netloc)
+                if not host or link_host != host:
+                    reason = "external_host" if host else "unknown_source_host"
+                else:
+                    path = _normalise_route(parsed.path or "/")
+                    if path in known:
+                        new = path
+                        if parsed.query:
+                            new += f"?{parsed.query}"
+                        if parsed.fragment:
+                            new += f"#{parsed.fragment}"
+                    else:
+                        reason = "no_matching_route"
+
+        if reason is not None and unmapped is not None:
+            unmapped.append({"label": link.get("label"), "href": href,
+                             "reason": reason})
+        out.append({**link, "href": new})
+
+    return out
+
+
+def _bare_host(value: str | None) -> str | None:
+    """Host without `www.` or port. `www.x.com` and `x.com` are one site."""
+    if not value:
+        return None
+    host = value.strip().lower()
+    if "//" in host:
+        host = urlparse(host).netloc or host
+    host = host.split("@")[-1].split(":")[0]
+    return host[4:] if host.startswith("www.") else host
+
+
+def _normalise_route(route: str) -> str:
+    """`/about/` and `/about` are the same route; `/` stays `/`."""
+    route = (route or "").strip()
+    if len(route) > 1 and route.endswith("/"):
+        route = route[:-1]
+    return route or "/"
 
 
 def derive_footer(pages: list, rejected: list | None = None) -> list:
