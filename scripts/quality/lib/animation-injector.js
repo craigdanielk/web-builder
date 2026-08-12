@@ -1327,6 +1327,7 @@ module.exports = {
   buildCardAnimationBlock,
   buildCardEmbeddedDemos,
   getPluginRecommendationsForSection,
+  selectAnimation,
   loadRegistry,
   CARD_ANIMATION_MAP,
   CARD_EMBEDDED_DEMOS,
