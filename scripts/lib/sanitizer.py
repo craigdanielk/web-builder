@@ -109,7 +109,7 @@ CONTENT_DEFAULTS: dict[str, dict[str, str]] = {
 
 NUMBERED_VARIETY: dict[str, list[dict[str, str]]] = {
     "filter": [
-        {"label": "New Arrivals", "text": "New Arrivals", "title": "New Arrivals"},
+        {"label": "Featured", "text": "Featured", "title": "Featured"},
         {"label": "Best Sellers", "text": "Best Sellers", "title": "Best Sellers"},
         {"label": "On Sale", "text": "On Sale", "title": "On Sale"},
     ],

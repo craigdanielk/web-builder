@@ -52,6 +52,12 @@ from lib.slot_contract import (
     BARE_FIELD as _BARE_FIELD,
 )
 
+# Nav/footer links, sourced from the harvest or empty — never a canned table.
+# See lib/nav_harvest.py for why: shipping "Shop / New Arrivals" on a real
+# client's site (e.g. a licensed FSP) is a regulatory liability, not a
+# cosmetic placeholder.
+from lib.nav_harvest import derive_nav as _derive_harvested_nav, derive_footer as _derive_harvested_footer
+
 try:
     from anthropic import Anthropic
 except ImportError:
@@ -4199,25 +4205,42 @@ def _inject_footer_props(code: str) -> str:
     return code
 
 
-def _build_nav_template(project_name: str, adapter: DeployAdapter | None = None) -> str:
+def _build_nav_template(
+    project_name: str,
+    adapter: DeployAdapter | None = None,
+    harvested_nav: list[dict] | None = None,
+) -> str:
     """Return a complete Navigation.tsx React component with real defaults.
-    When adapter is set, platform-specific default links are used."""
+    When adapter is set, platform-specific default links are used.
+
+    `harvested_nav` — links derived from the real site-spec.json harvest
+    (see lib/nav_harvest.py) — takes priority over the adapter's generic
+    table whenever the harvest exists. `harvested_nav is not None` means
+    this IS a harvested (--from-url) build; an empty list from a real
+    harvest renders no links rather than falling back to a canned table.
+    `harvested_nav is None` means there is no harvest at all (a pure
+    --preset/demo build with no real source site), where the adapter's
+    generic placeholder table is the only content available and is not a
+    claim about any real business.
+    """
     _adapter = adapter or ShopifyAdapter()
     display_name = project_name.replace("-", " ").title()
-    _nav_links = _adapter.get_nav_default_links()
+    if harvested_nav is not None:
+        _nav_links = [(link["label"], link["href"]) for link in harvested_nav]
+    else:
+        _nav_links = _adapter.get_nav_default_links()
     _nav_links_str = ",\n  ".join(
         f"{{ label: '{lbl}', url: '{url}' }}"
         for lbl, url in _nav_links
     )
+    _defaults_block = f"[\n  {_nav_links_str},\n]" if _nav_links_str else "[]"
     return f'''\
 'use client';
 
 import {{ useState, useEffect }} from 'react';
 import Link from 'next/link';
 
-const defaultLinks = [
-  {_nav_links_str},
-];
+const defaultLinks: {{ label: string; url: string }}[] = {_defaults_block};
 
 export default function Navigation({{ menu, logo, shopName }}: {{
   menu?: {{ title: string; items: Array<{{ title: string; url: string; items?: Array<{{ title: string; url: string }}> }}> }};
@@ -4322,12 +4345,28 @@ export default function Navigation({{ menu, logo, shopName }}: {{
 '''
 
 
-def _build_footer_template(project_name: str, adapter: DeployAdapter | None = None) -> str:
+def _build_footer_template(
+    project_name: str,
+    adapter: DeployAdapter | None = None,
+    harvested_footer: list[dict] | None = None,
+) -> str:
     """Return a complete Footer.tsx React component with real defaults.
-    When adapter is set, platform-specific default columns are used."""
+    When adapter is set, platform-specific default columns are used.
+
+    `harvested_footer` — flat links derived from the real site-spec.json
+    harvest (see lib/nav_harvest.py) — takes priority over the adapter's
+    generic table whenever the harvest exists. Same contract as
+    `_build_nav_template`'s `harvested_nav`: `is not None` means this IS a
+    harvested build (empty list renders no columns, never a canned table);
+    `is None` means there is no harvest and the adapter default is a
+    generic placeholder, not a claim about a real business.
+    """
     _adapter = adapter or ShopifyAdapter()
     display_name = project_name.replace("-", " ").title()
-    _footer_cols = _adapter.get_footer_default_columns()
+    if harvested_footer is not None:
+        _footer_cols = [{"title": "Links", "links": harvested_footer}] if harvested_footer else []
+    else:
+        _footer_cols = _adapter.get_footer_default_columns()
     _nl = "\n"
     _nl = "\n"
     _comma_nl = ",\n"
@@ -4340,14 +4379,13 @@ def _build_footer_template(project_name: str, adapter: DeployAdapter | None = No
         + _nl + "    ]," + _nl + "  }"
         for col in _footer_cols
     )
+    _columns_block = f"[\n{_footer_cols_str},\n]" if _footer_cols_str else "[]"
     return f'''\
 'use client';
 
 import Link from 'next/link';
 
-const defaultColumns = [
-{_footer_cols_str},
-];
+const defaultColumns: {{ title: string; links: {{ label: string; href: string }}[] }}[] = {_columns_block};
 
 export default function Footer({{ menu, shopName }}: {{
   menu?: {{ title: string; items: Array<{{ title: string; url: string; items?: Array<{{ title: string; url: string }}> }}> }};
@@ -4401,16 +4439,23 @@ def stage_shared_components(
     build_cache: "BuildCache | None" = None,
     has_commerce_routes: bool = False,
     adapter: DeployAdapter | None = None,
+    harvested_nav: list[dict] | None = None,
+    harvested_footer: list[dict] | None = None,
 ) -> list[Path]:
     """Layer 6: Generate Navigation and Footer once as shared layout components.
 
-    Uses deterministic templates instead of LLM calls — faster, cheaper, and
-    produces components with real default content (Shop, About, Contact, FAQ)
-    rather than placeholder tokens.
-    When adapter is provided, platform-specific nav/footer defaults are used.
+    Uses deterministic templates instead of LLM calls — faster, cheaper.
+    When `harvested_nav`/`harvested_footer` are provided (a --from-url build
+    with a real site-spec.json harvest — see lib/nav_harvest.py), those real
+    links are used, even when empty: an empty harvest renders no nav/footer
+    links rather than falling back to a canned table. Only when there is no
+    harvest at all (a pure --preset/demo build with no real source site) do
+    the adapter's generic placeholder defaults apply.
     """
     print("\n🧩 Layer 6: Generating shared layout components (Navigation, Footer)...")
-    if adapter and adapter.name != "shopify":
+    if harvested_nav is not None or harvested_footer is not None:
+        print(f"  Using harvested nav/footer links ({len(harvested_nav or [])} nav, {len(harvested_footer or [])} footer) — sourced, not templated")
+    elif adapter and adapter.name != "shopify":
         print(f"  Using {adapter.name} platform defaults for Navigation/Footer")
     shared_dir = OUTPUT_DIR / project_name / "shared"
     shared_dir.mkdir(parents=True, exist_ok=True)
@@ -4418,8 +4463,8 @@ def stage_shared_components(
     nav_path = shared_dir / "Navigation.tsx"
     footer_path = shared_dir / "Footer.tsx"
 
-    nav_code = _build_nav_template(project_name, adapter=adapter)
-    footer_code = _build_footer_template(project_name, adapter=adapter)
+    nav_code = _build_nav_template(project_name, adapter=adapter, harvested_nav=harvested_nav)
+    footer_code = _build_footer_template(project_name, adapter=adapter, harvested_footer=harvested_footer)
 
     write_file(nav_path, nav_code)
     print(f"  ✓ Wrote Navigation.tsx (template-driven, no LLM)")
@@ -4586,7 +4631,28 @@ def stage_sections_multipage(
             s.setdefault("content_direction", "")
             if not isinstance(s.get("content"), dict):
                 s["content"] = {}
-            s.setdefault("index", j)
+            # NOT `s.setdefault("index", j)`. `j` is this section's position in
+            # the RECONCILED list, not its extraction-crawl sectionIndex — the
+            # two are different numbering spaces that happen to overlap. A
+            # harvested section already carries its real crawl `index` from
+            # site-spec.json (reconcile_page_sections() preserves it via
+            # `entry = dict(sec)`); a registry gap-fill NEVER had one
+            # (get_section_sequence() only has "position", and the gap-fill
+            # branch in reconcile_page_sections() never sets "index"). Filling
+            # that gap with the list position `j` fabricates a crawl index that
+            # can numerically collide with a REAL section's crawl index
+            # elsewhere on the page — and `_emit_section_artifact` threads
+            # `section.get("index")` straight into `SectionArtifact.section_index`,
+            # which `resolve_assets` uses to scope which extracted image a bare
+            # placeholder may fill. A collision there binds a real, correctly
+            # downloaded image to a section that never harvested it — same
+            # defect family as the cross-URL basename collision fixed in
+            # asset_resolver. Every other consumer of `section.get("index", ...)`
+            # already supplies its own positional fallback for identity/lookup
+            # purposes (copy manifest, findings lookup, section_identity) where
+            # a position stand-in is fine; leaving the key absent here keeps
+            # `section.get("index")` correctly returning None for those gap-fills
+            # while changing nothing for them.
             sections_with_index.append(s)
         files, _page_summary = stage_sections(
             sections_with_index,
@@ -5051,8 +5117,21 @@ def stage_resolve_assets(output_dir: Path, extraction_data: dict | None) -> dict
         # existing, already-finalized tally is reused as-is.
         if not a.assets:
             a = resolve_assets(a, extraction_data or {}, public_dir, section_index=a.section_index)
-            path.write_text(json.dumps(a.to_dict(), indent=2), encoding="utf-8")
 
+            # Write the .tsx FIRST, the artifact SECOND — deliberately, not
+            # incidentally. The idempotency guard above treats a non-empty
+            # `assets` list as "already resolved, don't rescan." If the
+            # artifact were written first and the process died before the
+            # .tsx write landed, the artifact would permanently claim
+            # "resolved" while the shipped .tsx still held stale/unresolved
+            # content — and the guard would skip it forever on every future
+            # rerun, since nothing distinguishes that from a real prior
+            # success. Writing .tsx first means a crash between the two
+            # writes leaves the artifact un-marked (still `assets == []`),
+            # so the very next run redoes both from scratch. A failure here
+            # degrades toward "retry," never toward silent, permanent
+            # divergence between what the artifact claims and what ships.
+            #
             # Keep the sibling .tsx (the file stage_deploy actually copies
             # into the site) in lockstep with the artifact whose src
             # attributes were just rewritten. Mirrors
@@ -5068,6 +5147,8 @@ def stage_resolve_assets(output_dir: Path, extraction_data: dict | None) -> dict
             tsx_path = (sections_dir / path.name).with_suffix(".tsx")
             if tsx_path.exists():
                 tsx_path.write_text(a.tsx, encoding="utf-8")
+
+            path.write_text(json.dumps(a.to_dict(), indent=2), encoding="utf-8")
 
         for asset in a.assets:
             counts["total"] += 1
@@ -5461,10 +5542,19 @@ class DeployAdapter:
         ]
 
     def get_footer_default_columns(self) -> list[dict]:
-        """Default footer columns."""
+        """Default footer columns.
+
+        Used only for a pure --preset/demo build with no real source site
+        to harvest from — a harvested (--from-url) build never reaches this
+        (see lib/nav_harvest.py and stage_shared_components). Entries here
+        must stay structural (anchors to sections the template itself
+        generates), never a claim about a specific business's history or
+        process ("Our Story", "What We Do") that isn't backed by any real
+        content.
+        """
         return [
-            {"title": "About", "links": [{"label": "Our Story", "href": "/#about"}, {"label": "Blog", "href": "#"}, {"label": "Careers", "href": "#"}]},
-            {"title": "Services", "links": [{"label": "What We Do", "href": "#"}, {"label": "Process", "href": "#"}, {"label": "FAQ", "href": "/#faq"}]},
+            {"title": "About", "links": [{"label": "About", "href": "/#about"}, {"label": "Blog", "href": "#"}, {"label": "Careers", "href": "#"}]},
+            {"title": "Services", "links": [{"label": "Services", "href": "/#services"}, {"label": "FAQ", "href": "/#faq"}]},
             {"title": "Legal", "links": [{"label": "Privacy", "href": "#"}, {"label": "Terms", "href": "#"}]},
         ]
 
@@ -5510,9 +5600,11 @@ class ShopifyAdapter(DeployAdapter):
         )
 
     def get_nav_default_links(self) -> list[tuple[str, str]]:
+        # Used only when there is no site-spec harvest to source real links
+        # from (see lib/nav_harvest.py). "New Arrivals" implied a specific,
+        # unverified inventory claim about a real store and was dropped.
         return [
             ("Shop", "/collections"),
-            ("New Arrivals", "/collections"),
             ("About", "/pages/about"),
             ("Contact", "/pages/contact"),
         ]
@@ -5654,10 +5746,14 @@ def stage_deploy(
     section_files_by_page: dict[str, list[Path]] | None = None,
     shopify_config_path: str | Path | None = None,
     target_platform: str | None = "shopify",
+    harvested_nav: list[dict] | None = None,
 ):
     """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/.
     When site_manifest and section_files_by_page are set (Layer 6), deploys multi-route app
     with shared layout components and per-page sections.
+    `harvested_nav` (see lib/nav_harvest.py) — sourced nav links from a real
+    --from-url harvest. When provided (even empty), Phase 6's identical-link
+    repair uses these instead of the adapter's generic placeholder table.
     target_platform selects the deploy adapter ('shopify' or 'vercel')."""
     adapter = _resolve_adapter(target_platform or "shopify")
     print(f"\n🚀 Stage 5: Deploying to Next.js project ({adapter.log_label()} adapter)...")
@@ -6537,7 +6633,17 @@ export default async function Page({ params }: { params: Promise<{ page: string 
 
             # ── Phase 6: Fix identical nav fallback links ──
             if "nav" in _fname.lower():
-                _NAV_FALLBACK_LINKS = adapter.get_nav_default_links()
+                # Sourced or empty, never invented (see lib/nav_harvest.py).
+                # `harvested_nav is not None` means this build has a real
+                # site-spec.json harvest — use its links (even if empty,
+                # which removes the placeholder repeats without inventing
+                # replacements). Only a build with no harvest at all falls
+                # back to the adapter's generic placeholder table.
+                _NAV_FALLBACK_LINKS = (
+                    [(link["label"], link["href"]) for link in harvested_nav]
+                    if harvested_nav is not None
+                    else adapter.get_nav_default_links()
+                )
                 # Replace consecutive identical link entries
                 identical_links_pattern = re.compile(
                     r"(const\s+navLinks\s*=\s*\[)\s*"
@@ -6549,8 +6655,9 @@ export default async function Page({ params }: { params: Promise<{ page: string 
                         f"{{ label: '{lbl}', url: '{url}' }}"
                         for lbl, url in _NAV_FALLBACK_LINKS
                     )
+                    _replacement_block = f"\\1\n  {links_str},\n" if links_str else "\\1\n"
                     _cleaned = identical_links_pattern.sub(
-                        f"\\1\n  {links_str},\n",
+                        _replacement_block,
                         _cleaned,
                     )
 
@@ -8682,6 +8789,15 @@ def main():
             + ", ".join(sorted(_site_spec_by_page))
         )
 
+    # Nav/footer, sourced from the harvest or empty — never a canned table.
+    # `_harvested_nav is not None` marks this as a harvested (--from-url)
+    # build even when the harvest itself carried no nav/footer links, so
+    # downstream stages know NOT to fall back to the adapter's generic
+    # placeholder table. `None` (no site_spec at all) is a pure --preset/
+    # demo build with no real source site to harvest from.
+    _harvested_nav = _derive_harvested_nav(site_spec.get("pages") or []) if site_spec else None
+    _harvested_footer = _derive_harvested_footer(site_spec.get("pages") or []) if site_spec else None
+
     # ── Layer 6: Multi-page pipeline (when site_manifest is set) ─────
     if site_manifest:
         industry = site_manifest.get("industry") or args.industry or preset
@@ -8701,7 +8817,7 @@ def main():
             print("  ⚠ --skip-to is not supported for multipage; running full multipage pipeline.")
         _mp_page_ids = [p.get("id") for p in site_manifest.get("pages", [])]
         _mp_has_commerce = "collection-template" in _mp_page_ids or "product-template" in _mp_page_ids
-        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce, adapter=_resolve_adapter(args.target_platform))
+        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce, adapter=_resolve_adapter(args.target_platform), harvested_nav=_harvested_nav, harvested_footer=_harvested_footer)
         save_checkpoint(output_dir, "shared_components", args.project)
         site_manifest = stage_scaffold_multipage(site_manifest, args.project, industry, preset=preset)
         save_checkpoint(output_dir, "scaffold_mp", args.project)
@@ -8827,6 +8943,7 @@ def main():
                     section_files_by_page=section_files_by_page,
                     shopify_config_path=getattr(args, "shopify_config", None),
                     target_platform=args.target_platform,
+                    harvested_nav=_harvested_nav,
                 )
                 save_checkpoint(output_dir, "deploy", args.project)
                 # Only a site that actually compiled counts as deployed; a
@@ -9089,7 +9206,7 @@ def main():
                     "validate", "pre-flight validation blocked the requested deploy (no --force)"
                 )
         if validation['passed'] or args.force:
-            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform)
+            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform, harvested_nav=_harvested_nav)
             save_checkpoint(output_dir, "deploy", args.project)
             # Only a site that actually compiled counts as deployed.
             deploy_ran = production_build_ok(OUTPUT_DIR / args.project / SITE_DIR_NAME)
