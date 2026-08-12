@@ -38,7 +38,14 @@ test('resolveComponent refuses an unbacked (21st-dev-library) row rather than gu
 });
 
 // ============================================================================
-// SAFETY ANALYSIS — the load-bearing "refuse rather than guess" logic
+// SAFETY ANALYSIS — the load-bearing "refuse rather than guess" logic.
+//
+// This still matters under assembly-level wrapping: a component that takes
+// no props, or types children as something other than ReactNode, or renders
+// an inline root tag, is unsafe to wrap a section in REGARDLESS of where the
+// wrap happens — <SlideTabs><Section01HERO /></SlideTabs> would silently
+// discard the section's content just as surely as string-rewriting would
+// have corrupted it.
 // ============================================================================
 
 test('analyzeSafety accepts a component with required children + all-optional other props', () => {
@@ -114,129 +121,23 @@ export function Foo({ children }: FooProps) {
 });
 
 // ============================================================================
-// INSERTION POINT
+// IMPORT PLUMBING
 // ============================================================================
 
-const SIMPLE_SECTION = `'use client';
-
-import { motion } from 'framer-motion';
-
-export default function HeroCentered() {
-  return (
-    <section className="py-24 bg-white">
-      <motion.h1 initial={{ opacity: 0 }} animate={{ opacity: 1 }}>Hello</motion.h1>
-    </section>
-  );
-}
-`;
-
-test('findInsertionPoint locates the single root <section> of the default export', () => {
-  const point = ci.findInsertionPoint(SIMPLE_SECTION);
-  assert.equal(point.ok, true);
-  const slice = SIMPLE_SECTION.slice(point.start, point.end);
-  assert.ok(slice.startsWith('<section'));
-  assert.ok(slice.endsWith('</section>'));
-});
-
-test('findInsertionPoint refuses a file with no export default function', () => {
-  const point = ci.findInsertionPoint('export function NotDefault() { return <section></section>; }');
-  assert.equal(point.ok, false);
-  assert.match(point.reason, /no export default function/);
-});
-
-test('findInsertionPoint refuses two sibling root sections inside the default export (ambiguous)', () => {
-  const src = `
-export default function Two() {
-  return (
-    <>
-      <section>A</section>
-      <section>B</section>
-    </>
-  );
-}
-`;
-  const point = ci.findInsertionPoint(src);
-  assert.equal(point.ok, false);
-  assert.match(point.reason, /sibling root/);
-});
-
-test('findInsertionPoint ignores a <section> in a helper function declared after the default export', () => {
-  // Mirrors the real 06-faq.tsx shape (a helper sub-component with its own
-  // return) but with the helper AFTER the default export instead of before,
-  // to prove the scan is bounded to the default export's own body and does
-  // not leak into sibling declarations.
-  const src = `
-export default function Two() {
-  return (
-    <section>A</section>
-  );
-}
-function Helper() {
-  return <section>B</section>;
-}
-`;
-  const point = ci.findInsertionPoint(src);
-  assert.equal(point.ok, true);
-  assert.ok(src.slice(point.start, point.end).includes('A'));
-});
-
-test('findInsertionPoint refuses a self-closing root <section />', () => {
-  const src = `
-export default function Empty() {
-  return (
-    <section className="x" />
-  );
-}
-`;
-  const point = ci.findInsertionPoint(src);
-  assert.equal(point.ok, false);
-  assert.match(point.reason, /self-closing/);
-});
-
-test('findInsertionPoint refuses a root that is not directly returned', () => {
-  const src = `
-export default function Weird() {
-  const el = <section>hi</section>;
-  return el;
-}
-`;
-  const point = ci.findInsertionPoint(src);
-  assert.equal(point.ok, false);
-});
-
-// ============================================================================
-// WRAP
-// ============================================================================
-
-test('wrapWithComponent wraps the root, preserves inner content, adds one import', () => {
-  const resolved = ci.resolveComponent('interactive__hover_lift');
-  const result = ci.wrapWithComponent(SIMPLE_SECTION, resolved);
-  assert.equal(result.ok, true);
-  assert.match(result.tsx, /import HoverLift from '@\/components\/animations\/hover-lift';/);
-  assert.match(result.tsx, /<HoverLift>\s*<section/);
-  assert.match(result.tsx, /<\/section>\s*<\/HoverLift>/);
-  // Inner content (the existing motion.h1) survives untouched.
-  assert.match(result.tsx, /<motion\.h1 initial=\{\{ opacity: 0 \}\} animate=\{\{ opacity: 1 \}\}>Hello<\/motion\.h1>/);
-});
-
-test('wrapWithComponent refuses to wrap the same component twice (idempotence)', () => {
-  const resolved = ci.resolveComponent('interactive__hover_lift');
-  const once = ci.wrapWithComponent(SIMPLE_SECTION, resolved);
-  assert.equal(once.ok, true);
-  const twice = ci.wrapWithComponent(once.tsx, resolved);
-  assert.equal(twice.ok, false);
-  assert.match(twice.reason, /already imports/);
-});
-
-test('wrapWithComponent named export uses named import syntax', () => {
+test('importStatementFor uses a named import for a named export', () => {
   const resolved = ci.resolveComponent('entrance__staggered_timeline');
-  const result = ci.wrapWithComponent(SIMPLE_SECTION, resolved);
-  assert.equal(result.ok, true);
-  assert.match(result.tsx, /import \{ AnimatedGroup \} from '@\/components\/animations\/staggered-timeline';/);
+  const stmt = ci.importStatementFor(resolved);
+  assert.equal(stmt, 'import { AnimatedGroup } from "@/components/animations/staggered-timeline";');
+});
+
+test('importStatementFor uses a default import for a default export', () => {
+  const resolved = ci.resolveComponent('interactive__hover_lift');
+  const stmt = ci.importStatementFor(resolved);
+  assert.equal(stmt, 'import HoverLift from "@/components/animations/hover-lift";');
 });
 
 // ============================================================================
-// SELECTION — role-first ordering, dedup, refusal-aware
+// SELECTION — role-first ordering, dedup, intensity ceiling, refusal-aware
 // ============================================================================
 
 test('selectComponentForSection returns a SAFE, unused, real component for HOW-IT-WORKS', () => {
@@ -277,30 +178,21 @@ test('selectComponentForSection returns null once every safe candidate is exhaus
 });
 
 // ============================================================================
-// END-TO-END injectIntoSection
+// END-TO-END decideComponentForSection
 // ============================================================================
 
-test('injectIntoSection injects a real component and reports it in the reason', () => {
-  const out = ci.injectIntoSection(SIMPLE_SECTION, 'HOW-IT-WORKS', []);
+test('decideComponentForSection selects a real component and reports it in the reason', () => {
+  const out = ci.decideComponentForSection('HOW-IT-WORKS', [], 'moderate');
   assert.equal(out.injected, true);
   assert.ok(out.component);
-  assert.match(out.reason, /wrapped with/);
-  assert.notEqual(out.tsx, SIMPLE_SECTION);
+  assert.match(out.reason, /selected/);
 });
 
-test('injectIntoSection refuses and returns byte-identical tsx when no safe component exists', () => {
-  // Exhaust every candidate up front so nothing is left to select.
+test('decideComponentForSection refuses when no safe component exists', () => {
   const registry = ci.loadFullRegistry();
   const allIds = registry.map((c) => c.animation_id);
-  const out = ci.injectIntoSection(SIMPLE_SECTION, 'HERO', allIds);
+  const out = ci.decideComponentForSection('HERO', allIds, 'moderate');
   assert.equal(out.injected, false);
-  assert.equal(out.tsx, SIMPLE_SECTION);
   assert.equal(out.component, null);
-});
-
-test('injectIntoSection refuses and returns byte-identical tsx on an unwrappable section shape', () => {
-  const noRoot = 'export default function Bare() { return <div>no section here</div>; }';
-  const out = ci.injectIntoSection(noRoot, 'HOW-IT-WORKS', []);
-  assert.equal(out.injected, false);
-  assert.equal(out.tsx, noRoot);
+  assert.equal(out.reason, 'no backed component for role');
 });

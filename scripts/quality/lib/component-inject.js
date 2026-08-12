@@ -1,23 +1,35 @@
 'use strict';
 
 /**
- * Inject a REAL animation-library component into an already-built section.
+ * Decide, per section, which REAL animation-library component (if any) may
+ * wrap it — and hand that decision to ASSEMBLY, not to a rewrite of the
+ * section's own source.
  *
- * Contrast with animation-apply.js (`applyAnimation`): that rewrites the
- * section's own root `<section>` into a `<motion.section>` using an inline
- * variant string — no file changes, no import, no library code involved.
- * This module is different in kind: it resolves a registry row to an actual
- * `.tsx` file on disk, copies that file into the build, and imports + wraps
- * the section's existing root element with the component's own code. The
- * section's content and its existing inner `<motion.*>` animations are left
- * byte-identical; only an import line and a wrapping pair of tags are added.
+ * PIVOT (superseding an earlier version of this file): the first draft of
+ * this module located an insertion point inside each section's own .tsx by
+ * string-scanning for its root `<section>...</section>` — the same
+ * approach `animation-apply.js`'s `applyAnimation` used. That approach
+ * failed three review rounds there (mismatched sibling-section tag pairing,
+ * apostrophes in harvested client copy confusing the scanner, JSX
+ * expressions like `{a > b ? 1 : 0}` mistaken for tag boundaries) and was
+ * retired from the pipeline entirely. Any hand-rolled parser walking
+ * arbitrary generated JSX inherits that same bug class — patching it again
+ * was not the fix, avoiding the class of bug was.
  *
- * Refuses rather than guesses at every step: unresolvable animation_id,
+ * This module now decides ONLY; it never touches a section file. The page
+ * assembler (`_build_page_imports` in orchestrate.py) generates uniform,
+ * fully-controlled code — `<ComponentName><SectionNN /></ComponentName>` —
+ * so there is no foreign JSX to parse, no root-tag ambiguity, no comment or
+ * string-literal confusion, and nothing to corrupt. Section .tsx files are
+ * guaranteed byte-identical because nothing here ever opens one for writing.
+ *
+ * Refusal is still real, just narrower in scope: unresolvable animation_id,
  * missing source file, no verified export in the unified component-registry,
- * a props shape that can't be satisfied without invented values, an inline
- * root tag that would produce invalid nesting, an ambiguous or already-
- * wrapped section — every one of these returns `injected:false` with a
- * `reason` string and the input untouched.
+ * a props shape that can't be satisfied without invented values, or an
+ * inline/interactive root tag on the WRAPPING component itself (wrapping a
+ * block-level section in a `<span>` or `<button>` is invalid nesting
+ * regardless of where the wrap happens) — every one of these is a refusal
+ * with a `reason`, never a guess.
  */
 
 const fs = require('fs');
@@ -345,182 +357,21 @@ function analyzeSafety(sourceRaw, exportName) {
 }
 
 // ---------------------------------------------------------------------------
-// Insertion point + wrap
-// ---------------------------------------------------------------------------
-
-function maskNonCode(src) {
-  let out = '';
-  let i = 0;
-  const n = src.length;
-  while (i < n) {
-    const c = src[i];
-    const c2 = i + 1 < n ? src[i + 1] : '';
-    if (c === '/' && c2 === '/') {
-      let j = i;
-      while (j < n && src[j] !== '\n') { out += ' '; j++; }
-      i = j;
-      continue;
-    }
-    if (c === '/' && c2 === '*') {
-      let j = i;
-      out += '  ';
-      j += 2;
-      while (j < n && !(src[j] === '*' && src[j + 1] === '/')) { out += src[j] === '\n' ? '\n' : ' '; j++; }
-      if (j < n) { out += '  '; j += 2; }
-      i = j;
-      continue;
-    }
-    if (c === "'" || c === '"' || c === '`') {
-      const quote = c;
-      let j = i + 1;
-      out += ' ';
-      while (j < n && src[j] !== quote) {
-        if (src[j] === '\\' && j + 1 < n) {
-          out += src[j] === '\n' ? '\n' : ' ';
-          out += src[j + 1] === '\n' ? '\n' : ' ';
-          j += 2;
-          continue;
-        }
-        out += src[j] === '\n' ? '\n' : ' ';
-        j++;
-      }
-      if (j < n) { out += ' '; j++; }
-      i = j;
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  return out;
-}
-
-function findRootSectionSpans(maskedText) {
-  const re = /<section\b([^>]*?)(\/)?>|<\/section>/g;
-  const spans = [];
-  let depth = 0;
-  let openStart = null;
-  let openAttrs = null;
-  let m;
-  while ((m = re.exec(maskedText))) {
-    const isClose = m[0] === '</section>';
-    if (isClose) {
-      depth--;
-      if (depth < 0) return null;
-      if (depth === 0 && openStart !== null) {
-        spans.push({ start: openStart, end: re.lastIndex, selfClosing: false, attrs: openAttrs });
-        openStart = null;
-        openAttrs = null;
-      }
-      continue;
-    }
-    const selfClosing = m[2] === '/';
-    if (depth === 0) {
-      if (selfClosing) {
-        spans.push({ start: m.index, end: re.lastIndex, selfClosing: true, attrs: m[1] });
-      } else {
-        openStart = m.index;
-        openAttrs = m[1];
-        depth++;
-      }
-    } else if (!selfClosing) {
-      depth++;
-    }
-  }
-  if (depth !== 0) return null;
-  return spans;
-}
-
-/**
- * Find the single root `<section>...</section>` returned by the file's
- * `export default function`. Mirrors applyAnimation's discipline: any
- * ambiguity (no default export, no root section, multiple roots, unbalanced
- * tags, self-closing root, root not directly returned) is a refusal.
- */
-function findInsertionPoint(tsx) {
-  const defaultFnMatch = /export\s+default\s+function\s+\w+\s*\([^)]*\)\s*\{/.exec(tsx);
-  if (!defaultFnMatch) {
-    return { ok: false, reason: 'no export default function found' };
-  }
-  const regionStart = defaultFnMatch.index;
-  // Bound the scan to the default export function's OWN body — brace-match
-  // from the `{` that opens it to its matching `}`. Without this, a helper
-  // function declared after the default export (a real shape: see
-  // 06-faq.tsx's `FAQItem` sibling) would leak into the scan and its own
-  // `<section>`, if any, could be mistaken for a second root, or worse, a
-  // section-shaped return further down the file could get silently chosen.
-  const maskedFull = maskNonCode(tsx);
-  const bodyOpen = defaultFnMatch.index + defaultFnMatch[0].length - 1; // index of the `{`
-  let depth = 1;
-  let i = bodyOpen + 1;
-  while (i < maskedFull.length && depth > 0) {
-    if (maskedFull[i] === '{') depth++;
-    else if (maskedFull[i] === '}') depth--;
-    i++;
-  }
-  if (depth !== 0) {
-    return { ok: false, reason: 'default export function body never closes — unbalanced braces' };
-  }
-  const region = tsx.slice(regionStart, i);
-  const masked = maskedFull.slice(regionStart, i);
-
-  const spans = findRootSectionSpans(masked);
-  if (spans === null) {
-    return { ok: false, reason: 'unbalanced <section> tags — refusing rather than guessing' };
-  }
-  if (spans.length === 0) {
-    return { ok: false, reason: 'no root <section> element found in default export' };
-  }
-  if (spans.length > 1) {
-    return { ok: false, reason: `${spans.length} sibling root <section> elements found — refusing rather than guessing which is the root` };
-  }
-  const root = spans[0];
-  if (root.selfClosing) {
-    return { ok: false, reason: 'root is a self-closing <section /> — no body to wrap' };
-  }
-
-  const before = region.slice(0, root.start).replace(/\s+$/, '');
-  if (!/return\s*\($/.test(before)) {
-    return { ok: false, reason: 'root <section> is not directly returned — no safe insertion point' };
-  }
-
-  return { ok: true, start: regionStart + root.start, end: regionStart + root.end };
-}
-
-/**
- * Wrap the section's root element with the given component. Adds an import
- * line and a pair of wrapping tags; the section body between them (including
- * its own inner <motion.*> animations) is copied through untouched.
- */
-function wrapWithComponent(tsx, resolved) {
-  const importPath = `@/components/animations/${resolved.destName}`;
-  const importLine =
-    resolved.exportType === 'default'
-      ? `import ${resolved.exportName} from '${importPath}';`
-      : `import { ${resolved.exportName} } from '${importPath}';`;
-
-  if (tsx.includes(importPath)) {
-    return { ok: false, reason: `section already imports '${importPath}' — refusing to wrap twice` };
-  }
-
-  const point = findInsertionPoint(tsx);
-  if (!point.ok) return point;
-
-  const inner = tsx.slice(point.start, point.end);
-  const wrapped = `<${resolved.exportName}>\n${inner}\n</${resolved.exportName}>`;
-  let out = tsx.slice(0, point.start) + wrapped + tsx.slice(point.end);
-
-  if (/^'use client';/m.test(out)) {
-    out = out.replace(/^'use client';\s*/m, `'use client';\n\n${importLine}\n`);
-  } else {
-    out = `${importLine}\n${out}`;
-  }
-
-  return { ok: true, tsx: out };
-}
-
-// ---------------------------------------------------------------------------
 // Selection — role-first, file-existence-backed, safety-filtered.
 // ---------------------------------------------------------------------------
+
+/** Import path a generated page file uses to reach a copied library component. */
+function importPathFor(resolved) {
+  return `@/components/animations/${resolved.destName}`;
+}
+
+/** The exact import statement (default vs named export) for a resolved component. */
+function importStatementFor(resolved) {
+  const importPath = importPathFor(resolved);
+  return resolved.exportType === 'default'
+    ? `import ${resolved.exportName} from "${importPath}";`
+    : `import { ${resolved.exportName} } from "${importPath}";`;
+}
 
 /**
  * Pick the first unused, on-disk, framer-motion, safely-wrappable component
@@ -568,26 +419,23 @@ function selectComponentForSection(archetype, usedAnimationIds, presetIntensity)
 }
 
 /**
- * Attempt injection for one section. `tsx` is the current file content,
- * `archetype` its SectionArtifact archetype, `usedAnimationIds` the set
- * already consumed elsewhere in this build (deduplication).
+ * Decide whether a section should be wrapped, and with what. This makes NO
+ * changes to any file — it returns a decision for the caller (orchestrate.py)
+ * to persist and for assembly to act on when it generates the page.
+ *
+ * `archetype` is the section's SectionArtifact archetype, `usedAnimationIds`
+ * the set already consumed elsewhere in this build (deduplication),
+ * `presetIntensity` the tenant preset's explicit `animation_intensity`.
  */
-function injectIntoSection(tsx, archetype, usedAnimationIds, presetIntensity) {
+function decideComponentForSection(archetype, usedAnimationIds, presetIntensity) {
   const resolved = selectComponentForSection(archetype, usedAnimationIds, presetIntensity);
   if (!resolved) {
-    return { injected: false, reason: 'no backed component for role', component: null, tsx };
+    return { injected: false, reason: 'no backed component for role', component: null };
   }
-
-  const result = wrapWithComponent(tsx, resolved);
-  if (!result.ok) {
-    return { injected: false, reason: result.reason, component: null, tsx };
-  }
-
   return {
     injected: true,
-    reason: `wrapped with ${resolved.animationId}`,
+    reason: `selected ${resolved.animationId}`,
     component: resolved,
-    tsx: result.tsx,
   };
 }
 
@@ -596,10 +444,10 @@ module.exports = {
   loadUnifiedRegistry,
   resolveComponent,
   analyzeSafety,
-  findInsertionPoint,
-  wrapWithComponent,
+  importPathFor,
+  importStatementFor,
   selectComponentForSection,
-  injectIntoSection,
+  decideComponentForSection,
   roleOrderForArchetype,
   ROLE_BY_ARCHETYPE,
   ALL_ROLES,

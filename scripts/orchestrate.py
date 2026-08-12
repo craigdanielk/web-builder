@@ -3982,10 +3982,13 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
                 "filled": _tf, "empty": _te, "sections": _tpl_fill_stats,
             }}
 
-    # ── Real animation component injection ──
+    # ── Real animation component decision ──
     # Runs after every section for this page is on disk, before assembly.
     # Template-resolved sections skip the LLM entirely (85% of the build),
-    # so this is the only stage that can reach them with real motion.
+    # so this is the only stage that can reach them with real motion. This
+    # ONLY decides and persists (animation-injections.json) — it never opens
+    # a section .tsx for writing; assembly (_build_page_imports) generates
+    # the actual wrap as controlled code.
     if section_files:
         _page_dir = (OUTPUT_DIR / project_name / (output_subdir or "sections")).name
         _preset_intensity = parse_preset_intensity(preset_content)
@@ -4009,7 +4012,12 @@ def _component_name_for_section_file(filepath: Path) -> str:
     return f"Section{num}{ident}"
 
 
-def _build_page_imports(section_files: list[Path], import_prefix: str) -> tuple[list[str], list[str]]:
+def _build_page_imports(
+    section_files: list[Path],
+    import_prefix: str,
+    animation_map: dict | None = None,
+    page_dir: str | None = None,
+) -> tuple[list[str], list[str]]:
     """Build (imports, JSX elements) for every section file, in file order.
 
     Previously this zipped the `sections` metadata list against `section_files`
@@ -4020,10 +4028,31 @@ def _build_page_imports(section_files: list[Path], import_prefix: str) -> tuple[
     (b) MISLABELLED every import after the drift point — cape-crypto shipped a
     `Section08FAQACCORDION` that actually imported `09-cta_strip`. The files on
     disk are the ground truth, so iterate those.
+
+    `animation_map` is the decision stage_inject_animation() persisted
+    (`OUTPUT_DIR/{project}/animation-injections.json`), keyed
+    `{page_dir}/{section_stem}`. When a section has an entry, this generates
+    an import for the real library component and wraps the section's JSX
+    invocation in it — `<Component><SectionNN /></Component>` — instead of
+    parsing or rewriting the section's own file. This is the only place a
+    real animation component ever gets wired into a page; the section file
+    itself is never opened for writing.
     """
     imports: list[str] = []
     components: list[str] = []
     seen: set[str] = set()
+    # Two DIFFERENT source files can export the SAME name — fade-up-stagger.tsx
+    # and staggered-timeline.tsx both export `AnimatedGroup`. Deduping only by
+    # export name (as an earlier version of this function did) collapses the
+    # second import into the first: the tally correctly records
+    # `staggered_timeline` as used, but the generated page never imports that
+    # file at all and silently wraps the section in fade-up-stagger's code
+    # instead — exactly the "coverage number doesn't mean what it says" bug
+    # this whole feature exists to prevent. Track by import PATH (unique per
+    # source file) and alias the local name when an export name collides
+    # across two different paths.
+    wrapper_local_name_by_path: dict[str, str] = {}
+    wrapper_path_by_local_name: dict[str, str] = {}
     for filepath in section_files:
         component_name = _component_name_for_section_file(filepath)
         if component_name in seen:
@@ -4031,7 +4060,31 @@ def _build_page_imports(section_files: list[Path], import_prefix: str) -> tuple[
         seen.add(component_name)
         rel = f"{import_prefix}{filepath.name.replace('.tsx', '')}"
         imports.append(f'import {component_name} from "{rel}";')
-        components.append(f"      <{component_name} />")
+
+        key = f"{page_dir}/{filepath.stem}" if page_dir else filepath.stem
+        wrap = (animation_map or {}).get(key)
+        if wrap and wrap.get("export_name") and wrap.get("dest_name"):
+            wname = wrap["export_name"]
+            wrapper_import_path = f"@/components/animations/{wrap['dest_name']}"
+            local_name = wrapper_local_name_by_path.get(wrapper_import_path)
+            if local_name is None:
+                local_name = wname
+                suffix = 2
+                while local_name in wrapper_path_by_local_name and wrapper_path_by_local_name[local_name] != wrapper_import_path:
+                    local_name = f"{wname}{suffix}"
+                    suffix += 1
+                wrapper_local_name_by_path[wrapper_import_path] = local_name
+                wrapper_path_by_local_name[local_name] = wrapper_import_path
+                if wrap.get("export_type") == "named":
+                    alias = f" as {local_name}" if local_name != wname else ""
+                    imports.append(f'import {{ {wname}{alias} }} from "{wrapper_import_path}";')
+                else:
+                    imports.append(f'import {local_name} from "{wrapper_import_path}";')
+            components.append(
+                f"      <{local_name}>\n        <{component_name} />\n      </{local_name}>"
+            )
+        else:
+            components.append(f"      <{component_name} />")
     return imports, components
 
 
@@ -4039,7 +4092,8 @@ def stage_assemble(sections: list[dict], section_files: list[Path], project_name
     """Stage 3: Assemble all sections into a single page component."""
     print("\n📦 Stage 3: Assembling page...")
 
-    imports, components = _build_page_imports(section_files, "./sections/")
+    animation_map = load_animation_injections(project_name)
+    imports, components = _build_page_imports(section_files, "./sections/", animation_map, "sections")
 
     page_code = f'''import React from "react";
 {chr(10).join(imports)}
@@ -4555,6 +4609,7 @@ def stage_assemble_multipage(
     print("\n📦 Layer 6: Assembling pages...")
     pages_dir = OUTPUT_DIR / project_name / "pages"
     pages_dir.mkdir(parents=True, exist_ok=True)
+    animation_map = load_animation_injections(project_name)
     for page in manifest.get("pages", []):
         page_id = page.get("id", "")
         sections = page.get("sections", [])
@@ -4599,7 +4654,7 @@ export default function Page{params_type} {{
                 f"{len(files)} file(s) on disk — assembling from files"
             )
         imports, components = _build_page_imports(
-            files, f"@/components/sections/{page_id}/"
+            files, f"@/components/sections/{page_id}/", animation_map, page_id
         )
         params_type = ""
         components_nl = chr(10).join(components)
@@ -4662,26 +4717,41 @@ def stage_inject_animation(
     section_files: list[Path],
     preset_intensity: str,
 ) -> dict:
-    """Wrap built sections with REAL library animation components.
+    """Decide, per section, which REAL animation-library component (if any)
+    should wrap it — and persist that decision for ASSEMBLY to act on.
+
+    PIVOT: an earlier version of this stage rewrote each section's own .tsx
+    in place (import + wrap its root <section>...</section>), located by
+    string-scanning for the root element — the same technique
+    `animation-apply.js`'s applyAnimation used. That technique failed three
+    review rounds there (sibling-section tag mispairing, apostrophes in
+    harvested copy, JSX expressions mistaken for tag boundaries) and was
+    retired from the pipeline. This stage no longer opens a section file for
+    writing at all — it only decides, and `_build_page_imports()` (called
+    from stage_assemble / stage_assemble_multipage / stage_deploy) generates
+    the wrap as fully-controlled code: `<Component><SectionNN /></Component>`.
+    Section .tsx files are guaranteed byte-identical as a structural property
+    of this design, not an invariant something has to keep checking.
 
     Runs after section generation, before assembly (called from the tail of
     stage_sections(), once per page). For each section file this reads back
     the SectionArtifact written alongside it to get the archetype, then asks
-    component-inject.js's injectIntoSection() for a real, file-backed,
-    safely-wrappable component. When one exists the file is rewritten in
-    place (import + wrap of the existing root; the section's own content and
-    inner <motion.*> animations are untouched). When none exists — no
-    candidate for the role, props unsatisfiable, no safe insertion point,
-    already wrapped — the file is left byte-identical and the reason is
-    recorded.
+    component-inject.js's decideComponentForSection() for a real, file-backed,
+    safely-wrappable component (safe meaning: it actually accepts children,
+    typed ReactNode, every other prop optional or defaulted, and its own root
+    element isn't an inline/interactive tag that would make wrapping a
+    block-level section invalid). Persists the decision to
+    animation-injections.json (consumed by `_build_page_imports`),
+    extra-components.json (consumed by stage_deploy to copy the real files),
+    and animation-coverage.json (the tally).
 
     `injected` in the returned/written tally counts ONLY real components
-    that render in the build. It may never include a generic fallback — the
-    prior design for this stage could report full coverage while actually
-    injecting nothing (see task-7 brief); this stage exists to make that
-    impossible by construction.
+    selected for real, file-backed source. It may never include a generic
+    fallback — the prior design for this stage could report full coverage
+    while actually injecting nothing (see task-7 brief); this stage exists
+    to make that impossible by construction.
     """
-    print(f"\n🎬 Injecting real animation components ({page_dir})...")
+    print(f"\n🎬 Deciding animation components ({page_dir})...")
 
     art_dir = OUTPUT_DIR / project_name / "section-artifacts" / page_dir
     used_animation_ids: list[str] = []
@@ -4690,6 +4760,7 @@ def stage_inject_animation(
         "by_component": {}, "by_reason": {},
     }
     new_extra_components: list[str] = []
+    decisions: dict = {}
 
     for filepath in section_files:
         tally["total"] += 1
@@ -4707,11 +4778,9 @@ def stage_inject_animation(
             tally["by_reason"][reason] = tally["by_reason"].get(reason, 0) + 1
             continue
 
-        tsx = filepath.read_text(encoding="utf-8")
         node_script = f"""
-const {{ injectIntoSection }} = require('./lib/component-inject');
-const result = injectIntoSection(
-  {json.dumps(tsx)},
+const {{ decideComponentForSection }} = require('./lib/component-inject');
+const result = decideComponentForSection(
   {json.dumps(archetype)},
   {json.dumps(used_animation_ids)},
   {json.dumps(preset_intensity)}
@@ -4721,7 +4790,9 @@ console.log(JSON.stringify({{
   reason: result.reason,
   animationId: result.component ? result.component.animationId : null,
   sourceFile: result.component ? result.component.sourceFile : null,
-  tsx: result.tsx,
+  exportName: result.component ? result.component.exportName : null,
+  exportType: result.component ? result.component.exportType : null,
+  destName: result.component ? result.component.destName : null,
 }}));
 """
         proc = None
@@ -4746,13 +4817,18 @@ console.log(JSON.stringify({{
             continue
 
         if result["injected"]:
-            filepath.write_text(result["tsx"], encoding="utf-8")
             used_animation_ids.append(result["animationId"])
             if result["sourceFile"]:
                 new_extra_components.append(result["sourceFile"])
+            decisions[f"{page_dir}/{filepath.stem}"] = {
+                "animation_id": result["animationId"],
+                "export_name": result["exportName"],
+                "export_type": result["exportType"],
+                "dest_name": result["destName"],
+            }
             tally["injected"] += 1
             tally["by_component"][result["animationId"]] = tally["by_component"].get(result["animationId"], 0) + 1
-            print(f"  ✓ {filepath.name}: wrapped with {result['animationId']}")
+            print(f"  ✓ {filepath.name}: will wrap with {result['animationId']}")
         else:
             tally["unchanged"] += 1
             tally["by_reason"][result["reason"]] = tally["by_reason"].get(result["reason"], 0) + 1
@@ -4775,6 +4851,21 @@ console.log(JSON.stringify({{
         merged = sorted(set(existing) | set(new_extra_components))
         write_file(manifest_path, json.dumps(merged, indent=2))
 
+    # Merge per-section decisions across pages — this file is what
+    # `_build_page_imports()` consults when generating each page's JSX, keyed
+    # `{page_dir}/{section_stem}` so pages sharing a section filename (every
+    # page's hero is "01-hero") never collide.
+    if decisions:
+        injections_path = OUTPUT_DIR / project_name / "animation-injections.json"
+        existing_decisions: dict = {}
+        if injections_path.exists():
+            try:
+                existing_decisions = json.loads(injections_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                existing_decisions = {}
+        existing_decisions.update(decisions)
+        write_file(injections_path, json.dumps(existing_decisions, indent=2))
+
     # Merge coverage across pages — multipage builds call this once per page
     # and each call's numbers describe only that page's sections.
     coverage_path = OUTPUT_DIR / project_name / "animation-coverage.json"
@@ -4791,9 +4882,23 @@ console.log(JSON.stringify({{
                     tally[key][k] = tally[key].get(k, 0) + v
 
     write_file(coverage_path, json.dumps(tally, indent=2))
-    print(f"  Animation injection: {tally['injected']}/{tally['total']} real component(s) injected, "
+    print(f"  Animation decisions: {tally['injected']}/{tally['total']} real component(s) selected, "
           f"{tally['unchanged']} unchanged")
     return tally
+
+
+def load_animation_injections(project_name: str) -> dict:
+    """Read animation-injections.json — the per-section wrap decisions
+    stage_inject_animation() persisted. Returns {} if the file doesn't
+    exist (e.g. a build with no animation-decision stage, or nothing was
+    selected for any section — an all-refused build is a valid outcome)."""
+    path = OUTPUT_DIR / project_name / "animation-injections.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def parse_fonts(preset_content: str) -> dict:
@@ -6504,7 +6609,8 @@ export default async function Page({ params }: { params: Promise<{ page: string 
     # ── Generate page.tsx (single-page only) ──
     if not is_multipage:
         print("  Generating page.tsx...")
-        imports, components = _build_page_imports(section_files, "@/components/sections/")
+        _animation_map = load_animation_injections(project_name)
+        imports, components = _build_page_imports(section_files, "@/components/sections/", _animation_map, "sections")
 
         page_code = f"""{chr(10).join(imports)}
 
