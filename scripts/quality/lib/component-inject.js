@@ -328,6 +328,19 @@ function analyzeSafety(sourceRaw, exportName) {
   if (!childrenField) {
     return { safe: false, reason: `'${exportName}' has no children prop — nothing to wrap the section with` };
   }
+  // A render-prop signature like `children: (state) => ReactNode` contains
+  // the substring "ReactNode" and would pass a bare regex test for it, but
+  // it is a FUNCTION type, not a value type — the component calls
+  // `children(state)`, so passing a JSX element as children breaks at the
+  // call site. Reject any function-shaped children type before checking for
+  // ReactNode at all: `=>` never appears in a plain (possibly unioned)
+  // ReactNode type, only in a function type.
+  if (/=>/.test(childrenField.type)) {
+    return {
+      safe: false,
+      reason: `'${exportName}' types children as a render-prop function ('${childrenField.type}') — cannot pass a JSX element where a function is expected`,
+    };
+  }
   if (!/ReactNode|React\.ReactNode/.test(childrenField.type)) {
     return {
       safe: false,

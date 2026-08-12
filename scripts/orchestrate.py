@@ -4760,6 +4760,7 @@ def stage_inject_animation(
         "by_component": {}, "by_reason": {},
     }
     new_extra_components: list[str] = []
+    new_extra_component_deps: dict[str, list[str]] = {}
     decisions: dict = {}
 
     for filepath in section_files:
@@ -4793,6 +4794,7 @@ console.log(JSON.stringify({{
   exportName: result.component ? result.component.exportName : null,
   exportType: result.component ? result.component.exportType : null,
   destName: result.component ? result.component.destName : null,
+  dependencies: result.component ? (result.component.dependencies || []) : [],
 }}));
 """
         proc = None
@@ -4820,6 +4822,7 @@ console.log(JSON.stringify({{
             used_animation_ids.append(result["animationId"])
             if result["sourceFile"]:
                 new_extra_components.append(result["sourceFile"])
+                new_extra_component_deps[result["sourceFile"]] = result.get("dependencies") or []
             decisions[f"{page_dir}/{filepath.stem}"] = {
                 "animation_id": result["animationId"],
                 "export_name": result["exportName"],
@@ -4839,7 +4842,8 @@ console.log(JSON.stringify({{
     # copy it already does. Read-modify-write, not overwrite: stage_sections'
     # own write of this file (a few lines above where this stage is called)
     # is NOT namespaced by page, so a second page's write would otherwise
-    # silently clobber the first page's queued components.
+    # silently clobber the first page's queued components. A set union is
+    # naturally idempotent — re-running the same page adds nothing new.
     if new_extra_components:
         manifest_path = OUTPUT_DIR / project_name / "extra-components.json"
         existing: list = []
@@ -4851,10 +4855,31 @@ console.log(JSON.stringify({{
         merged = sorted(set(existing) | set(new_extra_components))
         write_file(manifest_path, json.dumps(merged, indent=2))
 
+    # Per-component npm dependencies (e.g. a d3-based component needing
+    # d3-geo), keyed by source_file — consumed by stage_deploy's extra-
+    # components copy loop to reach package.json the same way the
+    # archetype-matched copy path already does. Every currently-safe
+    # component only declares `framer-motion` (already a baseline dep), so
+    # this is unexercised by the real build today; it activates the moment a
+    # safe component with a real dependency exists. A dict update is
+    # naturally idempotent per source_file key.
+    if new_extra_component_deps:
+        deps_path = OUTPUT_DIR / project_name / "animation-injection-deps.json"
+        existing_deps: dict = {}
+        if deps_path.exists():
+            try:
+                existing_deps = json.loads(deps_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                existing_deps = {}
+        existing_deps.update(new_extra_component_deps)
+        write_file(deps_path, json.dumps(existing_deps, indent=2))
+
     # Merge per-section decisions across pages — this file is what
     # `_build_page_imports()` consults when generating each page's JSX, keyed
     # `{page_dir}/{section_stem}` so pages sharing a section filename (every
-    # page's hero is "01-hero") never collide.
+    # page's hero is "01-hero") never collide. A dict update is naturally
+    # idempotent: re-deciding the same section overwrites its own key rather
+    # than accumulating.
     if decisions:
         injections_path = OUTPUT_DIR / project_name / "animation-injections.json"
         existing_decisions: dict = {}
@@ -4866,25 +4891,48 @@ console.log(JSON.stringify({{
         existing_decisions.update(decisions)
         write_file(injections_path, json.dumps(existing_decisions, indent=2))
 
-    # Merge coverage across pages — multipage builds call this once per page
-    # and each call's numbers describe only that page's sections.
+    # Coverage, keyed per page and recomputed fresh — NOT accumulated.
+    # Earlier version read animation-coverage.json and ADDED this page's
+    # numbers onto whatever was already on disk. That is correct only if
+    # each page is decided exactly once into a fresh output dir; a resumed
+    # or retried build re-running the SAME page (a normal pattern this repo
+    # documents) doubled `total`/`unchanged` while `injected` stayed flat —
+    # the exact file whose job is to stop a number overstating reality was
+    # producing one. Storing a per-page slot and summing fresh from all
+    # slots every write makes a repeat run of the same page a no-op on the
+    # aggregate, not a second count.
     coverage_path = OUTPUT_DIR / project_name / "animation-coverage.json"
+    by_page: dict = {}
     if coverage_path.exists():
         try:
             prev = json.loads(coverage_path.read_text(encoding="utf-8"))
+            by_page = prev.get("by_page") or {}
         except (json.JSONDecodeError, OSError):
-            prev = None
-        if prev:
-            for key in ("total", "injected", "wrapped_generic", "unchanged"):
-                tally[key] += prev.get(key, 0)
-            for key in ("by_component", "by_reason"):
-                for k, v in (prev.get(key) or {}).items():
-                    tally[key][k] = tally[key].get(k, 0) + v
+            by_page = {}
+    by_page[page_dir] = {
+        "total": tally["total"],
+        "injected": tally["injected"],
+        "wrapped_generic": tally["wrapped_generic"],
+        "unchanged": tally["unchanged"],
+        "by_component": tally["by_component"],
+        "by_reason": tally["by_reason"],
+    }
 
-    write_file(coverage_path, json.dumps(tally, indent=2))
+    aggregate = {
+        "total": 0, "injected": 0, "wrapped_generic": 0, "unchanged": 0,
+        "by_component": {}, "by_reason": {}, "by_page": by_page,
+    }
+    for page_tally in by_page.values():
+        for key in ("total", "injected", "wrapped_generic", "unchanged"):
+            aggregate[key] += page_tally.get(key, 0)
+        for key in ("by_component", "by_reason"):
+            for name, count in (page_tally.get(key) or {}).items():
+                aggregate[key][name] = aggregate[key].get(name, 0) + count
+
+    write_file(coverage_path, json.dumps(aggregate, indent=2))
     print(f"  Animation decisions: {tally['injected']}/{tally['total']} real component(s) selected, "
           f"{tally['unchanged']} unchanged")
-    return tally
+    return aggregate
 
 
 def load_animation_injections(project_name: str) -> dict:
@@ -6603,6 +6651,45 @@ export default async function Page({ params }: { params: Promise<{ page: string 
                     print(f"  ⚠ Extra component not found: {comp_file}")
             if extra_copied > 0:
                 print(f"  ✓ Copied {extra_copied} extra component(s) (visual fallbacks, demos, UI)")
+
+            # Task 7's real-component-injection path queues its own copies
+            # here (via extra-components.json) but, unlike the archetype-
+            # matched copy above, this loop never touched package.json —
+            # copying a component whose real dependency (e.g. a d3-based
+            # component needing d3-geo) isn't installed breaks the build the
+            # moment such a component becomes safe to inject. Every
+            # currently-safe component only declares `framer-motion`
+            # (already a baseline dep), so this was previously masked, not
+            # absent. Same filtering as the archetype-matched path: strip
+            # invalid/scope-only package names, remap known aliases.
+            deps_manifest_path = OUTPUT_DIR / project_name / "animation-injection-deps.json"
+            if deps_manifest_path.exists():
+                deps_by_file = json.loads(deps_manifest_path.read_text(encoding="utf-8"))
+                injection_deps: dict[str, str] = {}
+                for comp_file in extra_files:
+                    for dep in deps_by_file.get(comp_file, []):
+                        injection_deps[dep] = "latest"
+                INVALID_INJECTION_PKGS = {"@gsap", "motion"}
+                INJECTION_PKG_REMAP = {"@gsap": "@gsap/react"}
+                if injection_deps:
+                    pkg_path = site_dir / "package.json"
+                    pkg_data = json.loads(pkg_path.read_text(encoding="utf-8"))
+                    existing_deps = pkg_data.get("dependencies", {})
+                    added = []
+                    for dep_name, dep_ver in injection_deps.items():
+                        if dep_name in INVALID_INJECTION_PKGS:
+                            remap = INJECTION_PKG_REMAP.get(dep_name)
+                            if remap:
+                                dep_name = remap
+                            else:
+                                continue
+                        if dep_name not in existing_deps:
+                            existing_deps[dep_name] = dep_ver
+                            added.append(dep_name)
+                    if added:
+                        pkg_data["dependencies"] = existing_deps
+                        write_file(pkg_path, json.dumps(pkg_data, indent=2) + "\n")
+                        print(f"  ✓ Added injected-component dependencies: {', '.join(added)}")
         except (json.JSONDecodeError, OSError) as e:
             print(f"  ⚠ Could not process extra components: {e}")
 

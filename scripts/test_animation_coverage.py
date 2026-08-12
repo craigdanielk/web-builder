@@ -210,6 +210,36 @@ if node_available:
     test("regression: section 2's wrap tag uses the ALIASED local name, not the collided 'AnimatedGroup'",
          "<AnimatedGroup>" not in section2_line and "AnimatedGroup" in section2_line)
 
+    # ── CRITICAL regression: re-running the SAME page against the SAME
+    # output dir (a resumed/retried build — `--skip-to sections`, a normal
+    # pattern this repo's own CLAUDE.md documents) must not double the
+    # coverage numbers. An earlier version read animation-coverage.json and
+    # ADDED this page's numbers onto whatever was already on disk: a second
+    # run on an already-populated output dir doubled `total`/`unchanged`
+    # while `injected` stayed flat — the file whose entire job is to stop a
+    # number overstating reality was itself producing one. No cleanup
+    # between these two calls — that's the point.
+    coverage_first = json.loads((FIXTURE_DIR / "animation-coverage.json").read_text(encoding="utf-8"))
+    tally_rerun = orchestrate.stage_inject_animation(FIXTURE_PROJECT, "home", section_files, "moderate")
+    coverage_second = json.loads((FIXTURE_DIR / "animation-coverage.json").read_text(encoding="utf-8"))
+
+    test("idempotence: total is identical across two runs on the same output dir (no doubling)",
+         coverage_first["total"] == coverage_second["total"] == FIXTURE_SECTION_COUNT,
+         f"first={coverage_first['total']} second={coverage_second['total']}")
+    test("idempotence: injected is identical across two runs on the same output dir",
+         coverage_first["injected"] == coverage_second["injected"] == 4,
+         f"first={coverage_first['injected']} second={coverage_second['injected']}")
+    test("idempotence: unchanged is identical across two runs on the same output dir",
+         coverage_first["unchanged"] == coverage_second["unchanged"] == 1,
+         f"first={coverage_first['unchanged']} second={coverage_second['unchanged']}")
+    test("idempotence: returned value matches the on-disk aggregate on the second run too",
+         tally_rerun == coverage_second)
+
+    print("\n  === animation-coverage.json — run 1 ===")
+    print(json.dumps(coverage_first, indent=2))
+    print("\n  === animation-coverage.json — run 2 (same output dir, no cleanup) ===")
+    print(json.dumps(coverage_second, indent=2))
+
     # ── Determinism: re-deciding the same input yields the same decisions ──
     cleanup_fixture()
     section_files2 = build_fixture()

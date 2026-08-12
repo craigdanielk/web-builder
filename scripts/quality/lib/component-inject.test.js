@@ -120,6 +120,28 @@ export function Foo({ children }: FooProps) {
   assert.match(safety.reason, /not ReactNode/);
 });
 
+test('analyzeSafety refuses a render-prop children signature that merely contains the substring "ReactNode"', () => {
+  // A naive `/ReactNode/.test(type)` check is a false positive here: this
+  // type string DOES contain "ReactNode" (`(state: FooState) => ReactNode`)
+  // but children is a FUNCTION the component calls as `children(state)`,
+  // not a value it renders directly. Wrapping a section — passing a JSX
+  // element as children — would break at the call site. This is exactly
+  // the false-positive shape flagged in review: a false negative only costs
+  // coverage, a false positive breaks the build.
+  const src = `
+interface FooProps {
+  children: (state: FooState) => React.ReactNode;
+}
+export function Foo({ children }: FooProps) {
+  const state = useFooState();
+  return <div>{children(state)}</div>;
+}
+`;
+  const safety = ci.analyzeSafety(src, 'Foo');
+  assert.equal(safety.safe, false);
+  assert.match(safety.reason, /render-prop function/);
+});
+
 // ============================================================================
 // IMPORT PLUMBING
 // ============================================================================

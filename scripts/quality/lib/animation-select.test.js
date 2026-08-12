@@ -287,6 +287,10 @@ test('library selection hit rate measurement', () => {
   const testArchetypes = ['HERO', 'GALLERY', 'FEATURES', 'STATS', 'FAQ'];
   const intensities = ['subtle', 'moderate', 'dramatic'];
   const results = {};
+  const fs = require('fs');
+  const path = require('path');
+  const componentsDir = path.resolve(__dirname, '../../../skills/animation-components');
+  const fullRegistry = injector.loadFullRegistry();
 
   intensities.forEach(intensity => {
     results[intensity] = 0;
@@ -294,8 +298,21 @@ test('library selection hit rate measurement', () => {
       const result = injector.selectLibraryAnimation(arch, intensity, 'framer-motion', []);
       if (result !== null) {
         results[intensity]++;
+        // The real invariant: whatever resolves must be file-backed. A
+        // bare `count >= 0` (the previous assertion here) is trivially
+        // always true and catches nothing — it was flagged in review as
+        // vacuous.
+        const comp = fullRegistry.components.find(c => c.animation_id === result);
+        assert.ok(comp, `resolved animation_id '${result}' has no registry row`);
+        assert.ok(
+          comp.source_file && fs.existsSync(path.join(componentsDir, comp.source_file)),
+          `resolved animation_id '${result}' has no file on disk — file-existence filter regressed`
+        );
       }
     });
+    // Sanity on the counting logic itself: never more hits than archetypes tried.
+    assert.ok(results[intensity] >= 0 && results[intensity] <= testArchetypes.length,
+      `results['${intensity}'] out of bounds: ${results[intensity]}`);
   });
 
   console.log('\n=== LIBRARY SELECTION HIT RATE (file-backed only) ===');
@@ -311,5 +328,4 @@ test('library selection hit rate measurement', () => {
   // a number go up — precisely the failure mode this task was re-scoped to
   // stop. Component injection (component-inject.js) uses role-based
   // selection instead, which is what actually reaches all 12 real sections.
-  assert.ok(results['moderate'] >= 0, 'sanity: hit count is a valid non-negative number');
 });
