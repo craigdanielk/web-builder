@@ -8,13 +8,16 @@ what let the brief's first draft ship a resolver that reads a key
 """
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from lib.section_artifact import SectionArtifact
-from lib.asset_resolver import resolve_assets, gaps, _download_verbose, DownloadError
+from lib.asset_resolver import (
+    resolve_assets, gaps, _download_verbose, DownloadError, _local_rel_path, _looks_like_image,
+)
 
 PASS = 0
 FAIL = 0
@@ -67,7 +70,7 @@ EXTRACTION = {"assets": {"images": [{"src": "https://capecrypto.com/media/aluma.
 
 out = resolve_assets(art, EXTRACTION, TMP / "public-1", download_fn=fake_download)
 test("remote src is rewritten to a local path",
-     "/images/aluma.png" in out.tsx, out.tsx)
+     re.search(r'/images/aluma-[0-9a-f]+\.png', out.tsx) is not None, out.tsx)
 test("no remote capecrypto.com src survives",
      "https://capecrypto.com" not in out.tsx)
 test("resolution is recorded in assets",
@@ -84,6 +87,175 @@ test("placeholder src is NOT rewritten when nothing resolves",
      '/placeholder.svg' in out2.tsx, out2.tsx)
 test("gaps() describes the unresolved slot for generation",
      len(gaps(out2)) == 1 and "archetype" in gaps(out2)[0], str(gaps(out2)))
+
+# ---------------------------------------------------------------------------
+# Group 1b: filename collision. Two DIFFERENT remote URLs sharing a basename
+# ("logo.png" under two different paths — exactly the kind of name that
+# repeats across a real site's /assets/ and /content/ directories) must
+# resolve to two DIFFERENT local files, each containing its own bytes. A
+# resolver that names the local file from the basename alone maps both to
+# the same destination; the second URL then finds that destination already
+# "exists" and adopts the first URL's bytes without even attempting its own
+# fetch — a wrong-but-valid image that passes every other check (non-zero
+# size, real magic bytes) while silently showing the wrong picture.
+# ---------------------------------------------------------------------------
+
+def make_fake_download(url_to_bytes):
+    """download_fn that returns different, known bytes per URL, so a
+    collision is detectable by content, not just by non-zero size."""
+    def _fn(url, dest):
+        payload = url_to_bytes[url]
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(payload)
+        return len(payload)
+    return _fn
+
+
+COLLISION_TSX = (
+    '<section>'
+    '<img src="https://cdn.example.com/assets/partners/logo.png" alt="Partner A" />'
+    '<img src="https://cdn.example.com/content/brand/logo.png" alt="Partner B" />'
+    '</section>'
+)
+COLLISION_BYTES = {
+    "https://cdn.example.com/assets/partners/logo.png": b"PARTNER-A-BYTES",
+    "https://cdn.example.com/content/brand/logo.png": b"PARTNER-B-BYTES",
+}
+collision_art = SectionArtifact(
+    tsx=COLLISION_TSX, archetype="LOGO-BAR", variant="strip", section_uid="coll1",
+    intensity="subtle", origin="supabase_template", provenance=[], assets=[], animation=None,
+)
+collision_extraction = {"assets": {"images": [
+    {"src": "https://cdn.example.com/assets/partners/logo.png", "alt": "Partner A", "sectionIndex": None},
+    {"src": "https://cdn.example.com/content/brand/logo.png", "alt": "Partner B", "sectionIndex": None},
+]}}
+collision_out = resolve_assets(
+    collision_art, collision_extraction, TMP / "public-collision",
+    download_fn=make_fake_download(COLLISION_BYTES),
+)
+collision_extracted = [a for a in collision_out.assets if a["origin"] == "extracted"]
+collision_local_srcs = {a["src"] for a in collision_extracted}
+test("both same-basename URLs resolve (not one silently dropped)",
+     len(collision_extracted) == 2, str(collision_out.assets))
+test("both resolve to DIFFERENT local paths (no basename collision)",
+     len(collision_local_srcs) == 2, str(collision_local_srcs))
+
+# Verify each local file holds ITS OWN bytes, not the other URL's — this is
+# the actual "wrong image shipped" failure mode, not just a missing entry.
+_written_contents = []
+_detail_lines = []
+for a in collision_extracted:
+    p = TMP / "public-collision" / a["src"].lstrip("/")
+    content = p.read_bytes() if p.exists() else b""
+    _written_contents.append(content)
+    _detail_lines.append(f"{a['src']} -> {content!r}")
+test("each resolved file contains its own source's bytes (no wrong-image swap)",
+     set(_written_contents) == set(COLLISION_BYTES.values()) and len(set(_written_contents)) == 2,
+     "; ".join(_detail_lines))
+
+# ---------------------------------------------------------------------------
+# Group 1c: the on-disk cache must not adopt a bad leftover. If an earlier
+# run crashed mid-download (or an old bug wrote a 403 page to disk), a
+# zero-byte or non-image file can sit at the destination path. The
+# `dest.exists()` cache-hit branch must not treat that as "already
+# downloaded, valid" — it must redownload.
+# ---------------------------------------------------------------------------
+
+CACHE_URL = "https://x.example.com/assets/broken.png"
+cache_pub = TMP / "public-cache-validate"
+cache_rel = _local_rel_path(CACHE_URL)
+cache_dest = cache_pub / cache_rel
+cache_dest.parent.mkdir(parents=True, exist_ok=True)
+cache_dest.write_bytes(b"")  # simulate a zero-byte leftover from a failed prior run
+
+_cache_download_calls = []
+
+
+def _counting_real_bytes_download(url, dest):
+    _cache_download_calls.append(url)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    payload = b"\x89PNG\r\n\x1a\n" + b"real-png-bytes"
+    dest.write_bytes(payload)
+    return len(payload)
+
+
+cache_art = SectionArtifact(
+    tsx=f'<img src="{CACHE_URL}" alt="Broken" />', archetype="HERO", variant="centered",
+    section_uid="cache1", intensity="subtle", origin="supabase_template",
+    provenance=[], assets=[], animation=None,
+)
+cache_out = resolve_assets(
+    cache_art, {"assets": {"images": [{"src": CACHE_URL, "sectionIndex": None}]}},
+    cache_pub, download_fn=_counting_real_bytes_download,
+)
+test("a zero-byte leftover at the cache path triggers a redownload, not a silent adopt",
+     _cache_download_calls == [CACHE_URL], f"download calls: {_cache_download_calls}")
+test("after redownload, the file on disk holds the real bytes, not the empty leftover",
+     cache_dest.read_bytes().startswith(b"\x89PNG"), cache_dest.read_bytes())
+
+# Same check for a non-image (but non-empty) leftover — e.g. an HTML error
+# page an older, pre-magic-byte-check version of this module could have
+# saved under an image extension.
+NONIMAGE_URL = "https://x.example.com/assets/also-broken.png"
+nonimage_rel = _local_rel_path(NONIMAGE_URL)
+nonimage_dest = cache_pub / nonimage_rel
+nonimage_dest.parent.mkdir(parents=True, exist_ok=True)
+nonimage_dest.write_bytes(b"<html>403 Forbidden</html>")
+
+_nonimage_calls = []
+
+
+def _counting_download_2(url, dest):
+    _nonimage_calls.append(url)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    payload = b"\x89PNG\r\n\x1a\n" + b"real-png-bytes-2"
+    dest.write_bytes(payload)
+    return len(payload)
+
+
+nonimage_art = SectionArtifact(
+    tsx=f'<img src="{NONIMAGE_URL}" alt="AlsoBroken" />', archetype="HERO", variant="centered",
+    section_uid="cache2", intensity="subtle", origin="supabase_template",
+    provenance=[], assets=[], animation=None,
+)
+nonimage_out = resolve_assets(
+    nonimage_art, {"assets": {"images": [{"src": NONIMAGE_URL, "sectionIndex": None}]}},
+    cache_pub, download_fn=_counting_download_2,
+)
+test("a non-image (HTML error page) leftover at the cache path is not adopted either",
+     _nonimage_calls == [NONIMAGE_URL], f"download calls: {_nonimage_calls}")
+
+# ---------------------------------------------------------------------------
+# Group 1d: _looks_like_image must not false-negative valid formats. A
+# false negative silently downgrades a resolvable asset to unresolved,
+# costing coverage quietly rather than loudly. WEBP matters concretely —
+# dave.webp (about section, see Group 2) is a real WEBP reference in this
+# project, and would need this format to ever resolve if extraction data
+# ever does include it.
+# ---------------------------------------------------------------------------
+
+_magic_dir = TMP / "magic-bytes"
+_magic_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _write_and_check(name, payload):
+    p = _magic_dir / name
+    p.write_bytes(payload)
+    return _looks_like_image(p)
+
+
+test("WEBP magic bytes (RIFF....WEBP) are recognized",
+     _write_and_check("a.webp", b"RIFF\x00\x00\x00\x00WEBPVP8 " + b"\x00" * 16))
+test("AVIF magic bytes (ftyp box, avif brand) are recognized",
+     _write_and_check("a.avif", b"\x00\x00\x00\x18ftypavif\x00\x00\x00\x00" + b"\x00" * 16))
+test("GIF89a magic bytes are recognized",
+     _write_and_check("a.gif", b"GIF89a" + b"\x00" * 16))
+test("SVG preceded by an XML comment is recognized (not just bare <svg)",
+     _write_and_check("a.svg", b'<!-- generated by extractor -->\n<svg xmlns="http://www.w3.org/2000/svg">'))
+test("SVG preceded by a UTF-8 BOM is recognized",
+     _write_and_check("b.svg", b"\xef\xbb\xbf<svg xmlns=\"...\">"))
+test("an HTML error page is still correctly rejected (not a false positive)",
+     not _write_and_check("bad.html", b"<html><body>403 Forbidden</body></html>"))
 
 # ---------------------------------------------------------------------------
 # Group 2: real extraction-data.json from the Cape Crypto cold run.
@@ -199,63 +371,65 @@ export default function LogoBarScrollingMarquee() {
          str(logo_out.assets))
 
 # ---------------------------------------------------------------------------
-# Group 3: real network fetch of one real extraction asset, through the
-# actual default `_download` used by `resolve_assets` (no injected mock).
+# Group 3: exactly ONE genuinely networked test — a single live HTTP call
+# against capecrypto.com through resolve_assets() end-to-end (no injected
+# mock). Everything else in this suite uses `fake_download`; this is the
+# sole exception, and it is not run in CI/offline by default.
 #
 # A prior version of this test diagnosed a real download failure as "host
 # unreachable" when the true cause was the origin server 403-ing Python's
 # default User-Agent — `urlopen()` without headers raises HTTPError, which a
 # bare `except Exception: unreachable` swallows into the wrong story. That
 # sent the next person to debug connectivity instead of headers. This
-# version calls `_download_verbose` directly so a failure's real cause
-# (DNS/connection vs HTTP status vs timeout vs non-image response) is what
-# gets reported, and only a genuine offline condition (no DNS / connection
-# refused) is reported as SKIP.
+# version wraps `_download_verbose` so the real cause (DNS/connection vs
+# HTTP status vs timeout vs non-image response) drives the verdict:
+# offline/timeout -> SKIP with that reason, HTTP error or non-image -> FAIL
+# with that reason, success -> asserted end-to-end including on-disk bytes.
+#
+# Off by default (opt in with ASSET_RESOLVER_RUN_NETWORK_TEST=1) so this
+# suite doesn't hammer a third-party production site or flake in CI/offline
+# runs on every invocation.
 # ---------------------------------------------------------------------------
 
-def _probe_network(url: str, dest: Path):
-    """Returns ('ok', bytes) | ('offline', reason) | ('failed', reason)."""
-    try:
-        n = _download_verbose(url, dest)
-        return ("ok", n)
-    except DownloadError as e:
-        msg = str(e)
-        if msg.startswith("host unreachable") or msg == "timed out":
-            return ("offline", msg)
-        return ("failed", msg)  # e.g. "server returned HTTP 403", non-image response
-
-
-if REAL_EXTRACTION_PATH.exists():
-    if os.environ.get("ASSET_RESOLVER_SKIP_NETWORK"):
-        skip("real network download of a real extracted asset", "ASSET_RESOLVER_SKIP_NETWORK set")
-    else:
-        real = json.loads(REAL_EXTRACTION_PATH.read_text())
-        probe_url = "https://capecrypto.com/assets/images/partners/numeral.svg?v=809f7e496a"
-        outcome, detail = _probe_network(probe_url, TMP / "public-network-probe" / "numeral.svg")
-
-        if outcome == "offline":
-            skip("real network download of a real extracted asset", f"network offline: {detail}")
-        elif outcome == "failed":
-            test(f"real network download of a real extracted asset succeeds (observed: {detail})",
-                 False, detail)
-        else:
-            net_art = SectionArtifact(
-                tsx='<img src="https://capecrypto.com/assets/images/partners/numeral.svg?v=809f7e496a" alt="Numeral" />',
-                archetype="LOGO-BAR", variant="strip", section_uid="net1",
-                intensity="subtle", origin="supabase_template",
-                provenance=[], assets=[], animation=None,
-            )
-            net_out = resolve_assets(net_art, real, TMP / "public-network")  # real download_fn (default)
-            net_extracted = [a for a in net_out.assets if a["origin"] == "extracted"]
-            test("real network download resolves the logo through resolve_assets() end-to-end",
-                 bool(net_extracted) and net_extracted[0]["bytes"] > 0, str(net_out.assets))
-            if net_extracted:
-                real_path = (TMP / "public-network" / net_extracted[0]["src"].lstrip("/"))
-                test("downloaded file is real image bytes on disk (SVG magic header)",
-                     real_path.exists() and real_path.read_bytes()[:5] in (b"<?xml", b"<svg "),
-                     f"first bytes: {real_path.read_bytes()[:20] if real_path.exists() else 'MISSING'}")
-else:
+if not os.environ.get("ASSET_RESOLVER_RUN_NETWORK_TEST"):
+    skip("real network download of a real extracted asset",
+         "opt-in only — set ASSET_RESOLVER_RUN_NETWORK_TEST=1 to run it")
+elif not REAL_EXTRACTION_PATH.exists():
     skip("real network download of a real extracted asset", "extraction-data.json not found")
+else:
+    real = json.loads(REAL_EXTRACTION_PATH.read_text())
+    _diagnosis = {}
+
+    def _diagnosing_download(url, dest):
+        try:
+            return _download_verbose(url, dest)
+        except DownloadError as e:
+            _diagnosis["error"] = str(e)
+            return 0
+
+    net_art = SectionArtifact(
+        tsx='<img src="https://capecrypto.com/assets/images/partners/numeral.svg?v=809f7e496a" alt="Numeral" />',
+        archetype="LOGO-BAR", variant="strip", section_uid="net1",
+        intensity="subtle", origin="supabase_template",
+        provenance=[], assets=[], animation=None,
+    )
+    net_out = resolve_assets(net_art, real, TMP / "public-network", download_fn=_diagnosing_download)
+    net_extracted = [a for a in net_out.assets if a["origin"] == "extracted"]
+
+    if not net_extracted and "error" in _diagnosis:
+        msg = _diagnosis["error"]
+        if msg.startswith("host unreachable") or msg == "timed out":
+            skip("real network download of a real extracted asset", f"network offline: {msg}")
+        else:
+            test(f"real network download of a real extracted asset succeeds (observed: {msg})", False, msg)
+    else:
+        test("real network download resolves the logo through resolve_assets() end-to-end",
+             bool(net_extracted) and net_extracted[0]["bytes"] > 0, str(net_out.assets))
+        if net_extracted:
+            real_path = TMP / "public-network" / net_extracted[0]["src"].lstrip("/")
+            test("downloaded file is real image bytes on disk (SVG magic header)",
+                 real_path.exists() and real_path.read_bytes()[:5] in (b"<?xml", b"<svg "),
+                 f"first bytes: {real_path.read_bytes()[:20] if real_path.exists() else 'MISSING'}")
 
 print(f"\n  RESULTS: {PASS} passed, {FAIL} failed, {SKIP} skipped\n")
 sys.exit(1 if FAIL else 0)
