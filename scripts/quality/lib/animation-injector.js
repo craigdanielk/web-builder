@@ -303,9 +303,11 @@ function deriveComponentIntensity(comp) {
 }
 
 /**
- * Select the best animation pattern for an archetype using section_archetypes
+ * Select the best animation pattern for an archetype using affinity scores
  * from the component registry, filtered by engine compatibility, intensity,
  * and deduplication across sections.
+ *
+ * RESTORED: Byte-identical to 7507e883 — prompt building path depends on this.
  *
  * @param {string} archetype - Section archetype (e.g. 'HERO', 'FEATURES')
  * @param {string} presetIntensity - From parsePresetIntensity()
@@ -314,6 +316,62 @@ function deriveComponentIntensity(comp) {
  * @returns {string|null} Best pattern name, or null if no candidates
  */
 function selectAnimation(archetype, presetIntensity, engine, usedPatterns) {
+  var registry = loadRegistry();
+  var intensityRank = { subtle: 1, moderate: 2, expressive: 3, dramatic: 4 };
+  var presetRank = intensityRank[presetIntensity] || 2;
+
+  var candidates = [];
+
+  var entries = Object.entries(registry.components);
+  for (var i = 0; i < entries.length; i++) {
+    var name = entries[i][0];
+    var comp = entries[i][1];
+
+    // Filter: engine match (or css/css+react/css+framer which work with both)
+    var compEngine = comp.engine || 'framer-motion';
+    if (compEngine !== 'css' && compEngine !== 'css+react' && compEngine !== 'css+framer' && compEngine !== engine) continue;
+
+    // Filter: intensity <= preset intensity (don't use expressive on subtle preset)
+    var compRank = intensityRank[comp.intensity] || 2;
+    if (compRank > presetRank) continue;
+
+    // Filter: must have affinity data for this archetype
+    var affinity = comp.affinity || {};
+    var score = affinity[archetype] || 0;
+    if (score === 0) continue;
+
+    // Filter: not already used in recent sections (deduplication)
+    if (usedPatterns.indexOf(name) !== -1) continue;
+
+    // Filter: must be "ready" status
+    if (comp.status !== 'ready') continue;
+
+    candidates.push({ name: name, score: score, intensity: comp.intensity });
+  }
+
+  if (candidates.length === 0) return null;
+
+  // Sort: highest affinity first, break ties by preferring higher intensity
+  candidates.sort(function (a, b) {
+    if (b.score !== a.score) return b.score - a.score;
+    return (intensityRank[b.intensity] || 0) - (intensityRank[a.intensity] || 0);
+  });
+
+  return candidates[0].name;
+}
+
+/**
+ * Select from the full 1034-component library by section_archetypes affinity.
+ * Used by Task 6 and Task 7 to apply animations to template-built sections.
+ * Returns full-registry animation_id format.
+ *
+ * @param {string} archetype - Section archetype (e.g. 'HERO', 'FEATURES')
+ * @param {string} presetIntensity - From parsePresetIntensity()
+ * @param {string} engine - 'gsap' | 'framer-motion'
+ * @param {string[]} usedPatterns - Patterns already selected in earlier sections
+ * @returns {string|null} Component animation_id, or null if no candidates
+ */
+function selectLibraryAnimation(archetype, presetIntensity, engine, usedPatterns) {
   var data = loadFullRegistry();
   var reg = data.components || [];
 
@@ -1368,8 +1426,10 @@ module.exports = {
   buildCardEmbeddedDemos,
   getPluginRecommendationsForSection,
   selectAnimation,
+  selectLibraryAnimation,
   deriveComponentIntensity,
   loadRegistry,
+  loadFullRegistry,
   CARD_ANIMATION_MAP,
   CARD_EMBEDDED_DEMOS,
   DEMO_FALLBACK_SEQUENCE,
