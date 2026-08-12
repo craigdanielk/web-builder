@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -48,17 +49,97 @@ IMG_URL_RE = re.compile(
 
 PLACEHOLDERS = {"/placeholder.svg", "/placeholder.jpg", "/placeholder.png", "#", ""}
 
+# Some origin servers (confirmed: capecrypto.com) return 403 Forbidden to
+# Python's default User-Agent ("Python-urllib/3.x") while serving the same
+# asset fine to a browser-like one. Without this header the resolver would
+# silently resolve nothing in production — matching would succeed, every
+# download would fail, and every slot would be recorded unresolved.
+_REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    )
+}
 
-def _download(url: str, dest: Path) -> int:
-    """Fetch a remote image. Returns bytes written, 0 on failure."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
+_IMAGE_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", None),
+    (b"\xff\xd8\xff", None),           # JPEG
+    (b"GIF87a", None),
+    (b"GIF89a", None),
+    (b"RIFF", b"WEBP"),                # RIFF....WEBP
+    (b"BM", None),                     # BMP, unlikely but cheap to allow
+)
+
+
+def _looks_like_image(path: Path) -> bool:
+    """Reject downloads that landed on disk but aren't actually image bytes —
+    e.g. an HTML 403/error page saved because the caller only checked size."""
     try:
-        with urllib.request.urlopen(url, timeout=20) as resp, open(dest, "wb") as out:
+        head = path.read_bytes()[:64]
+    except OSError:
+        return False
+    if not head:
+        return False
+    for magic, offset_magic in _IMAGE_MAGIC:
+        if head.startswith(magic):
+            if offset_magic is None:
+                return True
+            if head[8:12] == offset_magic:
+                return True
+    stripped = head.lstrip(b"\xef\xbb\xbf \t\r\n")  # tolerate BOM/whitespace
+    if stripped.startswith(b"<svg") or stripped.startswith(b"<?xml"):
+        return True
+    return False
+
+
+class DownloadError(Exception):
+    """Raised by `_download` variants that want to report *why* a fetch
+    failed (host unreachable vs. HTTP error vs. timeout vs. not-an-image),
+    rather than collapsing every failure to a bare 0. `resolve_assets` only
+    needs the byte count, but callers diagnosing a resolver that resolves
+    nothing (e.g. tests) can call `_download_verbose` directly."""
+
+
+def _download_verbose(url: str, dest: Path) -> int:
+    """Fetch a remote image with a browser-like User-Agent, verify it's
+    actually image bytes, and raise DownloadError with the real cause on
+    failure instead of swallowing it. Returns bytes written on success."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(url, headers=_REQUEST_HEADERS)
+    try:
+        with urllib.request.urlopen(request, timeout=20) as resp, open(dest, "wb") as out:
             shutil.copyfileobj(resp, out)
-        return dest.stat().st_size
-    except Exception:
+    except urllib.error.HTTPError as e:
         if dest.exists():
             dest.unlink()
+        raise DownloadError(f"server returned HTTP {e.code}") from e
+    except urllib.error.URLError as e:
+        if dest.exists():
+            dest.unlink()
+        raise DownloadError(f"host unreachable ({e.reason})") from e
+    except TimeoutError as e:
+        if dest.exists():
+            dest.unlink()
+        raise DownloadError("timed out") from e
+    except Exception as e:
+        if dest.exists():
+            dest.unlink()
+        raise DownloadError(f"{type(e).__name__}: {e}") from e
+
+    if not _looks_like_image(dest):
+        size = dest.stat().st_size
+        dest.unlink()
+        raise DownloadError(f"response was not image bytes ({size} bytes written, discarded)")
+    return dest.stat().st_size
+
+
+def _download(url: str, dest: Path) -> int:
+    """Fetch a remote image. Returns bytes written, 0 on any failure
+    (unreachable host, non-2xx response, or a response that isn't actually
+    an image — e.g. a 403 error page saved under an image extension)."""
+    try:
+        return _download_verbose(url, dest)
+    except DownloadError:
         return 0
 
 

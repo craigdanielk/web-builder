@@ -8,15 +8,13 @@ what let the brief's first draft ship a resolver that reads a key
 """
 import json
 import os
-import socket
 import sys
 import tempfile
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from lib.section_artifact import SectionArtifact
-from lib.asset_resolver import resolve_assets, gaps
+from lib.asset_resolver import resolve_assets, gaps, _download_verbose, DownloadError
 
 PASS = 0
 FAIL = 0
@@ -201,38 +199,61 @@ export default function LogoBarScrollingMarquee() {
          str(logo_out.assets))
 
 # ---------------------------------------------------------------------------
-# Group 3: real network fetch of one real extraction asset. Guarded — if
-# there's no network path to capecrypto.com, this is reported as a SKIP with
-# a reason, never counted as a pass.
+# Group 3: real network fetch of one real extraction asset, through the
+# actual default `_download` used by `resolve_assets` (no injected mock).
+#
+# A prior version of this test diagnosed a real download failure as "host
+# unreachable" when the true cause was the origin server 403-ing Python's
+# default User-Agent — `urlopen()` without headers raises HTTPError, which a
+# bare `except Exception: unreachable` swallows into the wrong story. That
+# sent the next person to debug connectivity instead of headers. This
+# version calls `_download_verbose` directly so a failure's real cause
+# (DNS/connection vs HTTP status vs timeout vs non-image response) is what
+# gets reported, and only a genuine offline condition (no DNS / connection
+# refused) is reported as SKIP.
 # ---------------------------------------------------------------------------
 
-def _network_reachable(host="capecrypto.com", timeout=3) -> bool:
+def _probe_network(url: str, dest: Path):
+    """Returns ('ok', bytes) | ('offline', reason) | ('failed', reason)."""
     try:
-        socket.setdefaulttimeout(timeout)
-        socket.gethostbyname(host)
-        urllib.request.urlopen(f"https://{host}/", timeout=timeout)
-        return True
-    except Exception:
-        return False
+        n = _download_verbose(url, dest)
+        return ("ok", n)
+    except DownloadError as e:
+        msg = str(e)
+        if msg.startswith("host unreachable") or msg == "timed out":
+            return ("offline", msg)
+        return ("failed", msg)  # e.g. "server returned HTTP 403", non-image response
 
 
 if REAL_EXTRACTION_PATH.exists():
     if os.environ.get("ASSET_RESOLVER_SKIP_NETWORK"):
         skip("real network download of a real extracted asset", "ASSET_RESOLVER_SKIP_NETWORK set")
-    elif not _network_reachable():
-        skip("real network download of a real extracted asset", "capecrypto.com unreachable from this host")
     else:
         real = json.loads(REAL_EXTRACTION_PATH.read_text())
-        net_art = SectionArtifact(
-            tsx='<img src="https://capecrypto.com/assets/images/logo-white.svg?v=809f7e496a" alt="logo" />',
-            archetype="LOGO-BAR", variant="strip", section_uid="net1",
-            intensity="subtle", origin="supabase_template",
-            provenance=[], assets=[], animation=None,
-        )
-        net_out = resolve_assets(net_art, real, TMP / "public-network")  # real download_fn (default)
-        net_extracted = [a for a in net_out.assets if a["origin"] == "extracted"]
-        test("real network download resolves the logo and writes real bytes",
-             bool(net_extracted) and net_extracted[0]["bytes"] > 0, str(net_out.assets))
+        probe_url = "https://capecrypto.com/assets/images/partners/numeral.svg?v=809f7e496a"
+        outcome, detail = _probe_network(probe_url, TMP / "public-network-probe" / "numeral.svg")
+
+        if outcome == "offline":
+            skip("real network download of a real extracted asset", f"network offline: {detail}")
+        elif outcome == "failed":
+            test(f"real network download of a real extracted asset succeeds (observed: {detail})",
+                 False, detail)
+        else:
+            net_art = SectionArtifact(
+                tsx='<img src="https://capecrypto.com/assets/images/partners/numeral.svg?v=809f7e496a" alt="Numeral" />',
+                archetype="LOGO-BAR", variant="strip", section_uid="net1",
+                intensity="subtle", origin="supabase_template",
+                provenance=[], assets=[], animation=None,
+            )
+            net_out = resolve_assets(net_art, real, TMP / "public-network")  # real download_fn (default)
+            net_extracted = [a for a in net_out.assets if a["origin"] == "extracted"]
+            test("real network download resolves the logo through resolve_assets() end-to-end",
+                 bool(net_extracted) and net_extracted[0]["bytes"] > 0, str(net_out.assets))
+            if net_extracted:
+                real_path = (TMP / "public-network" / net_extracted[0]["src"].lstrip("/"))
+                test("downloaded file is real image bytes on disk (SVG magic header)",
+                     real_path.exists() and real_path.read_bytes()[:5] in (b"<?xml", b"<svg "),
+                     f"first bytes: {real_path.read_bytes()[:20] if real_path.exists() else 'MISSING'}")
 else:
     skip("real network download of a real extracted asset", "extraction-data.json not found")
 
