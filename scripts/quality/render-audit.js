@@ -126,6 +126,7 @@ const PROBE = () => {
   const main = document.querySelector("main") || document.body;
   const blocks = Array.from(main.querySelectorAll(":scope > *, :scope > * > section, section"));
   const seen = new Set();
+  let sectionIdx = 0;
   for (const el of blocks) {
     if (seen.has(el)) continue;
     seen.add(el);
@@ -136,9 +137,12 @@ const PROBE = () => {
     const vis = cs.visibility !== "hidden" && cs.display !== "none";
     const txt = (el.innerText || "").trim();
     facts.sections.push({
+      i: sectionIdx++,
       tag: el.tagName.toLowerCase(),
       cls: (el.className || "").toString().slice(0, 60),
-      height: Math.round(r.height),
+      h: Math.round(r.height),
+      w: Math.round(r.width),
+      height: Math.round(r.height),   // kept for existing toDefects() readers
       opacity: isNaN(op) ? 1 : op,
       visible: vis,
       textLen: txt.length,
@@ -230,16 +234,26 @@ async function auditRoute(context, base, route, outDir, settle) {
   const url = base.replace(/\/$/, "") + route;
   let httpStatus = null;
   try {
-    const resp = await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+    const resp = await page.goto(url, { waitUntil: "load", timeout: 45000 });
     httpStatus = resp ? resp.status() : null;
   } catch (e) {
     consoleErrors.push("navigation: " + String(e).slice(0, 160));
   }
   await page.waitForTimeout(settle);              // let entrance animations resolve
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
-  await page.waitForTimeout(800);
+
+  // Scroll the full page in viewport steps so IntersectionObserver-driven
+  // reveals (framer `whileInView`) actually fire. Without this every
+  // viewport-triggered section probes as empty and reads as a render defect.
+  // A single scrollTo(0, bottom) jump does NOT work — elements passed over in
+  // one jump never intersect the viewport and their observers never fire.
+  const pageHeight = await page.evaluate(() => document.body.scrollHeight).catch(() => 0);
+  const step = await page.evaluate(() => window.innerHeight).catch(() => 900);
+  for (let y = 0; y < pageHeight; y += step) {
+    await page.evaluate((yy) => window.scrollTo(0, yy), y).catch(() => {});
+    await page.waitForTimeout(250);
+  }
   await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(500);
 
   // Neutralize scroll-entrance animations (framer-motion sets inline opacity/transform).
   // Without this, below-fold whileInView elements are still opacity:0 at measure time and
@@ -364,8 +378,39 @@ function toDefects(res, knownRoutes) {
   };
   const outFile = path.join(args.out, "render-audit.json");
   fs.writeFileSync(outFile, JSON.stringify(report, null, 2));
+
+  // Raw per-route facts report (aurelix.render_audit.v2). This is the report
+  // consumed by scripts/quality/render-audit.smoke.js and by later pipeline
+  // phases that assert against `facts` directly rather than summary counts.
+  // Written alongside render-audit.json (not a replacement) so the existing
+  // orchestrate.py Stage 6 consumer, which reads render-audit.json's summary
+  // shape, keeps working unchanged.
+  const rawReport = {
+    schema: "aurelix.render_audit.v2",
+    generated: new Date().toISOString(),
+    routes: results.map((r) => ({
+      route: r.route,
+      url: r.url,
+      httpStatus: r.httpStatus,
+      facts: r.facts,
+      consoleErrors: r.consoleErrors,
+      badRequests: r.badRequests,
+      screenshot: r.screenshot,
+      summary: {
+        sections: (r.facts?.sections || []).length,
+        invisibleSections: (r.facts?.sections || []).filter((s) => s.invisible).length,
+        images: (r.facts?.images || []).filter((i) => i.kind === "img").length,
+        textLen: r.facts?.textLen ?? 0,
+      },
+    })),
+    defects,
+  };
+  const rawOutFile = path.join(args.out, "report.json");
+  fs.writeFileSync(rawOutFile, JSON.stringify(rawReport, null, 2));
+
   process.stderr.write(`\n  📋 ${defects.length} defect(s) across ${routes.length} route(s) — ${JSON.stringify(bySeverity)}\n`);
   process.stderr.write(`  → ${outFile}\n`);
+  process.stderr.write(`  → ${rawOutFile}\n`);
   // stdout = machine-readable report path + summary for the Python wrapper
   console.log(JSON.stringify({ report: outFile, total_defects: defects.length, by_severity: bySeverity }));
   process.exit(0);
