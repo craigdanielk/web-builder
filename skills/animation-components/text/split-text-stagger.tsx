@@ -1,4 +1,6 @@
 // @ts-nocheck
+'use client';
+
 import React, { useState } from "react";
 
 export const BubbleText = () => {

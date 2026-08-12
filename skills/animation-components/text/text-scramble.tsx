@@ -1,4 +1,6 @@
 // @ts-nocheck
+'use client';
+
 import React, { useRef, useEffect, useState, memo } from 'react';
 import * as THREE from 'three';
 

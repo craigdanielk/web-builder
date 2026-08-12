@@ -1,4 +1,6 @@
 // @ts-nocheck
+'use client';
+
 import React, { useState, useEffect, useRef } from 'react';
 
 // --- Data for the feature cards ---
