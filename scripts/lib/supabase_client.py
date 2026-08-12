@@ -512,3 +512,36 @@ class BuildCache:
 def is_supabase_configured() -> bool:
     """Check if Supabase credentials are configured."""
     return bool(SUPABASE_URL and SUPABASE_KEY)
+
+
+def list_variants_for_archetype(archetype: str) -> list[str]:
+    """Every variant the registry holds for one archetype, template-backed only.
+
+    `check_template_exists` answers "does THIS archetype+variant resolve"; this
+    answers "what does the library actually have for this archetype". The
+    difference matters on the failure path: a request for
+    `BLOG-PREVIEW/card-grid` falls through to the LLM while
+    `BLOG-PREVIEW/grid` sits unused, and without this the omission record can
+    say only that something was missing, not that a near neighbour existed.
+
+    Filters on `has_template=eq.true` so a row with no `code_template` is never
+    reported as available — the same condition `check_template_exists` requires
+    to resolve, so the two cannot disagree about what is usable.
+
+    Returns [] on any failure. This is diagnostic output on an error path;
+    it must never be the thing that raises.
+    """
+    if not (SUPABASE_URL and SUPABASE_KEY):
+        return []
+    if not re.match(r"^[A-Za-z0-9_-]+$", archetype or ""):
+        return []
+    try:
+        params = "&".join([
+            f"archetype=eq.{urllib.parse.quote(archetype)}",
+            "has_template=eq.true",
+            "select=variant",
+        ])
+        rows = _get("section_archetypes", params) or []
+        return sorted({r["variant"] for r in rows if r.get("variant")})
+    except Exception:
+        return []

@@ -56,7 +56,11 @@ from lib.slot_contract import (
 # See lib/nav_harvest.py for why: shipping "Shop / New Arrivals" on a real
 # client's site (e.g. a licensed FSP) is a regulatory liability, not a
 # cosmetic placeholder.
-from lib.nav_harvest import derive_nav as _derive_harvested_nav, derive_footer as _derive_harvested_footer
+from lib.nav_harvest import (
+    derive_nav as _derive_harvested_nav,
+    derive_footer as _derive_harvested_footer,
+    localise_hrefs as _localise_hrefs,
+)
 
 try:
     from anthropic import Anthropic
@@ -2779,6 +2783,45 @@ def build_template_fill(
     return values, coverage, provenance
 
 
+#: Memoised per process. Answers "what does the library actually hold for this
+#: archetype", which is a different question from `check_template_exists`'s
+#: "does this exact archetype+variant resolve".
+_ARCHETYPE_VARIANTS: dict[str, list[str]] = {}
+
+
+def _variants_for_archetype(archetype: str) -> list[str]:
+    """Variants the library holds for an archetype, local files then Supabase.
+
+    Used to explain WHY a section fell through to the LLM. Resolution is exact
+    on archetype+variant, so a request for `BLOG-PREVIEW/card-grid` misses a
+    perfectly good `BLOG-PREVIEW/grid`. Recording what WAS available turns an
+    omission record into an authoring instruction.
+
+    Fault-tolerant by design: this runs on the failure path, and a Supabase
+    outage must not convert "we could not explain the omission" into a crash
+    that loses the omission record itself. Returns [] when nothing is known,
+    which the caller reports as `archetype_not_in_library` — a claim it makes
+    only about what it could see.
+    """
+    if archetype in _ARCHETYPE_VARIANTS:
+        return _ARCHETYPE_VARIANTS[archetype]
+
+    found: set[str] = set()
+    local_dir = ROOT / "section-templates" / archetype
+    if local_dir.is_dir():
+        found.update(p.stem for p in local_dir.glob("*.tsx"))
+
+    if SUPABASE_AVAILABLE:
+        try:
+            from lib.supabase_client import list_variants_for_archetype
+            found.update(list_variants_for_archetype(archetype) or [])
+        except Exception:
+            pass  # explaining the omission is best-effort; recording it is not
+
+    _ARCHETYPE_VARIANTS[archetype] = sorted(found)
+    return _ARCHETYPE_VARIANTS[archetype]
+
+
 #: `/* repeat:badges */` … `/* /repeat */` — the block a variable-arity
 #: repeater emits once per harvested row. A block comment (not `//`) because
 #: `apply_template_fill` treats `//` lines as contract declarations and passes
@@ -2972,6 +3015,31 @@ def apply_template_fill(code: str, values: dict[str, str], coverage: dict | None
             ]
             if content_attrs and not any(v.strip() for v in content_attrs):
                 continue
+
+        # The same rule for SELF-CLOSING elements — every image in the library.
+        # `about/03-about.tsx:23` shipped `<Image src="" alt="" fill />` because
+        # the {image_url} slot had no harvest behind it, and next/image THROWS
+        # on an empty src: the route errors at runtime while every brace and
+        # string check passes.
+        #
+        # Media is judged on `src` alone, which is stricter than the paired-tag
+        # rule above. For a link, an empty href among populated attributes is a
+        # degraded element; for an image, an empty src is a thrown exception, so
+        # a literal `alt` cannot rescue it. Non-media self-closing elements keep
+        # the generic all-attributes-empty rule.
+        void = re.fullmatch(r'<(\w+)\b([^>]*)/>', stripped)
+        if _TEMPLATE_TOKEN_RE.search(before) and void:
+            tag, attrs = void.group(1), void.group(2)
+            valued = re.findall(r'(\w+)\s*=\s*"([^"]*)"', attrs)
+            if tag in ("Image", "img"):
+                src = dict(valued).get("src")
+                if src is not None and not src.strip():
+                    continue
+            else:
+                content_attrs = [v for n, v in valued
+                                 if n not in ("className", "class")]
+                if content_attrs and not any(v.strip() for v in content_attrs):
+                    continue
         kept.append(line)
     return "\n".join(kept) + ("\n" if code.endswith("\n") else "")
 
@@ -3270,6 +3338,17 @@ def stage_sections(
     #: Sections dropped because the harvest filled none of their slots.
     _omitted_sections: list[dict] = []
 
+    # Content policy, read from the SPEC. `sourced_only` (the default) means a
+    # section with no template is omitted and recorded rather than written by a
+    # model: an LLM section carries zero provenance rows, and unprovenanced copy
+    # on a licensed FSP's site is the exposure this pipeline exists to remove.
+    # `allow_generated` restores the generation path for builds that have
+    # explicitly asked for it in writing. Absent policy = sourced_only; the
+    # permissive branch is never the one you get by saying nothing.
+    _content_policy = ((site_spec or {}).get("content_policy")
+                       or "sourced_only")
+    _allow_generated_sections = _content_policy == "allow_generated"
+
     # Page-level audit-capture copy, allocated to the sections that have none
     # of their own. Computed once, before the loop, so the allocation is a
     # property of the whole section list rather than of iteration order.
@@ -3428,6 +3507,14 @@ def stage_sections(
                         "section_uid": section.get("section_uid"),
                         "archetype": section["archetype"],
                         "variant": section["variant"],
+                        # Same record shape as the no-template omission below,
+                        # so one register answers "what did this build drop and
+                        # why" without the reader having to know which branch
+                        # produced each row. A row without a reason is a tally,
+                        # not a record.
+                        "origin": _origin_for(tpl),
+                        "reason": "template resolved but the harvest filled no slot",
+                        "cause": "no_sourced_content",
                     })
                     continue
 
@@ -3450,6 +3537,51 @@ def stage_sections(
                     provenance=_fill_prov,
                 )
                 continue  # Skip LLM generation for this section
+
+        # ── Reaching here means no template resolved ──────────────────────
+        # Template sections are dropped when the harvest fills no slot (the
+        # `omit_section` branch above). A section generated here would carry
+        # ZERO provenance rows, because the model wrote every word — that is
+        # not "unmeasured content", it is INVENTED content, which is what this
+        # pipeline exists to stop shipping. On a licensed FSP's site it is a
+        # regulatory exposure, not a quality one.
+        #
+        # The cause is nearly always a variant the library does not carry: the
+        # planner asks for BLOG-PREVIEW/card-grid, the library holds
+        # BLOG-PREVIEW/grid, resolution is exact on archetype+variant, so a
+        # reviewed template for that very archetype is passed over. Both facts
+        # are recorded, so the register doubles as the authoring backlog rather
+        # than a bare tally.
+        #
+        # Gated on the SPEC, not on a CLI flag. Which flags were passed is not
+        # allowed to decide what the build is — the same ruling that made
+        # multi-page a property of `pages[]` rather than of `--from-url`.
+        # Default is sourced-only; generation must be asked for in writing.
+        if not _allow_generated_sections:
+            _fallback_name = (
+                section_file_names[i]
+                if section_file_names and i < len(section_file_names)
+                else filename
+            )
+            _available = _variants_for_archetype(section["archetype"])
+            _omitted_sections.append({
+                "file": _fallback_name,
+                "section_uid": section_uid,
+                "archetype": section["archetype"],
+                "variant": section.get("variant", ""),
+                "origin": "none",
+                "reason": "no template resolved; generated content is not sourced",
+                "variant_requested": section.get("variant", ""),
+                "variants_available": _available,
+                "cause": ("variant_not_in_library" if _available
+                          else "archetype_not_in_library"),
+            })
+            print(f"      ⊘ omitted: no template for "
+                  f"{section['archetype']}/{section.get('variant', '')}"
+                  + (f" — library has {', '.join(_available)}" if _available
+                     else " — archetype absent from the library")
+                  + "; generation is off (content_policy)")
+            continue
 
         # Try to find structural reference in taxonomy
         structure_ref = "[No structural reference yet — infer from archetype and variant]"
@@ -3848,21 +3980,7 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
 
         sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
         out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
-        filepath = sections_base / out_name
-        write_file(filepath, code)
-        section_files.append(filepath)
 
-        _emit_section_artifact(
-            project_name=project_name,
-            page_dir=sections_base.name,
-            out_name=out_name,
-            tsx=code,
-            section=section,
-            section_uid=section_uid,
-            intensity=section_intensity,
-            origin=_origin_for(None),
-            provenance=[],
-        )
 
         if not output_subdir:
             save_checkpoint(OUTPUT_DIR / project_name, "sections", project_name, {"last_section_index": i, "section_count": len(sections)})
@@ -3949,6 +4067,48 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
                 f"ratio: {_harvested_copy_ratio}"
             )
         _copy_summary = _manifest_data
+
+    # ── Build-root omission register ──────────────────────────────────────
+    # Deliberately OUTSIDE the `if _tpl_fill_stats:` block below: a page whose
+    # every section fell to the LLM has no template fill stats at all, and that
+    # is exactly the page whose omissions most need recording. Nesting this
+    # would hide the worst case.
+    #
+    # Idempotent by construction. Entries are keyed by page, and this page's
+    # entries are replaced rather than appended, so re-running a page cannot
+    # inflate the count — the failure mode that has already appeared three
+    # times on this pipeline (animation coverage, asset totals, resolver tallies
+    # all grew on re-run).
+    _page_key = output_subdir or "sections"
+    _omit_path = OUTPUT_DIR / project_name / "omitted-sections.json"
+    _register: list[dict] = []
+    if _omit_path.exists():
+        try:
+            _prev = json.loads(_omit_path.read_text())
+            _register = [o for o in (_prev.get("omitted") or [])
+                         if o.get("page") != _page_key]
+        except Exception:
+            _register = []  # a corrupt register is rebuilt, never appended to
+    _register.extend({**o, "page": _page_key} for o in _omitted_sections)
+    write_file(_omit_path, json.dumps({
+        "schema": "aurelix.omitted_sections.v1",
+        "summary": {
+            "omitted": len(_register),
+            "by_reason": {
+                r: sum(1 for o in _register if o.get("reason") == r)
+                for r in sorted({o.get("reason", "") for o in _register})
+            },
+            "llm_variant_gaps": sorted({
+                f"{o['archetype']}/{o.get('variant_requested', '')}"
+                for o in _register if o.get("cause") == "variant_not_in_library"
+            }),
+            "archetypes_absent": sorted({
+                o["archetype"] for o in _register
+                if o.get("cause") == "archetype_not_in_library"
+            }),
+        },
+        "omitted": _register,
+    }, indent=2))
 
     if _tpl_fill_stats:
         _tf = sum(s["filled"] for s in _tpl_fill_stats)
@@ -8827,6 +8987,59 @@ def main():
     # demo build with no real source site to harvest from.
     _harvested_nav = _derive_harvested_nav(site_spec.get("pages") or []) if site_spec else None
     _harvested_footer = _derive_harvested_footer(site_spec.get("pages") or []) if site_spec else None
+
+    # ── Harvested hrefs point at the SOURCE site ──────────────────────────
+    # Left alone, every nav click on the generated site sends the visitor back
+    # to the site it replaces — the new build leaks all its traffic to the old
+    # one. The rewrite is a JOIN against routes we actually built, never a
+    # guess: path matches a built route -> local; no match -> left absolute and
+    # COUNTED, so the gap is visible instead of absorbed. A route absent from
+    # the manifest is never fabricated.
+    if _harvested_nav is not None or _harvested_footer is not None:
+        _built_routes = [
+            p.get("route") for p in ((site_manifest or {}).get("pages")
+                                     or (site_spec or {}).get("pages") or [])
+            if p.get("route")
+        ]
+        _source_host = (site_spec or {}).get("source_url") or (
+            args.from_url if getattr(args, "from_url", None) else None
+        )
+        _nav_unmapped: list[dict] = []
+        _footer_unmapped: list[dict] = []
+        if _harvested_nav is not None:
+            _harvested_nav = _localise_hrefs(
+                _harvested_nav, _built_routes,
+                source_host=_source_host, unmapped=_nav_unmapped)
+        if _harvested_footer is not None:
+            _harvested_footer = _localise_hrefs(
+                _harvested_footer, _built_routes,
+                source_host=_source_host, unmapped=_footer_unmapped)
+
+        _nav_total = len(_harvested_nav or [])
+        _footer_total = len(_harvested_footer or [])
+        print(
+            f"  🔗 Link mapping against {len(_built_routes)} built route(s): "
+            f"nav {_nav_total - len(_nav_unmapped)}/{_nav_total} local, "
+            f"footer {_footer_total - len(_footer_unmapped)}/{_footer_total} local"
+        )
+        for _u in (_nav_unmapped + _footer_unmapped):
+            print(f"      ↗ left absolute ({_u['reason']}): "
+                  f"{_u['label']!r} -> {_u['href']}")
+        write_file(
+            OUTPUT_DIR / args.project / "link-mapping.json",
+            json.dumps({
+                "schema": "aurelix.link_mapping.v1",
+                "built_routes": _built_routes,
+                "source_host": _source_host,
+                "summary": {
+                    "nav_links": _nav_total,
+                    "nav_absolute": len(_nav_unmapped),
+                    "footer_links": _footer_total,
+                    "footer_absolute": len(_footer_unmapped),
+                },
+                "unmapped": _nav_unmapped + _footer_unmapped,
+            }, indent=2),
+        )
 
     # ── Layer 6: Multi-page pipeline (when site_manifest is set) ─────
     if site_manifest:
