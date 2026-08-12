@@ -54,21 +54,40 @@ test('selectLibraryAnimation returns animation_id format', () => {
   }
 });
 
-test('common archetypes resolve at moderate intensity', () => {
+test('common archetypes resolve at moderate intensity — file-backed only', () => {
+  // Task 7 added a file-existence filter to selectLibraryAnimation: 986 of
+  // the 1034 registry rows point at 21st-dev-library/... paths that were
+  // never vendored into this repo, and only 5 of the 48 file-backed rows
+  // declare section_archetypes at all (3 GALLERY, 1 HOW-IT-WORKS, 1 FAQ) —
+  // of those, only HOW-IT-WORKS's row is framer-motion. A hit rate near
+  // zero for this list is the honest post-filter number, not a bug; the
+  // real invariant this test protects is that whatever DOES resolve is
+  // always backed by a real file on disk (the old assertion — "at least
+  // 9/18 resolve" — was only true because unbacked rows were being
+  // returned, which is exactly the dishonest-coverage bug Task 7 closed).
   const commonArchetypes = ['HERO', 'GALLERY', 'NAV', 'STATS', 'FEATURES', 'TESTIMONIALS',
                              'FAQ', 'HOW-IT-WORKS', 'PRICING', 'CONTACT', 'FOOTER', 'BLOG-PREVIEW',
                              'PRODUCT-SHOWCASE', 'MAP', 'CTA', 'TEAM', 'VIDEO-SHOWCASE', 'NEWSLETTER'];
+  const fs = require('fs');
+  const path = require('path');
+  const componentsDir = path.resolve(__dirname, '../../../skills/animation-components');
+  const fullRegistry = injector.loadFullRegistry();
 
   let resolvedCount = 0;
   commonArchetypes.forEach(arch => {
     const result = injector.selectLibraryAnimation(arch, 'moderate', 'framer-motion', []);
     if (result !== null) {
       resolvedCount++;
+      const comp = fullRegistry.components.find(c => c.animation_id === result);
+      assert.ok(comp, `resolved animation_id '${result}' has no registry row`);
+      assert.ok(
+        comp.source_file && fs.existsSync(path.join(componentsDir, comp.source_file)),
+        `resolved animation_id '${result}' has no file on disk — file-existence filter regressed`
+      );
     }
   });
 
-  // At least 50% should resolve at moderate intensity
-  assert.ok(resolvedCount >= 9, `Expected at least 9/18 archetypes to resolve at moderate, got ${resolvedCount}`);
+  console.log(`  (file-backed hit rate: ${resolvedCount}/${commonArchetypes.length} at moderate)`);
 });
 
 test('non-existent archetype returns null', () => {
@@ -279,11 +298,18 @@ test('library selection hit rate measurement', () => {
     });
   });
 
-  console.log('\n=== LIBRARY SELECTION HIT RATE ===');
+  console.log('\n=== LIBRARY SELECTION HIT RATE (file-backed only) ===');
   console.log(`Subtle: ${results['subtle']}/${testArchetypes.length}`);
   console.log(`Moderate: ${results['moderate']}/${testArchetypes.length}`);
   console.log(`Dramatic: ${results['dramatic']}/${testArchetypes.length}`);
 
-  // At minimum, moderate should have decent hit rate
-  assert.ok(results['moderate'] > 0, 'Moderate intensity should resolve at least some archetypes');
+  // This is a measurement, not a target: post file-existence filter, the
+  // real hit rate for this 5-archetype sample against framer-motion is 0
+  // (HOW-IT-WORKS is the only file-backed + section_archetypes-declared +
+  // framer-motion row among the 48, and it isn't in this sample). Asserting
+  // `> 0` here would reintroduce pressure to relax the filter just to make
+  // a number go up — precisely the failure mode this task was re-scoped to
+  // stop. Component injection (component-inject.js) uses role-based
+  // selection instead, which is what actually reaches all 12 real sections.
+  assert.ok(results['moderate'] >= 0, 'sanity: hit count is a valid non-negative number');
 });

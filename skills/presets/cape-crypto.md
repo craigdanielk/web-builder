@@ -173,7 +173,7 @@ logo_bar:
   band: border-y hairline
 
 animation_engine: framer-motion
-animation_intensity: subtle
+animation_intensity: moderate
 entrance: fade-up
 hover: scale + shadow-lift
 timing: 0.6s cubic-bezier(0.22,1,0.36,1)

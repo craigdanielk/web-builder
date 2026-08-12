@@ -3982,6 +3982,15 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
                 "filled": _tf, "empty": _te, "sections": _tpl_fill_stats,
             }}
 
+    # ── Real animation component injection ──
+    # Runs after every section for this page is on disk, before assembly.
+    # Template-resolved sections skip the LLM entirely (85% of the build),
+    # so this is the only stage that can reach them with real motion.
+    if section_files:
+        _page_dir = (OUTPUT_DIR / project_name / (output_subdir or "sections")).name
+        _preset_intensity = parse_preset_intensity(preset_content)
+        stage_inject_animation(project_name, _page_dir, section_files, _preset_intensity)
+
     return section_files, _copy_summary
 
 
@@ -4630,6 +4639,161 @@ def detect_animation_engine(preset_content: str) -> str:
     """Detect animation engine from preset's Motion line. Returns 'gsap' or 'framer-motion'."""
     match = re.search(r"Motion:.*?/(gsap|framer-motion)", preset_content)
     return match.group(1) if match else "framer-motion"
+
+
+def parse_preset_intensity(preset_content: str) -> str:
+    """Read the explicit `animation_intensity:` field from a tenant preset.
+
+    Mirrors animation-injector.js's parsePresetIntensity() byte-for-byte
+    (same regex, same default). This is deliberately a *field read*, not an
+    inference from `site_spec["style"]["animation"]["intensity"]` — that
+    value is derived from what the source site happened to carry (empty for
+    a site with no captured animation, like Cape Crypto), which is silent
+    inheritance, not a tenant decision. Component injection intensity comes
+    from here.
+    """
+    match = re.search(r"animation_intensity:\s*(subtle|moderate|expressive|dramatic)", preset_content, re.IGNORECASE)
+    return match.group(1).lower() if match else "moderate"
+
+
+def stage_inject_animation(
+    project_name: str,
+    page_dir: str,
+    section_files: list[Path],
+    preset_intensity: str,
+) -> dict:
+    """Wrap built sections with REAL library animation components.
+
+    Runs after section generation, before assembly (called from the tail of
+    stage_sections(), once per page). For each section file this reads back
+    the SectionArtifact written alongside it to get the archetype, then asks
+    component-inject.js's injectIntoSection() for a real, file-backed,
+    safely-wrappable component. When one exists the file is rewritten in
+    place (import + wrap of the existing root; the section's own content and
+    inner <motion.*> animations are untouched). When none exists — no
+    candidate for the role, props unsatisfiable, no safe insertion point,
+    already wrapped — the file is left byte-identical and the reason is
+    recorded.
+
+    `injected` in the returned/written tally counts ONLY real components
+    that render in the build. It may never include a generic fallback — the
+    prior design for this stage could report full coverage while actually
+    injecting nothing (see task-7 brief); this stage exists to make that
+    impossible by construction.
+    """
+    print(f"\n🎬 Injecting real animation components ({page_dir})...")
+
+    art_dir = OUTPUT_DIR / project_name / "section-artifacts" / page_dir
+    used_animation_ids: list[str] = []
+    tally = {
+        "total": 0, "injected": 0, "wrapped_generic": 0, "unchanged": 0,
+        "by_component": {}, "by_reason": {},
+    }
+    new_extra_components: list[str] = []
+
+    for filepath in section_files:
+        tally["total"] += 1
+        art_path = art_dir / (filepath.stem + ".json")
+        archetype = ""
+        if art_path.exists():
+            try:
+                archetype = json.loads(art_path.read_text(encoding="utf-8")).get("archetype", "")
+            except (json.JSONDecodeError, OSError):
+                archetype = ""
+
+        if not archetype:
+            reason = "no SectionArtifact archetype found for this file"
+            tally["unchanged"] += 1
+            tally["by_reason"][reason] = tally["by_reason"].get(reason, 0) + 1
+            continue
+
+        tsx = filepath.read_text(encoding="utf-8")
+        node_script = f"""
+const {{ injectIntoSection }} = require('./lib/component-inject');
+const result = injectIntoSection(
+  {json.dumps(tsx)},
+  {json.dumps(archetype)},
+  {json.dumps(used_animation_ids)},
+  {json.dumps(preset_intensity)}
+);
+console.log(JSON.stringify({{
+  injected: result.injected,
+  reason: result.reason,
+  animationId: result.component ? result.component.animationId : null,
+  sourceFile: result.component ? result.component.sourceFile : null,
+  tsx: result.tsx,
+}}));
+"""
+        proc = None
+        result = None
+        try:
+            proc = subprocess.run(
+                ["node", "-e", node_script],
+                capture_output=True, text=True,
+                cwd=str(QUALITY_DIR), timeout=20,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                result = json.loads(proc.stdout.strip())
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+            result = None
+
+        if result is None:
+            reason = "component-inject subprocess failed"
+            tally["unchanged"] += 1
+            tally["by_reason"][reason] = tally["by_reason"].get(reason, 0) + 1
+            if proc is not None and proc.stderr:
+                print(f"  ⚠ {filepath.name}: {proc.stderr[-300:]}")
+            continue
+
+        if result["injected"]:
+            filepath.write_text(result["tsx"], encoding="utf-8")
+            used_animation_ids.append(result["animationId"])
+            if result["sourceFile"]:
+                new_extra_components.append(result["sourceFile"])
+            tally["injected"] += 1
+            tally["by_component"][result["animationId"]] = tally["by_component"].get(result["animationId"], 0) + 1
+            print(f"  ✓ {filepath.name}: wrapped with {result['animationId']}")
+        else:
+            tally["unchanged"] += 1
+            tally["by_reason"][result["reason"]] = tally["by_reason"].get(result["reason"], 0) + 1
+            print(f"  ⊘ {filepath.name}: {result['reason']}")
+
+    # Merge into extra-components.json so stage_deploy copies these files
+    # into site/src/components/animations/ alongside the archetype-matched
+    # copy it already does. Read-modify-write, not overwrite: stage_sections'
+    # own write of this file (a few lines above where this stage is called)
+    # is NOT namespaced by page, so a second page's write would otherwise
+    # silently clobber the first page's queued components.
+    if new_extra_components:
+        manifest_path = OUTPUT_DIR / project_name / "extra-components.json"
+        existing: list = []
+        if manifest_path.exists():
+            try:
+                existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                existing = []
+        merged = sorted(set(existing) | set(new_extra_components))
+        write_file(manifest_path, json.dumps(merged, indent=2))
+
+    # Merge coverage across pages — multipage builds call this once per page
+    # and each call's numbers describe only that page's sections.
+    coverage_path = OUTPUT_DIR / project_name / "animation-coverage.json"
+    if coverage_path.exists():
+        try:
+            prev = json.loads(coverage_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            prev = None
+        if prev:
+            for key in ("total", "injected", "wrapped_generic", "unchanged"):
+                tally[key] += prev.get(key, 0)
+            for key in ("by_component", "by_reason"):
+                for k, v in (prev.get(key) or {}).items():
+                    tally[key][k] = tally[key].get(k, 0) + v
+
+    write_file(coverage_path, json.dumps(tally, indent=2))
+    print(f"  Animation injection: {tally['injected']}/{tally['total']} real component(s) injected, "
+          f"{tally['unchanged']} unchanged")
+    return tally
 
 
 def parse_fonts(preset_content: str) -> dict:

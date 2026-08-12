@@ -388,6 +388,12 @@ function selectLibraryAnimation(archetype, presetIntensity, engine, usedPatterns
     // Filter: must have section_archetypes for this archetype
     if (!comp.section_archetypes || comp.section_archetypes.indexOf(archetype) === -1) continue;
 
+    // Filter: must be backed by a real file on disk. 986 of the 1034 rows
+    // point at 21st-dev-library/... paths that were never vendored into
+    // this repo — selecting one of those returns a component with no code
+    // behind it, which is exactly the failure this filter exists to close.
+    if (!comp.source_file || !fs.existsSync(path.join(COMPONENTS_DIR, comp.source_file))) continue;
+
     // Filter: engine match
     var compEngine = comp.framework || comp.engine || 'framer-motion';
     if (compEngine !== 'framer-motion' && compEngine !== 'gsap') continue;
