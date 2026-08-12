@@ -45,7 +45,11 @@ class SectionArtifact:
 
 
 def validate(a: SectionArtifact) -> list:
-    """Return human-readable violations. Empty list means valid."""
+    """Return human-readable violations. Empty list means valid.
+
+    Never raises an exception. Malformed input (non-dict rows, None lists, etc.)
+    produces clear violation strings instead, preventing silent-fail gates.
+    """
     problems = []
     if not a.tsx.strip():
         problems.append("tsx is empty")
@@ -55,11 +59,30 @@ def validate(a: SectionArtifact) -> list:
         problems.append("origin %r is not one of %s" % (a.origin, sorted(VALID_ORIGINS)))
     if a.intensity not in VALID_INTENSITIES:
         problems.append("intensity %r is not one of %s" % (a.intensity, sorted(VALID_INTENSITIES)))
-    for row in a.provenance:
-        src = row.get("source")
-        if src not in VALID_SOURCES:
-            problems.append(
-                "provenance source %r is not one of %s — fabricated content is a "
-                "regulatory liability" % (src, sorted(VALID_SOURCES))
-            )
+
+    # Validate provenance list
+    if a.provenance is None:
+        problems.append("provenance is None (expected list)")
+    elif not isinstance(a.provenance, list):
+        problems.append("provenance is %s, not a list" % type(a.provenance).__name__)
+    else:
+        for idx, row in enumerate(a.provenance):
+            if not isinstance(row, dict):
+                problems.append(
+                    "provenance row %d is %s, not a dict" % (idx, type(row).__name__)
+                )
+            else:
+                src = row.get("source")
+                if src not in VALID_SOURCES:
+                    problems.append(
+                        "provenance row %d source %r is not one of %s — fabricated content is a "
+                        "regulatory liability" % (idx, src, sorted(VALID_SOURCES))
+                    )
+
+    # Validate assets list
+    if a.assets is None:
+        problems.append("assets is None (expected list)")
+    elif not isinstance(a.assets, list):
+        problems.append("assets is %s, not a list" % type(a.assets).__name__)
+
     return problems

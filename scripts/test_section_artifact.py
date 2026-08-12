@@ -46,5 +46,23 @@ test("source 'default' is rejected", "default" in " ".join(validate(bad_prov)))
 empty_tsx = SectionArtifact.from_dict({**a.to_dict(), "tsx": ""})
 test("empty tsx is rejected", "tsx" in " ".join(validate(empty_tsx)))
 
+# Hardened validator tests: malformed input should return violations, not crash
+non_dict_row = SectionArtifact.from_dict({**a.to_dict(), "provenance": ["not_a_dict"]})
+test("non-dict provenance row returns violation", "row 0" in " ".join(validate(non_dict_row)))
+
+none_provenance = SectionArtifact(
+    tsx=a.tsx, archetype=a.archetype, variant=a.variant,
+    section_uid=a.section_uid, intensity=a.intensity, origin=a.origin,
+    provenance=None, assets=[], animation=None,
+)
+test("None provenance returns violation", "provenance is None" in " ".join(validate(none_provenance)))
+
+none_assets = SectionArtifact(
+    tsx=a.tsx, archetype=a.archetype, variant=a.variant,
+    section_uid=a.section_uid, intensity=a.intensity, origin=a.origin,
+    provenance=[], assets=None, animation=None,
+)
+test("None assets returns violation", "assets is None" in " ".join(validate(none_assets)))
+
 print(f"\n  RESULTS: {PASS} passed, {FAIL} failed\n")
 sys.exit(1 if FAIL else 0)
