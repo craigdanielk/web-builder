@@ -4229,8 +4229,15 @@ def _build_nav_template(
         _nav_links = [(link["label"], link["href"]) for link in harvested_nav]
     else:
         _nav_links = _adapter.get_nav_default_links()
+    # json.dumps, not quote-wrapping: labels/hrefs are untrusted harvest
+    # content (arbitrary third-party site copy) flowing into generated JS
+    # source. A label containing "'" breaks quote-wrapped output; a crafted
+    # "', evil()//" label is code injection. json.dumps guarantees correct
+    # escaping regardless of content. lib/nav_harvest.py already rejects
+    # unsafe href schemes (javascript:, data:, ...) before this point, but
+    # serialization here is defense in depth, not the only guard.
     _nav_links_str = ",\n  ".join(
-        f"{{ label: '{lbl}', url: '{url}' }}"
+        f"{{ label: {json.dumps(lbl)}, url: {json.dumps(url)} }}"
         for lbl, url in _nav_links
     )
     _defaults_block = f"[\n  {_nav_links_str},\n]" if _nav_links_str else "[]"
@@ -4370,10 +4377,12 @@ def _build_footer_template(
     _nl = "\n"
     _nl = "\n"
     _comma_nl = ",\n"
+    # json.dumps, not quote-wrapping — same rationale as _build_nav_template:
+    # column titles/link labels/hrefs can be untrusted harvest content.
     _footer_cols_str = _comma_nl.join(
-        '  {' + _nl + "    title: '" + col["title"] + "'," + _nl + "    links: [" + _nl
+        '  {' + _nl + "    title: " + json.dumps(col["title"]) + "," + _nl + "    links: [" + _nl
         + _comma_nl.join(
-            "      { label: '" + link["label"] + "', href: '" + link["href"] + "' }"
+            "      { label: " + json.dumps(link["label"]) + ", href: " + json.dumps(link["href"]) + " }"
             for link in col["links"]
         )
         + _nl + "    ]," + _nl + "  }"
@@ -4571,6 +4580,51 @@ def _page_audit_harvest(audit_harvest: dict | None, page: dict) -> dict | None:
     }
 
 
+def _normalize_reconciled_section(s: dict, position: int) -> dict:
+    """Per-section fixups applied to a page's RECONCILED sections list
+    (reconcile_page_sections' output) before it's handed to stage_sections().
+    Pulled out of stage_sections_multipage's loop so it's independently
+    testable — the section_index fabrication bug this guards against had no
+    direct test because the transform only existed inline in that loop.
+
+    `position` is this section's index in the RECONCILED list — i.e. list
+    position, NOT the extraction-crawl `index`/sectionIndex. The two number
+    the same small range and look interchangeable, which is exactly what
+    made the original bug (`s.setdefault("index", position)`) easy to write
+    and easy to miss: it silently promoted a list position into a value
+    `_emit_section_artifact` threads straight into
+    `SectionArtifact.section_index`, which `resolve_assets` uses to scope
+    which extracted image a bare placeholder may fill. See the `index`
+    handling below for why that line is gone, not renamed.
+    """
+    s = dict(s)
+    # `content` carries the HARVESTED COPY DICT and must not be clobbered.
+    # This previously did `s.setdefault("content", s.get("content_direction", ""))`,
+    # which made `content` a STRING for every multipage section — failing the
+    # isinstance(dict) gate below so build_source_copy_block never ran. That
+    # single line disabled the entire verbatim-copy path for multi-page
+    # builds, whatever content was threaded in.
+    s.setdefault("content_direction", "")
+    if not isinstance(s.get("content"), dict):
+        s["content"] = {}
+    # Deliberately NOT `s.setdefault("index", position)`. A harvested section
+    # already carries its real crawl `index` from site-spec.json
+    # (reconcile_page_sections() preserves it via `entry = dict(sec)`); a
+    # registry gap-fill NEVER had one (get_section_sequence() only has
+    # "position", and the gap-fill branch in reconcile_page_sections() never
+    # sets "index"). Filling that gap with the list position fabricates a
+    # crawl index that can numerically collide with a REAL section's crawl
+    # index elsewhere on the page — binding a real, correctly downloaded
+    # image to a section that never harvested it. Same defect family as the
+    # cross-URL basename collision fixed in asset_resolver. Every other
+    # consumer of `section.get("index", ...)` already supplies its own
+    # positional fallback for identity/lookup purposes (copy manifest,
+    # findings lookup, section_identity) where a position stand-in is fine;
+    # leaving the key absent here keeps `section.get("index")` correctly
+    # returning None for those gap-fills while changing nothing for them.
+    return s
+
+
 def stage_sections_multipage(
     manifest: dict,
     preset: str,
@@ -4618,42 +4672,9 @@ def stage_sections_multipage(
             f"  Page: {page_id} ({len(sections)} sections, "
             f"{_harvested_here} harvested source string(s))"
         )
-        sections_with_index = []
-        for j, s in enumerate(sections):
-            s = dict(s)
-            # `content` carries the HARVESTED COPY DICT and must not be
-            # clobbered. This previously did
-            # `s.setdefault("content", s.get("content_direction", ""))`, which
-            # made `content` a STRING for every multipage section — failing the
-            # isinstance(dict) gate below so build_source_copy_block never ran.
-            # That single line disabled the entire verbatim-copy path for
-            # multi-page builds, whatever content was threaded in.
-            s.setdefault("content_direction", "")
-            if not isinstance(s.get("content"), dict):
-                s["content"] = {}
-            # NOT `s.setdefault("index", j)`. `j` is this section's position in
-            # the RECONCILED list, not its extraction-crawl sectionIndex — the
-            # two are different numbering spaces that happen to overlap. A
-            # harvested section already carries its real crawl `index` from
-            # site-spec.json (reconcile_page_sections() preserves it via
-            # `entry = dict(sec)`); a registry gap-fill NEVER had one
-            # (get_section_sequence() only has "position", and the gap-fill
-            # branch in reconcile_page_sections() never sets "index"). Filling
-            # that gap with the list position `j` fabricates a crawl index that
-            # can numerically collide with a REAL section's crawl index
-            # elsewhere on the page — and `_emit_section_artifact` threads
-            # `section.get("index")` straight into `SectionArtifact.section_index`,
-            # which `resolve_assets` uses to scope which extracted image a bare
-            # placeholder may fill. A collision there binds a real, correctly
-            # downloaded image to a section that never harvested it — same
-            # defect family as the cross-URL basename collision fixed in
-            # asset_resolver. Every other consumer of `section.get("index", ...)`
-            # already supplies its own positional fallback for identity/lookup
-            # purposes (copy manifest, findings lookup, section_identity) where
-            # a position stand-in is fine; leaving the key absent here keeps
-            # `section.get("index")` correctly returning None for those gap-fills
-            # while changing nothing for them.
-            sections_with_index.append(s)
+        sections_with_index = [
+            _normalize_reconciled_section(s, j) for j, s in enumerate(sections)
+        ]
         files, _page_summary = stage_sections(
             sections_with_index,
             preset,
@@ -6651,13 +6672,22 @@ export default async function Page({ params }: { params: Promise<{ page: string 
                     re.DOTALL,
                 )
                 if identical_links_pattern.search(_cleaned):
+                    # json.dumps, not quote-wrapping — same rationale as
+                    # _build_nav_template. And critically: the replacement is
+                    # applied via a function, not a template string, because
+                    # re.sub interprets backslashes in a string replacement
+                    # (\1, \g<1>, ...) — a json.dumps'd label containing a
+                    # backslash-producing character (e.g. a literal `"` ->
+                    # `\"`, or a non-ASCII char -> `\uXXXX`) fed through a
+                    # string replacement would either corrupt the output or
+                    # raise `re.error: invalid group reference`.
                     links_str = ",\n  ".join(
-                        f"{{ label: '{lbl}', url: '{url}' }}"
+                        f"{{ label: {json.dumps(lbl)}, url: {json.dumps(url)} }}"
                         for lbl, url in _NAV_FALLBACK_LINKS
                     )
-                    _replacement_block = f"\\1\n  {links_str},\n" if links_str else "\\1\n"
+                    _replacement_block = f"{{0}}\n  {links_str},\n" if links_str else "{0}\n"
                     _cleaned = identical_links_pattern.sub(
-                        _replacement_block,
+                        lambda _m, _block=_replacement_block: _block.format(_m.group(1)),
                         _cleaned,
                     )
 

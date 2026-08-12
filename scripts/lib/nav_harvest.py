@@ -19,16 +19,74 @@ never fall back to a canned table: shipping "Shop / New Arrivals" on a
 licensed FSP's site is the most visible fabrication the system still
 produces. An empty nav is a visible gap someone can fix; a plausible fake
 nav is a lie that looks finished.
+
+SECURITY: the harvest crawls an arbitrary third-party website. Every
+label/href pair below is untrusted input, not merely unreliable content.
+This module is the trust boundary: everything downstream (Navigation.tsx,
+Footer.tsx template generation in orchestrate.py) assumes the links it
+receives from `derive_nav`/`derive_footer` are already safe to serialize
+into generated source and render into `<Link href=...>`. Concretely:
+  - labels/hrefs containing control characters or newlines are dropped —
+    they have no legitimate reason to appear in a nav label and are a
+    known vector for smuggling code across naive string interpolation.
+  - hrefs are scheme-allowlisted (relative paths, #fragments, http(s),
+    mailto) — `javascript:`, `data:`, `vbscript:`, and any other scheme
+    are dropped, not rewritten to "#". A crawled `javascript:` href
+    rendered into a live `<Link>` is exploitable XSS against real site
+    visitors, which is a strictly worse failure than a missing link.
+  - callers still MUST serialize with `json.dumps` (never manual quoting)
+    when embedding a label/href in generated JS/TSX source — this module
+    guarantees the *content* is safe to render, not that any particular
+    quoting scheme is correct for it (e.g. a label can legitimately
+    contain a `'`, which is exactly why quote-wrapping instead of
+    serializing broke on real Cape Crypto copy before this was caught).
 """
 from __future__ import annotations
 
+import re
 
-def _dedupe(pairs) -> list[dict]:
+# http/https/mailto plus relative in-app paths ("/...") and same-page
+# fragments ("#..."). Everything else — javascript:, data:, vbscript:,
+# file:, and any scheme we don't recognise — is rejected outright rather
+# than rewritten, per "sourced or absent, never invented/unsafe".
+_ALLOWED_SCHEMES = {"http", "https", "mailto"}
+_SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.\-]*):")
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _is_safe_text(value: str) -> bool:
+    """No control characters or newlines/tabs in visible label or href text."""
+    return not _CONTROL_CHARS_RE.search(value)
+
+
+def _is_safe_href(href: str) -> bool:
+    if not _is_safe_text(href):
+        return False
+    if href.startswith("/") or href.startswith("#"):
+        return True
+    m = _SCHEME_RE.match(href)
+    if not m:
+        # No scheme and no leading "/" or "#" — e.g. a bare "wealth" or
+        # "./wealth". Not dangerous, but also not a shape the harvest is
+        # expected to produce; reject rather than guess how to route it.
+        return False
+    return m.group(1).lower() in _ALLOWED_SCHEMES
+
+
+def _dedupe(pairs, rejected: list | None = None) -> list[dict]:
     seen: dict[str, dict] = {}
     for label, href in pairs:
         label = (label or "").strip()
         href = (href or "").strip()
         if not label or not href or href == "#":
+            continue
+        if not _is_safe_text(label):
+            if rejected is not None:
+                rejected.append({"label": label, "href": href, "reason": "unsafe_label"})
+            continue
+        if not _is_safe_href(href):
+            if rejected is not None:
+                rejected.append({"label": label, "href": href, "reason": "unsafe_href_scheme"})
             continue
         if label not in seen:
             seen[label] = {"label": label, "href": href}
@@ -49,24 +107,28 @@ def _footer_pairs(page: dict):
                 yield cta.get("text"), cta.get("href")
 
 
-def derive_nav(pages: list) -> list:
+def derive_nav(pages: list, rejected: list | None = None) -> list:
     """Primary navigation, in first-seen order across harvested pages.
 
     Reads `page["nav"]["links"]`, the shape the real harvest produces.
+    Unsafe entries (control characters, disallowed href schemes) are
+    dropped, not sanitized-in-place. Pass a list via `rejected` to collect
+    what was dropped and why.
     """
     pairs = (pair for page in (pages or []) for pair in _nav_pairs(page))
-    return _dedupe(pairs)
+    return _dedupe(pairs, rejected=rejected)
 
 
-def derive_footer(pages: list) -> list:
+def derive_footer(pages: list, rejected: list | None = None) -> list:
     """Footer links, read from harvested FOOTER-archetype sections.
 
     Falls back to the harvested route list (still sourced — page titles and
     routes from the manifest) when no page carries a FOOTER section. Never
-    falls back to a hardcoded table.
+    falls back to a hardcoded table. Same unsafe-entry handling as
+    `derive_nav`.
     """
     pairs = (pair for page in (pages or []) for pair in _footer_pairs(page))
-    links = _dedupe(pairs)
+    links = _dedupe(pairs, rejected=rejected)
     if links:
         return links
     return [
