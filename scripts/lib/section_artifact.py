@@ -25,6 +25,12 @@ class SectionArtifact:
     provenance: list = field(default_factory=list)
     assets: list = field(default_factory=list)
     animation: dict = None
+    # The extraction-crawl `sectionIndex` this artifact's content was built
+    # from (see `assets.images[].sectionIndex` in extraction-data.json /
+    # `site-spec.json` sections[].index). None for --preset builds (no
+    # extraction crawl exists) and for registry gap-fill sections that were
+    # never matched to a harvested source section — never guessed.
+    section_index: int | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -41,6 +47,7 @@ class SectionArtifact:
             provenance=list(d.get("provenance") or []),
             assets=list(d.get("assets") or []),
             animation=d.get("animation"),
+            section_index=d.get("section_index"),
         )
 
 

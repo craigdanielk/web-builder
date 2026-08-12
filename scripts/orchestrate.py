@@ -3138,6 +3138,11 @@ def _emit_section_artifact(
         provenance=[r for r in (provenance or []) if r.get("section_uid") == section_uid],
         assets=[],
         animation=None,
+        # `section["index"]` is the extraction-crawl sectionIndex threaded
+        # through from site-spec.json (see section_identity()/reconcile
+        # callers using this same key). Absent for --preset builds and for
+        # sections the LLM path invented with no harvested source.
+        section_index=section.get("index"),
     )
     art_dir = OUTPUT_DIR / project_name / "section-artifacts" / page_dir
     art_dir.mkdir(parents=True, exist_ok=True)
@@ -4982,6 +4987,98 @@ def load_animation_injections(project_name: str) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def stage_resolve_assets(output_dir: Path, extraction_data: dict | None) -> dict:
+    """Bind every image slot in every section of this build to a real local
+    file, or declare it unresolved. Never a placeholder.
+
+    Runs after all pages' sections + animation decisions are on disk (after
+    stage_assemble / stage_assemble_multipage), before stage_deploy — deploy
+    copies each section's .tsx from `section-artifacts`' sibling .tsx file
+    into `site/src/components/sections/`, so a remote/placeholder src left
+    unresolved at that point would ship to the site. `public_dir` is created
+    (via `download_fn`'s parent.mkdir) even though stage_deploy hasn't
+    created `site/` yet at this point in the pipeline — the two don't race,
+    resolve_assets runs strictly first.
+
+    `extraction_data` is None for --preset builds (no extraction crawl
+    exists). `resolve_assets`/`gaps` (Task 8) handle that as "nothing to
+    match" — every slot not already a resolved local path is declared
+    unresolved, never silently placeheld.
+
+    Idempotent by construction: re-running over the same output_dir re-walks
+    the same artifacts and recomputes counts fresh from what's on disk (not
+    accumulated), so a second run produces a byte-identical coverage file —
+    see stage_inject_animation's animation-coverage.json history for why
+    that property is asserted here explicitly (this file previously
+    ACCUMULATED and doubled on a repeat run of the same page).
+    """
+    from lib.section_artifact import SectionArtifact
+    from lib.asset_resolver import resolve_assets, gaps
+
+    print("\n🖼️  Resolving section imagery...")
+
+    public_dir = output_dir / "site" / "public"
+    art_root = output_dir / "section-artifacts"
+    counts = {"total": 0, "extracted": 0, "generated": 0, "unresolved": 0}
+    jobs: list = []
+
+    if not art_root.exists():
+        write_file(output_dir / "asset-coverage.json", json.dumps(counts, indent=2))
+        write_file(output_dir / "image-jobs.json", json.dumps(jobs, indent=2))
+        print("  ⊘ No section-artifacts directory — nothing to resolve")
+        return counts
+
+    for path in sorted(art_root.rglob("*.json")):
+        try:
+            a = SectionArtifact.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError, KeyError) as e:
+            print(f"  ⚠ {path.relative_to(art_root)}: unreadable artifact ({e}), skipped")
+            continue
+
+        # Resolution is a one-time transition per artifact, not a repeatable
+        # rescan: an "unresolved" slot is recorded WITHOUT rewriting its tsx
+        # (that's the point — no placeholder ever ships), so its remote/empty
+        # src is still sitting in the tsx on the next run and `resolve_assets`
+        # would re-match and re-append it, while an already-resolved slot's
+        # src is now a local path that no longer matches anything and quietly
+        # drops out of the tally. Either way, re-running on an artifact that
+        # already has an `assets` list corrupts the count instead of leaving
+        # it unchanged. A freshly emitted artifact always has `assets == []`
+        # (see `_emit_section_artifact`), so that's the one true "not yet
+        # resolved" signal — re-resolving anything else is skipped and its
+        # existing, already-finalized tally is reused as-is.
+        if not a.assets:
+            a = resolve_assets(a, extraction_data or {}, public_dir, section_index=a.section_index)
+            path.write_text(json.dumps(a.to_dict(), indent=2), encoding="utf-8")
+
+            # Keep the sibling .tsx (the file stage_deploy actually copies
+            # into the site) in lockstep with the artifact whose src
+            # attributes were just rewritten. Mirrors
+            # section-artifacts/<page>/<NN>-<name>.json to
+            # sections/<page>/<NN>-<name>.tsx for a multipage build
+            # (page_dir = the page id, e.g. "homepage", "about"). Single-page
+            # builds emit artifacts under section-artifacts/sections/ but the
+            # .tsx files themselves sit flat at sections/ — page_dir ==
+            # "sections" is that flat case, not a page named "sections" to
+            # nest under.
+            page_dir = path.parent.name
+            sections_dir = output_dir / "sections" if page_dir == "sections" else output_dir / "sections" / page_dir
+            tsx_path = (sections_dir / path.name).with_suffix(".tsx")
+            if tsx_path.exists():
+                tsx_path.write_text(a.tsx, encoding="utf-8")
+
+        for asset in a.assets:
+            counts["total"] += 1
+            counts[asset["origin"]] = counts.get(asset["origin"], 0) + 1
+        jobs.extend(gaps(a))
+
+    write_file(output_dir / "asset-coverage.json", json.dumps(counts, indent=2))
+    write_file(output_dir / "image-jobs.json", json.dumps(jobs, indent=2))
+    print(f"  Assets: {counts['extracted']} extracted, {counts['generated']} generated, "
+          f"{counts['unresolved']} unresolved (of {counts['total']})")
+    return counts
 
 
 def parse_fonts(preset_content: str) -> dict:
@@ -8698,6 +8795,15 @@ def main():
         save_checkpoint(output_dir, "sections_mp", args.project, {"section_files_by_page_keys": list(section_files_by_page.keys())})
         stage_assemble_multipage(site_manifest, section_files_by_page, args.project)
         save_checkpoint(output_dir, "assemble", args.project)
+
+        # ── Asset resolution: bind image slots to real files or declare gaps ──
+        # Same ordering rationale as the single-page path: must run before
+        # stage_deploy copies each page's section .tsx into
+        # site/src/components/sections/{page_id}/.
+        _, _extraction_data_for_assets = load_injection_data(extraction_dir)
+        stage_resolve_assets(output_dir, _extraction_data_for_assets)
+        save_checkpoint(output_dir, "resolve_assets", args.project)
+
         deploy_ran = False
         deploy_requested = bool(args.deploy or args.skip_to == "deploy")
         if deploy_requested:
@@ -8957,6 +9063,16 @@ def main():
         else:
             stage_review(sections, section_files, preset, args.project, build_cache=build_cache)
         save_checkpoint(output_dir, "review", args.project)
+
+    # ── Asset resolution: bind image slots to real files or declare gaps ──
+    # Runs after every section (and its animation-wrap decision) is on disk,
+    # before deploy copies section .tsx into site/src/components/sections/ —
+    # ordering that matters because it's the copy step that ships whatever
+    # src is in the .tsx at that moment.
+    if section_files:
+        _, _extraction_data_for_assets = load_injection_data(extraction_dir)
+        stage_resolve_assets(output_dir, _extraction_data_for_assets)
+        save_checkpoint(output_dir, "resolve_assets", args.project)
 
     # Stage 5.5: Pre-flight validation (before deploy)
     deploy_ran = False
