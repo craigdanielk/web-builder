@@ -4429,9 +4429,13 @@ export default function Navigation({{ menu, logo, shopName }}: {{
 
   return (
     <nav
-      className={{`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${{
-        scrolled ? 'bg-white/95 backdrop-blur shadow-sm' : 'bg-transparent'
-      }}`}}
+      className="sticky top-0 left-0 right-0 z-50 transition-shadow duration-300"
+      style={{{{
+        background: 'var(--background)',
+        color: 'var(--foreground)',
+        borderBottom: '1px solid var(--border, transparent)',
+        boxShadow: scrolled ? '0 8px 24px -20px rgba(0,0,0,0.45)' : 'none',
+      }}}}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 md:h-20">
@@ -4444,7 +4448,10 @@ export default function Navigation({{ menu, logo, shopName }}: {{
                 className="h-8 w-auto"
               />
             ) : (
-              <span className={{`text-xl font-bold ${{scrolled ? 'text-gray-900' : 'text-white'}}`}}>
+              <span
+                className="text-xl tracking-tight"
+                style={{{{ fontFamily: 'var(--font-heading, inherit)', fontWeight: 600 }}}}
+              >
                 {{shopName || '{display_name}'}}
               </span>
             )}}
@@ -4456,11 +4463,8 @@ export default function Navigation({{ menu, logo, shopName }}: {{
               <Link
                 key={{i}}
                 href={{link.url}}
-                className={{`text-sm font-medium transition-colors ${{
-                  scrolled
-                    ? 'text-gray-700 hover:text-gray-900'
-                    : 'text-white/90 hover:text-white'
-                }}`}}
+                className="text-sm transition-opacity hover:opacity-70"
+                style={{{{ color: 'var(--foreground)', fontFamily: 'var(--font-body, inherit)' }}}}
               >
                 {{link.label}}
               </Link>
@@ -5928,6 +5932,7 @@ def stage_deploy(
     shopify_config_path: str | Path | None = None,
     target_platform: str | None = "shopify",
     harvested_nav: list[dict] | None = None,
+    design_style: dict | None = None,
 ):
     """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/.
     When site_manifest and section_files_by_page are set (Layer 6), deploys multi-route app
@@ -6104,17 +6109,76 @@ def stage_deploy(
         )
 
     # ── Generate globals.css ──
+    #
+    # This block used to hardcode `--background: #fafaf9; --foreground: #1c1917`
+    # and define NO `--accent` at all. Every section template reads these custom
+    # properties (see section-templates/TRUST-BADGES/icon-strip.tsx, note 3), so
+    # two stone constants were the real palette of every site this pipeline has
+    # ever produced, whatever the tenant's brand — and `var(--accent,
+    # var(--foreground))` fell back to the foreground everywhere, which is why
+    # the output is monochrome. The design tokens ended their journey here.
+    #
+    # Now the custom properties come from the compiled design tokens, so the
+    # benchmark actually reaches the rendered page.
     print("  Generating globals.css...")
+    _ds = design_style or {}
+    _pal = _ds.get("palette") or {}
+    _scale = _ds.get("type_scale") or {}
+    _rhythm = _ds.get("rhythm") or {}
+    _radius = _ds.get("border_radius") or {}
+
+    def _tok(name: str, fallback: str) -> str:
+        value = _pal.get(name)
+        return value if isinstance(value, str) and value.strip() else fallback
+
+    _root_vars = {
+        "--background": _tok("bg_primary", "#fafaf9"),
+        "--surface": _tok("bg_secondary", _tok("surface", "#f5f5f4")),
+        "--foreground": _tok("text_primary", "#1c1917"),
+        "--muted": _tok("text_muted", "#57534e"),
+        "--accent": _tok("accent", "#1c1917"),
+        "--on-accent": _tok("on_accent", "#ffffff"),
+        "--border": _tok("border", "#e7e5e4"),
+        "--font-heading": f'"{fonts["heading"]}", sans-serif',
+        "--font-body": f'"{fonts["body"]}", sans-serif',
+        "--heading-weight": str(_scale.get("heading_weight", 600)),
+        "--body-weight": str(_scale.get("body_weight", 400)),
+        "--section-py": f'{_rhythm.get("section_py_px", 96)}px',
+        "--block-gap": f'{_rhythm.get("block_gap_px", 48)}px',
+        "--card-pad": f'{_rhythm.get("card_pad_px", 32)}px',
+        "--radius-card": _radius.get("card", "8px"),
+        "--radius-button": _radius.get("button", "6px"),
+    }
+    if _pal:
+        print(f"    ✓ tokens from {_ds.get('design_source', 'unknown')}: "
+              f"bg {_root_vars['--background']}, fg {_root_vars['--foreground']}, "
+              f"accent {_root_vars['--accent']}, "
+              f"heading weight {_root_vars['--heading-weight']}")
+    else:
+        print("    ⚠ no design tokens supplied — falling back to stone neutrals; "
+              "the site will render with no brand accent")
+
     css_lines = [
         '@import "tailwindcss";',
         "",
-        ":root { --background: #fafaf9; --foreground: #1c1917; }",
+        ":root {",
+        *[f"  {k}: {v};" for k, v in _root_vars.items()],
+        "}",
         "body {",
         "  background: var(--background);",
         "  color: var(--foreground);",
         f'  font-family: "{fonts["body"]}", sans-serif;',
+        "  font-weight: var(--body-weight);",
         "  -webkit-font-smoothing: antialiased;",
         "  -moz-osx-font-smoothing: grayscale;",
+        "}",
+        # The benchmark's defining observation: hierarchy carried by SIZE and
+        # SPACE, not by weight. Tailwind's defaults reach for bold at every
+        # level, so the weight is set once here rather than per template.
+        "h1, h2, h3, h4 {",
+        "  font-family: var(--font-heading);",
+        "  font-weight: var(--heading-weight);",
+        "  letter-spacing: -0.02em;",
         "}",
     ]
     if engine == "gsap":
@@ -8540,6 +8604,15 @@ def main():
                         default=None, metavar="INDUSTRY")
     parser.add_argument("--page", help="Page type for --industry mode (default: homepage)",
                         default="homepage", metavar="PAGE_TYPE")
+    # WHICH market's benchmark, not WHETHER to use one. Naming an input is not
+    # the mode-fork this codebase has ruled against — the build's behaviour is
+    # identical either way, only the design authority differs. Defaults to the
+    # manifest industry so it resolves without being passed.
+    parser.add_argument("--benchmark",
+                        help="Market benchmark supplying design tokens "
+                             "(benchmarks/<market>.json). Defaults to the "
+                             "manifest industry.",
+                        default=None, metavar="MARKET")
     parser.add_argument("--site-manifest", help="Path to site-manifest.json for multi-page build (Layer 6)",
                         default=None, metavar="PATH")
     parser.add_argument("--compiled-dir", help="Path to Calculator compiled dir (architecture.json); enables multi-route generation",
@@ -8979,6 +9052,59 @@ def main():
             + ", ".join(sorted(_site_spec_by_page))
         )
 
+    # ── WIRE 1: the benchmark is the design authority, not the crawl ──────
+    # `design-tokens.js` averages computed styles off the SOURCE site, which is
+    # how cape-crypto shipped `accent: #ffffff` — an accent nobody can see —
+    # with Roboto and grey-on-white, faithfully reproducing a mediocre site.
+    # Aurelix builds; it does not clone. The source supplies content, structure,
+    # assets and brand; a curated market benchmark supplies the design.
+    #
+    # ROLLOUT DEVIATION, stated rather than hidden: the spec says a market with
+    # no benchmark REFUSES the build. Enforcing that today would break every
+    # tenant that has no benchmark yet, so for now a missing benchmark leaves
+    # the crawled tokens in place and stamps `design_source: source_extraction`.
+    # That is the emergency-override semantics as the temporary default. It is
+    # visible in every site-spec and can never read as a pass. Tighten to a hard
+    # refusal once the benchmark library covers the live markets.
+    if site_spec is not None:
+        _bm_market = getattr(args, "benchmark", None) or (
+            (site_manifest or {}).get("industry") or args.industry or ""
+        )
+        _bm_path = ROOT / "benchmarks" / f"{_bm_market}.json" if _bm_market else None
+        if _bm_path and _bm_path.exists():
+            try:
+                from lib.design_system import load_benchmark, compile_style
+                _bm = load_benchmark(_bm_path)
+                _crawled = (site_spec.get("style") or {}).get("palette") or {}
+                site_spec["style"] = compile_style(_bm)
+                _p = site_spec["style"]["palette"]
+                print(f"  🎨 Design authority: benchmark '{_bm_market}' "
+                      f"(captured {_bm['_meta'].get('captured_at')} from "
+                      f"{', '.join(_bm['_meta']['captured_from'])})")
+                print(f"      accent {_crawled.get('accent', '?')} (crawled) "
+                      f"-> {_p['accent']} (benchmark)")
+                print(f"      text {_crawled.get('text_primary', '?')} -> "
+                      f"{_p['text_primary']}, heading weight "
+                      f"{site_spec['style']['type_scale']['heading_weight']}, "
+                      f"rhythm {site_spec['style']['rhythm']['section_py_px']}px")
+                for _adj in site_spec["style"]["adjustments"]:
+                    print(f"      ⚖ {_adj['role']}: {_adj['from']} -> {_adj['to']} "
+                          f"({_adj['from_ratio']}:1 -> {_adj['to_ratio']}:1, "
+                          f"{_adj['drawn_from']})")
+            except Exception as _bm_err:
+                # A benchmark that exists but cannot be used is a HARD stop. It
+                # means the design authority is broken, and continuing would
+                # silently fall back to the crawl — the exact substitution this
+                # wire removes.
+                print(f"\n  ✖ Benchmark '{_bm_market}' is unusable: {_bm_err}")
+                sys.exit(1)
+        else:
+            site_spec.setdefault("style", {})["design_source"] = "source_extraction"
+            print(f"  ⚠ No benchmark for market '{_bm_market or 'unknown'}' — "
+                  f"design tokens come from the CRAWL. Stamped "
+                  f"design_source=source_extraction; this can never pass a "
+                  f"design gate.")
+
     # Nav/footer, sourced from the harvest or empty — never a canned table.
     # `_harvested_nav is not None` marks this as a harvested (--from-url)
     # build even when the harvest itself carried no nav/footer links, so
@@ -9187,6 +9313,7 @@ def main():
                     shopify_config_path=getattr(args, "shopify_config", None),
                     target_platform=args.target_platform,
                     harvested_nav=_harvested_nav,
+                    design_style=(site_spec or {}).get("style"),
                 )
                 save_checkpoint(output_dir, "deploy", args.project)
                 # Only a site that actually compiled counts as deployed; a
@@ -9449,7 +9576,7 @@ def main():
                     "validate", "pre-flight validation blocked the requested deploy (no --force)"
                 )
         if validation['passed'] or args.force:
-            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform, harvested_nav=_harvested_nav)
+            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform, harvested_nav=_harvested_nav, design_style=(site_spec or {}).get("style"))
             save_checkpoint(output_dir, "deploy", args.project)
             # Only a site that actually compiled counts as deployed.
             deploy_ran = production_build_ok(OUTPUT_DIR / args.project / SITE_DIR_NAME)

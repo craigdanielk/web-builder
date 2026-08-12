@@ -103,12 +103,37 @@ def derive_semantic_tokens(palette: dict[str, Any] | None) -> dict[str, str]:
     surface = pick("bg_secondary", "surface", "card", "muted_bg", default=bg)
     accent = pick("accent", "primary", "brand", "cta", default="#2563eb")
 
-    on_bg = best_on_color(bg)
-    on_surface = best_on_color(surface)
-    on_accent = best_on_color(accent)
+    # A DECLARED value wins over a computed one, provided it is readable.
+    #
+    # This function used to compute every foreground unconditionally, which
+    # meant a curated benchmark palette (text_primary #20334a, text_muted
+    # #5c6f85, border #e5edf5) was silently replaced by generic neutrals
+    # (#0a0a0a, #4b5563, #e5e7eb) on the way to the templates. The design
+    # authority was overridden one step before it could be seen — the same
+    # failure as `accent: #ffffff`, one layer down.
+    #
+    # The computation is still the fallback, and still the arbiter: a declared
+    # colour that fails AA against its own surface is NOT honoured, because a
+    # curated palette is not a licence to ship unreadable text.
+    def declared_or(role: str, *aliases: str, against: str, computed: str) -> str:
+        value = pick(role, *aliases, default="")
+        if value and contrast_ratio(value, against) >= _AA_BODY:
+            return value
+        return computed
 
-    text_muted = _MUTED_ON_DARK if _is_dark(bg) else _MUTED_ON_LIGHT
-    border = "#2a2d34" if _is_dark(bg) else "#e5e7eb"
+    on_bg = declared_or("text_primary", "text", "on_bg",
+                        against=bg, computed=best_on_color(bg))
+    on_surface = declared_or("on_surface", "text_primary", "text",
+                             against=surface, computed=best_on_color(surface))
+    on_accent = declared_or("on_accent", against=accent,
+                            computed=best_on_color(accent))
+
+    text_muted = declared_or(
+        "text_muted", "muted", against=bg,
+        computed=_MUTED_ON_DARK if _is_dark(bg) else _MUTED_ON_LIGHT)
+    # Borders are decorative, not text — an AA check would reject every
+    # legitimate hairline. Honour a declared border as given.
+    border = pick("border", default="#2a2d34" if _is_dark(bg) else "#e5e7eb")
 
     return {
         "bg": bg,

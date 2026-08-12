@@ -1,0 +1,90 @@
+{
+  "_meta": {
+    "market": "crypto-exchange",
+    "captured_from": [
+      "https://stripe.com",
+      "https://stripe.com/global"
+    ],
+    "captured_at": "2026-07-23",
+    "method": "computed_style",
+    "patterns_only": true,
+    "note": "PATTERNS ONLY. No markup, copy, asset, SVG or shader is lifted from the reference. Every value here is a MEASUREMENT (a weight, a ratio, a pixel step) or a rule fitted to measurements. Measurements are facts about a page, not expression, and are reimplemented from scratch.",
+    "contributions": {
+      "type_system": "https://stripe.com",
+      "card_system": "https://stripe.com",
+      "shadow_system": "https://stripe.com",
+      "rhythm": "https://stripe.com",
+      "palette_roles": "https://capecrypto.com (tenant identity) + neutral structure from https://stripe.com"
+    },
+    "provenance_note": "Derived from tenants/xago/out/stripe-benchmark.json, captured 2026-07-23 by computed-style extraction. Generation-half keys added 2026-08-13; the assertion half is unchanged from that capture.",
+    "seed_status": "SEED — ratified as a schema and capture exemplar, NOT yet ratified as the design authority for this market. Stripe is payments infrastructure, adjacent to but not identical with a consumer crypto exchange. Replacing this with a properly shortlisted reference is an operator decision."
+  },
+
+  "type_system": {
+    "observation": "Reference headlines are LIGHT weight (300/400), large, with tight leading — not bold. The hierarchy is carried by SIZE and SPACE, not by weight. This is the single largest difference from a default Tailwind build, which reaches for font-bold at every level.",
+    "weights_used": ["300", "400", "500"],
+    "scale_px": [56, 48, 32, 26, 22, 20, 18, 16, 14, 12, 11]
+  },
+
+  "card_system": {
+    "observation": "Squarish, uniform info cards. Small radii (4-8px), 1px pale cool borders. Not rounded pills.",
+    "radius_px": [4, 6, 8],
+    "border": "1px solid pale cool grey"
+  },
+
+  "cta_buttons": {
+    "radius_px": [4, 6, 8]
+  },
+
+  "shadow_system": {
+    "max_layers": 2,
+    "observation": "Two-layer soft shadow lifting cards off the page; never a single hard drop shadow."
+  },
+
+  "palette": {
+    "max_unique": 12
+  },
+
+  "font_system": {
+    "families": ["Inter", "system-ui", "sans-serif"]
+  },
+
+  "palette_roles": {
+    "bg_primary": "#ffffff",
+    "bg_secondary": "#f6f9fc",
+    "surface": "#ffffff",
+    "text_primary": "#20334a",
+    "text_muted": "#5c6f85",
+    "accent": "#004e89",
+    "on_accent": "#ffffff",
+    "border": "#e5edf5",
+    "_source": {
+      "text_primary": "capecrypto.com rgb(32,51,74), 50 occurrences",
+      "accent": "capecrypto.com rgb(0,78,137), 2 occurrences — the only true accent measured on the source",
+      "border": "reference card_system border, pale cool grey rgb(229,237,245)",
+      "bg_secondary": "reference section banding",
+      "text_muted": "derived: text_primary lightened to meet 4.5:1 on bg_primary while staying in the brand hue"
+    }
+  },
+
+  "rhythm": {
+    "section_py_px": 96,
+    "block_gap_px": 48,
+    "card_pad_px": 32,
+    "grid_px": 8
+  },
+
+  "type_scale": {
+    "ratio": 1.25,
+    "base_px": 16,
+    "heading_weight": 400,
+    "body_weight": 400
+  },
+
+  "density": "comfortable",
+
+  "motion": {
+    "intensity": "subtle",
+    "duration_ms": 400
+  }
+}
