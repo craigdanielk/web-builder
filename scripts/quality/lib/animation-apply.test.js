@@ -111,3 +111,183 @@ export default function Hero() {
   assert.equal(out.reason, 'root already animated');
   assert.equal(out.tsx, alreadyRootAnimated);
 });
+
+// --- Fix round 2: correctness bug — sibling root sections must not be
+// mispaired (first open tag + last close tag), which would silently corrupt
+// valid JSX. Each of these must be refused with output UNMODIFIED.
+
+test('refuses two sibling root <section> elements rather than mispairing tags', () => {
+  const siblings = `'use client';
+
+export default function TwoSections() {
+  return (
+    <>
+      <section id="a">A</section>
+      <section id="b">B</section>
+    </>
+  );
+}
+`;
+  const out = applyAnimation(siblings, 'fade-up', 'framer-motion');
+  assert.equal(out.applied, false);
+  assert.equal(out.tsx, siblings);
+});
+
+test('refuses when the only <section> token is inside a string literal (no real root element)', () => {
+  const stringLiteral = `'use client';
+
+export default function NoRealSection() {
+  const label = '<section class="x">not real markup</section>';
+  return (
+    <div className="py-16">
+      <p>{label}</p>
+    </div>
+  );
+}
+`;
+  const out = applyAnimation(stringLiteral, 'fade-up', 'framer-motion');
+  assert.equal(out.applied, false);
+  assert.equal(out.tsx, stringLiteral);
+});
+
+test('refuses a mispairing that a string-literal section token would otherwise cause', () => {
+  // Here the string contains an UNBALANCED fake close tag that, if not
+  // masked, would pair with the real open tag and corrupt the output.
+  const trap = `'use client';
+
+export default function Trap() {
+  const snippet = 'oops</section>';
+  return (
+    <section className="py-16">
+      <p>{snippet}</p>
+    </section>
+  );
+}
+`;
+  const out = applyAnimation(trap, 'fade-up', 'framer-motion');
+  // Masking neutralizes the fake close tag entirely, so this still resolves
+  // to exactly one real root section and wraps cleanly — the string content
+  // is untouched.
+  assert.ok(out.applied, out.reason);
+  assert.ok(out.tsx.includes("'oops</section>'"));
+});
+
+test('refuses when the only <section> token is inside a comment (no real root element)', () => {
+  const commented = `'use client';
+
+// old markup: <section class="legacy">retired</section>
+export default function NoRealSection() {
+  return (
+    <div className="py-16">
+      <h1>Still here</h1>
+    </div>
+  );
+}
+`;
+  const out = applyAnimation(commented, 'fade-up', 'framer-motion');
+  assert.equal(out.applied, false);
+  assert.equal(out.tsx, commented);
+});
+
+test('wraps the real root even when a decoy <section> sits in a string literal', () => {
+  const stringLiteral = `'use client';
+
+export default function Weird() {
+  const snippet = '<section class="x">nope</section>';
+  return (
+    <section className="py-16">
+      <p>{snippet}</p>
+    </section>
+  );
+}
+`;
+  const out = applyAnimation(stringLiteral, 'fade-up', 'framer-motion');
+  assert.ok(out.applied, out.reason);
+  assert.ok(out.tsx.includes("'<section class=\"x\">nope</section>'"));
+  assert.ok(out.tsx.includes('<motion.section'));
+});
+
+test('wraps the real root even when a decoy <section> sits in a comment', () => {
+  const commented = `'use client';
+
+// old markup: <section class="legacy">retired</section>
+export default function Commented() {
+  return (
+    <section className="py-16">
+      <h1>Still here</h1>
+    </section>
+  );
+}
+`;
+  const out = applyAnimation(commented, 'fade-up', 'framer-motion');
+  assert.ok(out.applied, out.reason);
+  assert.ok(out.tsx.includes('// old markup: <section class="legacy">retired</section>'));
+  assert.ok(out.tsx.includes('<motion.section'));
+});
+
+test('refuses a self-closing <section /> root', () => {
+  const selfClosing = `'use client';
+
+export default function Empty() {
+  return <section className="py-16" />;
+}
+`;
+  const out = applyAnimation(selfClosing, 'fade-up', 'framer-motion');
+  assert.equal(out.applied, false);
+  assert.equal(out.tsx, selfClosing);
+});
+
+test('refuses a fragment root', () => {
+  const fragment = `'use client';
+
+export default function Fragment() {
+  return (
+    <>
+      <h1>No section here</h1>
+    </>
+  );
+}
+`;
+  const out = applyAnimation(fragment, 'fade-up', 'framer-motion');
+  assert.equal(out.applied, false);
+  assert.equal(out.tsx, fragment);
+});
+
+test('refuses a <div> root', () => {
+  const divRoot = `'use client';
+
+export default function DivRoot() {
+  return (
+    <div className="py-16">
+      <h1>No section here</h1>
+    </div>
+  );
+}
+`;
+  const out = applyAnimation(divRoot, 'fade-up', 'framer-motion');
+  assert.equal(out.applied, false);
+  assert.equal(out.tsx, divRoot);
+});
+
+// --- Fix round 2: usedFallback must be a first-class boolean field, not
+// something Task 7 has to regex out of `reason`.
+
+test('returns usedFallback:false for a known library pattern', () => {
+  const out = applyAnimation(PLAIN, 'fade-up', 'framer-motion');
+  assert.equal(out.applied, true);
+  assert.equal(out.usedFallback, false);
+});
+
+test('returns usedFallback:true for an unknown/registry pattern name', () => {
+  const out = applyAnimation(PLAIN, 'codehagen__hero_badge', 'framer-motion');
+  assert.equal(out.applied, true);
+  assert.equal(out.usedFallback, true);
+  assert.ok(out.reason.includes('fallback'));
+});
+
+test('returns usedFallback:false on refusal paths too (no misleading true)', () => {
+  const weird = 'export const x = 1;';
+  const out = applyAnimation(weird, 'fade-up', 'framer-motion');
+  assert.equal(out.applied, false);
+  assert.equal(out.usedFallback, false);
+});
