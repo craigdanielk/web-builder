@@ -34,8 +34,12 @@ function applyAnimation(tsx, pattern, engine) {
   if (engine !== 'framer-motion') {
     return { tsx, applied: false, reason: `engine ${engine} not supported by applyAnimation` };
   }
-  if (tsx.includes('<motion.')) {
-    return { tsx, applied: false, reason: 'already animated' };
+  // Root-scoped check: only refuse if the ROOT element is already a
+  // motion.section. Templates legitimately carry inner <motion.h1>,
+  // <motion.div>, etc. stagger animations on children — those are additive
+  // to a root-level reveal, not conflicting with it, so they must not block.
+  if (/<motion\.section(\s[^>]*)?>/.test(tsx)) {
+    return { tsx, applied: false, reason: 'root already animated' };
   }
 
   const v = VARIANTS[pattern] || VARIANTS[DEFAULT_PATTERN];
