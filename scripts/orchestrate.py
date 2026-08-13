@@ -6204,14 +6204,12 @@ def stage_deploy(
     heading_font = fonts["heading"]
     body_font = fonts["body"]
 
-    # Common Google Fonts that can be imported via next/font/google
-    GOOGLE_FONTS = {
-        "Inter", "Roboto", "Open Sans", "Lato", "Montserrat", "Poppins",
-        "Source Sans Pro", "Source Sans 3", "Raleway", "Nunito", "Playfair Display",
-        "Merriweather", "DM Sans", "Space Grotesk", "Plus Jakarta Sans",
-        "Outfit", "Sora", "Geist", "Manrope", "Urbanist", "Archivo",
-        "Work Sans", "Libre Baskerville", "Cormorant Garamond",
-    }
+    # Servable families come from lib.font_match, which is also what
+    # design_system.compile_style resolves a benchmark's measured face against.
+    # Keeping a second hand-maintained set here is how a font gets resolved to
+    # a served name that this function then fails to import, emitting
+    # `font-family: '<name>', system-ui` and falling back silently.
+    from lib.font_match import SERVABLE as GOOGLE_FONTS
 
     heading_is_google = heading_font in GOOGLE_FONTS
     body_is_google = body_font in GOOGLE_FONTS

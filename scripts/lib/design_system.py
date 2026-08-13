@@ -45,6 +45,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .font_match import match_font
+
 #: Generation-half contract. Every key required at load — see the module note.
 REQUIRED_ROLES = (
     "bg_primary", "bg_secondary", "surface", "text_primary",
@@ -194,7 +196,37 @@ def compile_style(
     scale = benchmark["type_scale"]
     rhythm = benchmark["rhythm"]
     fonts = (benchmark.get("font_system") or {}).get("families") or ["Inter"]
-    heading_family = brand_font or fonts[0]
+
+    # The measured family is usually the reference's proprietary face, which no
+    # build can serve. Resolve it to something servable and RECORD the
+    # substitution beside the contrast adjustments; emitting the measured name
+    # unresolved produced `font-family: 'Capsule Sans Text', system-ui` and a
+    # silent fallback, which is a site declaring a typeface it never loads.
+    if brand_font:
+        heading_family = brand_font
+    else:
+        heading_family = None
+        for candidate in fonts:
+            m = match_font(candidate)
+            if m.served:
+                heading_family = m.served
+                if m.substituted:
+                    adjustments.append({
+                        "role": "font.heading",
+                        "from": m.measured,
+                        "to": m.served,
+                        "reason": m.reason,
+                        "confidence": m.confidence,
+                        "drawn_from": "font_match.CATALOG",
+                    })
+                break
+        if heading_family is None:
+            raise BenchmarkError(
+                f"no measured family in {fonts} resolves to a servable font. "
+                "A benchmark may not declare a typeface the build cannot load "
+                "— supply brand_font, or extend font_match.CATALOG with a "
+                "ratified substitute."
+            )
 
     return {
         "design_source": "benchmark",
