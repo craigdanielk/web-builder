@@ -135,30 +135,60 @@ function collectTokens(extractionData) {
   const spacingSet = new Set();
   const notableSet = new Set();
 
+  // Frequency is the difference between a token inventory and a design rule.
+  // A preset only needs to know a colour was used; a benchmark needs to know
+  // which background is THE page colour, which is a modal value. Sets discard
+  // exactly that, so counts are kept alongside rather than in place of them —
+  // the Set-shaped fields stay byte-identical for existing consumers.
+  const counts = {
+    colors: new Map(), backgroundColors: new Map(), fonts: new Map(),
+    fontSizes: new Map(), fontWeights: new Map(), borderRadii: new Map(),
+    padding: new Map(), gap: new Map(), boxShadow: new Map(),
+    borderColors: new Map(),
+  };
+  const bump = (m, k) => { if (k) m.set(k, (m.get(k) || 0) + 1); };
+
   for (const el of (extractionData.renderedDOM || [])) {
     const s = el.styles || {};
-    if (s.color) colorsSet.add(rgbToHex(s.color));
-    if (s.backgroundColor) bgColorsSet.add(rgbToHex(s.backgroundColor));
+    if (s.color) { colorsSet.add(rgbToHex(s.color)); bump(counts.colors, rgbToHex(s.color)); }
+    if (s.backgroundColor) {
+      bgColorsSet.add(rgbToHex(s.backgroundColor));
+      bump(counts.backgroundColors, rgbToHex(s.backgroundColor));
+    }
     if (s.fontFamily) {
       const primary = s.fontFamily.split(',')[0].trim().replace(/['"]/g, '');
-      if (primary) fontsSet.add(primary);
+      if (primary) { fontsSet.add(primary); bump(counts.fonts, primary); }
     }
-    if (s.fontSize) fontSizesSet.add(s.fontSize);
-    if (s.fontWeight) fontWeightsSet.add(s.fontWeight);
-    if (s.borderRadius && s.borderRadius !== '0px') borderRadiiSet.add(s.borderRadius);
-    if (s.padding && s.padding !== '0px') spacingSet.add('padding: ' + s.padding);
-    if (s.gap && s.gap !== 'normal') spacingSet.add('gap: ' + s.gap);
-    if (s.boxShadow && s.boxShadow !== 'none') notableSet.add('box-shadow: ' + s.boxShadow.slice(0, 100));
+    if (s.fontSize) { fontSizesSet.add(s.fontSize); bump(counts.fontSizes, s.fontSize); }
+    if (s.fontWeight) { fontWeightsSet.add(s.fontWeight); bump(counts.fontWeights, s.fontWeight); }
+    if (s.borderRadius && s.borderRadius !== '0px') {
+      borderRadiiSet.add(s.borderRadius);
+      bump(counts.borderRadii, s.borderRadius);
+    }
+    if (s.borderColor && parseFloat(s.borderWidth) > 0) bump(counts.borderColors, s.borderColor);
+    if (s.padding && s.padding !== '0px') {
+      spacingSet.add('padding: ' + s.padding);
+      bump(counts.padding, s.padding);
+    }
+    if (s.gap && s.gap !== 'normal') { spacingSet.add('gap: ' + s.gap); bump(counts.gap, s.gap); }
+    if (s.boxShadow && s.boxShadow !== 'none') {
+      notableSet.add('box-shadow: ' + s.boxShadow.slice(0, 100));
+      bump(counts.boxShadow, s.boxShadow);
+    }
     if (s.transform && s.transform !== 'none') notableSet.add('transform: ' + s.transform.slice(0, 80));
   }
 
+  // textContent nests its computed styles under `.styles`; the top-level
+  // reads below were silently collecting nothing for every capture.
   for (const t of (extractionData.textContent || [])) {
-    if (t.color) colorsSet.add(rgbToHex(t.color));
-    if (t.fontFamily) {
-      const primary = t.fontFamily.split(',')[0].trim().replace(/['"]/g, '');
-      if (primary) fontsSet.add(primary);
+    const ts = t.styles || t;
+    if (ts.color) { colorsSet.add(rgbToHex(ts.color)); bump(counts.colors, rgbToHex(ts.color)); }
+    if (ts.fontFamily) {
+      const primary = ts.fontFamily.split(',')[0].trim().replace(/['"]/g, '');
+      if (primary) { fontsSet.add(primary); bump(counts.fonts, primary); }
     }
-    if (t.fontSize) fontSizesSet.add(t.fontSize);
+    if (ts.fontSize) { fontSizesSet.add(ts.fontSize); bump(counts.fontSizes, ts.fontSize); }
+    if (ts.fontWeight) { fontWeightsSet.add(ts.fontWeight); bump(counts.fontWeights, ts.fontWeight); }
   }
 
   for (const font of (extractionData.assets?.fonts || [])) {
@@ -191,6 +221,15 @@ function collectTokens(extractionData) {
     borderRadii: [...borderRadiiSet].filter(Boolean),
     spacing: [...spacingSet].slice(0, 30),
     notable: [...notableSet].slice(0, 20),
+    // Frequency-preserving view of the same walk. Plain objects so the result
+    // stays JSON-serialisable; every key above is derivable from these, but
+    // not the reverse.
+    counts: Object.fromEntries(
+      Object.entries(counts).map(([k, m]) => [
+        k,
+        Object.fromEntries([...m.entries()].sort((a, b) => b[1] - a[1])),
+      ]),
+    ),
   };
 }
 
