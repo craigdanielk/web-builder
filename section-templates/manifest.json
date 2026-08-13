@@ -3,7 +3,7 @@
   "generated": "2026-02-13",
   "total_archetypes": 26,
   "total_variants": 76,
-  "templates_available": 76,
+  "templates_available": 11,
   "archetypes": {
     "ABOUT": {
       "directory": "section-templates/ABOUT/",
@@ -129,7 +129,7 @@
         {
           "name": "accordion",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/FAQ/accordion.tsx",
           "file_name": "accordion.tsx"
         },
         {
@@ -152,7 +152,7 @@
         {
           "name": "icon-grid",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/FEATURES/icon-grid.tsx",
           "file_name": "icon-grid.tsx"
         },
         {
@@ -239,7 +239,7 @@
         {
           "name": "centered",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/HERO/centered.tsx",
           "file_name": "centered.tsx"
         },
         {
@@ -269,7 +269,7 @@
         {
           "name": "split-image",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/HERO/split-image.tsx",
           "file_name": "split-image.tsx"
         },
         {
@@ -292,7 +292,7 @@
         {
           "name": "numbered-steps",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/HOW-IT-WORKS/numbered-steps.tsx",
           "file_name": "numbered-steps.tsx"
         },
         {
@@ -309,7 +309,7 @@
         {
           "name": "scrolling-marquee",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/LOGO-BAR/scrolling-marquee.tsx",
           "file_name": "scrolling-marquee.tsx"
         },
         {
@@ -517,7 +517,7 @@
         {
           "name": "headshot-grid-square",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/TEAM/headshot-grid-square.tsx",
           "file_name": "headshot-grid-square.tsx"
         }
       ]
