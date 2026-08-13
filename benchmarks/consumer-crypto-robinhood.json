@@ -1,0 +1,132 @@
+{
+  "_meta": {
+    "market": "consumer-crypto-exchange",
+    "captured_from": [
+      "https://robinhood.com/us/en/",
+      "https://robinhood.com/eu/en/crypto/",
+      "https://robinhood.com/us/en/about-us/",
+      "https://robinhood.com/eu/en/crypto/staking/",
+      "https://robinhood.com/eu/en/crypto/BTC/",
+      "https://robinhood.com/eu/en/support/articles/about-robinhood-crypto/"
+    ],
+    "captured_at": "2026-08-13",
+    "method": "computed_style",
+    "patterns_only": true,
+    "note": "PATTERNS ONLY. No markup, copy, asset, SVG or shader is lifted from the reference. Every number below is a count or a distribution over measured computed styles.",
+    "page_selection_rationale": {
+      "home": "HERO, NAV, FOOTER, CTA, FEATURES, LOGO-BAR",
+      "crypto": "PRODUCT-SHOWCASE, FEATURES, CTA",
+      "about": "ABOUT, TEAM, LOGO-BAR",
+      "staking": "HOW-IT-WORKS numbered steps",
+      "btc": "PORTFOLIO, data-dense card system",
+      "faq": "FAQ, TRUST-BADGES"
+    },
+    "elements_measured": 2788,
+    "text_nodes_measured": 1493,
+    "contributions": {
+      "type_system": "https://robinhood.com",
+      "card_system": "https://robinhood.com",
+      "shadow_system": "https://robinhood.com",
+      "rhythm": "https://robinhood.com",
+      "palette_roles": "https://robinhood.com (structural bg/surface/border/text) + capecrypto.com (accent, tenant identity)"
+    }
+  },
+  "palette_roles": {
+    "bg_primary": "#000000",
+    "bg_secondary": "#1c180d",
+    "surface": "#000000",
+    "text_primary": "#ffffff",
+    "text_muted": "#919fa6",
+    "accent": "#004e89",
+    "on_accent": "#ffffff",
+    "border": "#35322d",
+    "_source": {
+      "bg_primary": "robinhood most common opaque background, 23 elements",
+      "bg_secondary": "robinhood banding background, 2 elements, 1.19:1 step from bg_primary, 17.71:1 with text_primary",
+      "text_primary": "robinhood text colour, 330 occurrences, 21.00:1 on bg_primary",
+      "text_muted": "robinhood secondary text colour, 12 occurrences, 7.71:1 on bg_primary",
+      "surface": "robinhood background on radius>=4px elements, 9 elements, 21.00:1 with text_primary",
+      "border": "robinhood measured borderColor on borderWidth>0, 5 elements, 1.65:1 from bg_primary (separator range)",
+      "_border_emphasis_excluded": "#ccff00 measured on 15 elements is an emphasis outline, not a separator; excluded from the border role",
+      "accent": "capecrypto.com tenant identity rgb(0,78,137) \u2014 NOT from reference",
+      "on_accent": "chosen for 8.57:1 on tenant accent"
+    }
+  },
+  "type_scale": {
+    "ratio": 1.292,
+    "base_px": 16,
+    "heading_weight": 400,
+    "body_weight": 400
+  },
+  "type_system": {
+    "weights_used": [
+      400,
+      500,
+      700
+    ],
+    "scale_px": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      22,
+      24,
+      31,
+      32,
+      40,
+      52,
+      72,
+      80,
+      90
+    ],
+    "heading_sizes_px": [
+      32,
+      31,
+      40,
+      52,
+      24,
+      72,
+      22,
+      15
+    ]
+  },
+  "rhythm": {
+    "section_py_px": 64,
+    "block_gap_px": 12,
+    "card_pad_px": 24,
+    "grid_px": 4
+  },
+  "card_system": {
+    "radius_px": [
+      20,
+      25,
+      4
+    ]
+  },
+  "cta_buttons": {
+    "radius_px": [
+      36,
+      40
+    ]
+  },
+  "shadow_system": {
+    "max_layers": 0,
+    "observation": "0 shadowed elements measured"
+  },
+  "palette": {
+    "max_unique": 20
+  },
+  "font_system": {
+    "families": [
+      "Capsule Sans Text",
+      "Phonic",
+      "Capsule Sans Display"
+    ]
+  },
+  "density": "comfortable",
+  "motion": {
+    "intensity": "subtle",
+    "duration_ms": 300
+  }
+}

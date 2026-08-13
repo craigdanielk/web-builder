@@ -64,6 +64,11 @@ const CSS_PROPERTIES = [
   'display',
   'position',
   'borderRadius',
+  // Border colour/width are what a benchmark's `border` role is measured from.
+  // Without them the role can only be derived from a background that happens
+  // to sit near the page colour, which is a guess wearing a measurement's name.
+  'borderColor',
+  'borderWidth',
   'opacity',
   'transform',
   'boxShadow',

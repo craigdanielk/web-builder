@@ -176,9 +176,14 @@ def compile_style(
 
     # Body text must be readable on both surfaces. This is the check that would
     # have caught `accent: #ffffff` on day one.
+    # `surface` is included because it is where card body copy lands. Omitting
+    # it let a measured dark palette ship `surface: #ffffff` alongside
+    # `text_primary: #ffffff` — white on white, passing every other pair.
     for role, bg in (("text_primary", "bg_primary"),
                      ("text_muted", "bg_primary"),
-                     ("text_primary", "bg_secondary")):
+                     ("text_primary", "bg_secondary"),
+                     ("text_primary", "surface"),
+                     ("text_muted", "surface")):
         ratio = contrast_ratio(roles[role], roles[bg])
         if ratio < MIN_CONTRAST:
             raise BenchmarkError(
