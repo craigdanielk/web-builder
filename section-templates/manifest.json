@@ -3,7 +3,7 @@
   "generated": "2026-02-13",
   "total_archetypes": 26,
   "total_variants": 76,
-  "templates_available": 11,
+  "templates_available": 13,
   "archetypes": {
     "ABOUT": {
       "directory": "section-templates/ABOUT/",
@@ -181,7 +181,7 @@
         {
           "name": "mega",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/FOOTER/mega.tsx",
           "file_name": "mega.tsx"
         },
         {
@@ -344,7 +344,7 @@
         {
           "name": "sticky-transparent",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/NAV/sticky-transparent.tsx",
           "file_name": "sticky-transparent.tsx"
         }
       ]
