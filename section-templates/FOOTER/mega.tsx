@@ -35,6 +35,8 @@
  *   {brand_name}             → "Cape Crypto"
  */
 
+// Tokens: {brand_name} {legal_line} {columns[].heading} {columns[].links[].text} {columns[].links[].href}
+
 interface FooterLink {
   text: string;
   href: string;
@@ -83,11 +85,14 @@ export default function FooterMega({
     // A heading with no links under it is a promise the footer cannot keep.
     .filter((c) => c.links.length > 0);
 
-  const brand = filled(brandName) ? brandName : "";
-  const legal = filled(legalLine) ? legalLine : "";
+  // camelCase deliberately: the slot contract's token pattern is
+  // `[a-z][a-z_0-9]*`, so a lowercase local rendered as `{brand}` is
+  // indistinguishable from the `{brand_name}` slot and gets substituted away.
+  const brandLabel = filled(brandName) ? brandName : "";
+  const legalText = filled(legalLine) ? legalLine : "";
 
   // Nothing sourced at all — render nothing rather than a chrome-only footer.
-  if (!live.length && !brand && !legal) return null;
+  if (!live.length && !brandLabel && !legalText) return null;
 
   return (
     <footer
@@ -106,7 +111,7 @@ export default function FooterMega({
             className="grid grid-cols-2 md:grid-cols-4"
             style={{ gap: "var(--block-gap, 48px)" }}
           >
-            {brand && (
+            {brandLabel && (
               <div className="col-span-2 md:col-span-1">
                 <p
                   className="text-lg leading-snug"
@@ -115,7 +120,7 @@ export default function FooterMega({
                     fontWeight: "var(--heading-weight, 400)" as unknown as number,
                   }}
                 >
-                  {brand}
+                  {brandLabel}
                 </p>
               </div>
             )}
@@ -148,7 +153,7 @@ export default function FooterMega({
           </div>
         )}
 
-        {legal && (
+        {legalText && (
           <p
             className="mt-16 max-w-3xl text-xs leading-relaxed"
             style={{
@@ -158,7 +163,7 @@ export default function FooterMega({
               paddingTop: "var(--block-gap, 48px)",
             }}
           >
-            {legal}
+            {legalText}
           </p>
         )}
       </div>

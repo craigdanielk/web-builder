@@ -34,6 +34,8 @@ import { useEffect, useState } from "react";
  *   {cta_href}         → resolved
  */
 
+// Tokens: {brand_name} {cta_text} {cta_href} {links[].text} {links[].href}
+
 interface NavLink {
   text: string;
   href: string;
@@ -67,7 +69,9 @@ export default function NavStickyTransparent({
   const [open, setOpen] = useState(false);
 
   const live = (links || []).filter((l) => filled(l?.text) && filled(l?.href));
-  const brand = filled(brandName) ? brandName : "";
+  // camelCase deliberately — see FOOTER/mega: a lowercase local rendered as
+  // `{brand}` is indistinguishable from a slot and gets substituted away.
+  const brandLabel = filled(brandName) ? brandName : "";
   const hasCta = filled(ctaText) && filled(ctaHref);
 
   useEffect(() => {
@@ -105,7 +109,7 @@ export default function NavStickyTransparent({
         className="mx-auto flex w-full max-w-6xl items-center justify-between px-6"
         style={{ paddingBlock: "var(--nav-py, 1.25rem)" }}
       >
-        {brand && (
+        {brandLabel && (
           <a
             href="/"
             className="text-lg leading-none tracking-tight"
@@ -114,7 +118,7 @@ export default function NavStickyTransparent({
               fontWeight: "var(--heading-weight, 400)" as unknown as number,
             }}
           >
-            {brand}
+            {brandLabel}
           </a>
         )}
 

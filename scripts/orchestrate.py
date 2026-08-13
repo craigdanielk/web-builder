@@ -2371,8 +2371,20 @@ _CONTENT_TOKEN_DEFAULTS: dict[str, str] = {
     "bg_color_class": "bg-gray-900",
 }
 
-# Regex: bare {token_name} in JSX — lowercase + underscores, not inside quotes or .map/key patterns
-_CONTENT_TOKEN_RE = re.compile(r'(?<!["\w.])(\{)([a-z][a-z_0-9]{2,})(\})(?!["\w])')
+# Regex: bare {token_name} in JSX text — lowercase + underscores.
+#
+# The lookbehind inspects only the character before `{`, so it must exclude
+# every context where a brace opens a JSX EXPRESSION rather than a content
+# slot. Two were missing and both corrupt valid templates silently:
+#
+#   `=`  attribute expressions.  key={copy}          -> key=
+#   `$`  template literals.      `${copy}-${index}`  -> `$-${index}`
+#
+# Both produce "Expected '</', got 'ident'" from SWC at build time, in a file
+# the author never wrote that way — the template is blamed for the sanitizer.
+# A content token is only ever a JSX text child or a quoted string, never an
+# unquoted attribute value, so excluding these costs no real substitution.
+_CONTENT_TOKEN_RE = re.compile(r'(?<![$"\w.=])(\{)([a-z][a-z_0-9]{2,})(\})(?!["\w])')
 
 
 #: Tokens no resolver could fill. Surfaced at the end of a build so an empty
@@ -6131,6 +6143,21 @@ def stage_deploy(
         value = _pal.get(name)
         return value if isinstance(value, str) and value.strip() else fallback
 
+    # The benchmark owns type as much as it owns colour, but these read the
+    # PRESET, so a benchmark-driven build still rendered the crawled typeface —
+    # `font_match`'s whole job (resolving a proprietary reference face to one
+    # that can actually load) never reached the page. Fall back to the preset
+    # only when the compiled style carries no font.
+    _ds_fonts = _ds.get("fonts") or {}
+
+    def _font(role: str) -> str:
+        served = ((_ds_fonts.get(role) or {}).get("google_fallback")
+                  or (_ds_fonts.get(role) or {}).get("extracted"))
+        return served if isinstance(served, str) and served.strip() else fonts[role]
+
+    _heading_font = _font("heading")
+    _body_font = _font("body")
+
     _root_vars = {
         "--background": _tok("bg_primary", "#fafaf9"),
         "--surface": _tok("bg_secondary", _tok("surface", "#f5f5f4")),
@@ -6139,8 +6166,8 @@ def stage_deploy(
         "--accent": _tok("accent", "#1c1917"),
         "--on-accent": _tok("on_accent", "#ffffff"),
         "--border": _tok("border", "#e7e5e4"),
-        "--font-heading": f'"{fonts["heading"]}", sans-serif',
-        "--font-body": f'"{fonts["body"]}", sans-serif',
+        "--font-heading": f'"{_heading_font}", sans-serif',
+        "--font-body": f'"{_body_font}", sans-serif',
         "--heading-weight": str(_scale.get("heading_weight", 600)),
         "--body-weight": str(_scale.get("body_weight", 400)),
         "--section-py": f'{_rhythm.get("section_py_px", 96)}px',
@@ -6167,7 +6194,7 @@ def stage_deploy(
         "body {",
         "  background: var(--background);",
         "  color: var(--foreground);",
-        f'  font-family: "{fonts["body"]}", sans-serif;',
+        f'  font-family: "{_body_font}", sans-serif;',
         "  font-weight: var(--body-weight);",
         "  -webkit-font-smoothing: antialiased;",
         "  -moz-osx-font-smoothing: grayscale;",
@@ -6201,8 +6228,11 @@ def stage_deploy(
 
     # ── Generate layout.tsx ──
     print("  Generating layout.tsx...")
-    heading_font = fonts["heading"]
-    body_font = fonts["body"]
+    # Must match what globals.css names. Importing the preset font while the
+    # CSS declares the benchmark's served font produces a page that references
+    # a typeface it never fetches, and falls back to system-ui without a word.
+    heading_font = _heading_font
+    body_font = _body_font
 
     # Servable families come from lib.font_match, which is also what
     # design_system.compile_style resolves a benchmark's measured face against.
@@ -9076,6 +9106,23 @@ def main():
                 _crawled = (site_spec.get("style") or {}).get("palette") or {}
                 site_spec["style"] = compile_style(_bm)
                 _p = site_spec["style"]["palette"]
+                # Persist. The compiled style lived only in memory, so
+                # site-spec.json on disk kept `design_source: null` and the
+                # crawled palette — the artifact contradicted the build that
+                # produced it, and any later stage reading the file (or
+                # `--skip-to deploy`) silently got the crawl back.
+                try:
+                    _spec_path = OUTPUT_DIR / args.project / "site-spec.json"
+                    if _spec_path.exists():
+                        _spec_on_disk = json.loads(_spec_path.read_text(encoding="utf-8"))
+                        _spec_on_disk["style"] = site_spec["style"]
+                        _spec_path.write_text(
+                            json.dumps(_spec_on_disk, indent=2), encoding="utf-8")
+                except (OSError, json.JSONDecodeError) as _persist_err:
+                    # Never silent: a spec that disagrees with the build is the
+                    # failure this wire exists to remove.
+                    print(f"  ⚠ compiled style not persisted to site-spec.json: "
+                          f"{_persist_err}")
                 print(f"  🎨 Design authority: benchmark '{_bm_market}' "
                       f"(captured {_bm['_meta'].get('captured_at')} from "
                       f"{', '.join(_bm['_meta']['captured_from'])})")
@@ -9086,9 +9133,19 @@ def main():
                       f"{site_spec['style']['type_scale']['heading_weight']}, "
                       f"rhythm {site_spec['style']['rhythm']['section_py_px']}px")
                 for _adj in site_spec["style"]["adjustments"]:
-                    print(f"      ⚖ {_adj['role']}: {_adj['from']} -> {_adj['to']} "
-                          f"({_adj['from_ratio']}:1 -> {_adj['to_ratio']}:1, "
-                          f"{_adj['drawn_from']})")
+                    # Adjustments are not all one shape. A contrast swap carries
+                    # both ratios; a font substitution carries a confidence
+                    # instead. Reading either unconditionally turns a RECORDED
+                    # adjustment into a KeyError that reads as "benchmark
+                    # unusable" — blaming the benchmark for the reporter.
+                    if "from_ratio" in _adj:
+                        _detail = (f"{_adj['from_ratio']}:1 -> "
+                                   f"{_adj['to_ratio']}:1")
+                    else:
+                        _detail = f"confidence {_adj.get('confidence', '?')}"
+                    print(f"      ⚖ {_adj['role']}: {_adj['from']} -> "
+                          f"{_adj['to']} ({_detail}, "
+                          f"{_adj.get('drawn_from', 'unrecorded')})")
             except Exception as _bm_err:
                 # A benchmark that exists but cannot be used is a HARD stop. It
                 # means the design authority is broken, and continuing would
@@ -9536,13 +9593,19 @@ def main():
         save_checkpoint(output_dir, "assemble", args.project)
 
     if args.skip_to in (None, "sections", "assemble", "review"):
-        site_spec_path = output_dir / "site-spec.json"
-        site_spec = None
-        if site_spec_path.exists():
-            try:
-                site_spec = json.loads(site_spec_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                pass
+        # Reload ONLY when nothing is in memory — this runs on `--skip-to
+        # review`, where no spec was built this run. Reloading unconditionally
+        # discarded the style WIRE 1 had just compiled and handed `stage_deploy`
+        # the crawl instead, so `globals.css` shipped the source site's tokens
+        # (accent #ffffff, radius `rounded-xl`) on every --from-url build while
+        # the run's own log correctly reported the benchmark being applied.
+        if site_spec is None:
+            site_spec_path = output_dir / "site-spec.json"
+            if site_spec_path.exists():
+                try:
+                    site_spec = json.loads(site_spec_path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    pass
         if site_spec:
             stage_review_v2(section_files, site_spec, args.project)
         else:

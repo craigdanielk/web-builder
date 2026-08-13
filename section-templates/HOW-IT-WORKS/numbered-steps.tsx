@@ -27,6 +27,8 @@ import { motion } from "framer-motion";
  *   {steps[].description} → "Sign up with your email and verify your identity…"
  */
 
+// Tokens: {section_title} {section_subtitle} {steps[].title} {steps[].description}
+
 interface Step {
   title: string;
   description: string;
