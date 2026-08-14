@@ -4490,7 +4490,8 @@ export default function Navigation({{ menu, logo, shopName }}: {{
             aria-label="Toggle menu"
           >
             <svg
-              className={{`h-6 w-6 ${{scrolled ? 'text-gray-900' : 'text-white'}}`}}
+              className="h-6 w-6"
+              style={{{{ color: 'var(--foreground)' }}}}
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -4507,13 +4508,20 @@ export default function Navigation({{ menu, logo, shopName }}: {{
 
       {{/* Mobile menu */}}
       {{mobileOpen && (
-        <div className="md:hidden bg-white border-t shadow-lg">
+        <div
+          className="md:hidden border-t shadow-lg"
+          style={{{{
+            background: 'var(--surface, var(--background))',
+            borderColor: 'var(--border, transparent)',
+          }}}}
+        >
           <div className="px-4 py-3 space-y-2">
             {{displayLinks.map((link, i) => (
               <Link
                 key={{i}}
                 href={{link.url}}
-                className="block py-2 text-gray-700 hover:text-gray-900 font-medium"
+                className="block py-2 transition-opacity hover:opacity-70"
+                style={{{{ color: 'var(--foreground)', fontFamily: 'var(--font-body, inherit)' }}}}
                 onClick={{() => setMobileOpen(false)}}
               >
                 {{link.label}}
@@ -4532,6 +4540,7 @@ def _build_footer_template(
     project_name: str,
     adapter: DeployAdapter | None = None,
     harvested_footer: list[dict] | None = None,
+    disclaimers: list[str] | None = None,
 ) -> str:
     """Return a complete Footer.tsx React component with real defaults.
     When adapter is set, platform-specific default columns are used.
@@ -4543,9 +4552,34 @@ def _build_footer_template(
     harvested build (empty list renders no columns, never a canned table);
     `is None` means there is no harvest and the adapter default is a
     generic placeholder, not a claim about a real business.
+
+    `disclaimers` — declared regulatory text from phase 0
+    (`required_disclaimers`). Rendered verbatim, never paraphrased, and only
+    when the tenant actually declares some: an empty or absent list renders no
+    block at all rather than a reassuring-looking placeholder. For a licensed
+    FSP a fabricated or approximated disclosure is a regulatory liability, so
+    this is the one place in the footer where "sourced or empty" is not merely
+    a quality rule.
     """
     _adapter = adapter or ShopifyAdapter()
     display_name = project_name.replace("-", " ").title()
+    # json.dumps for the same reason the columns use it — this is declared
+    # tenant data flowing into JSX, and it must not be able to close a string.
+    _disclaimers = [d for d in (disclaimers or []) if isinstance(d, str) and d.strip()]
+    _disclaimer_block = ""
+    if _disclaimers:
+        _items = "\n".join(
+            f"          <p key={{{i}}} className=\"leading-relaxed\">{{{json.dumps(d)}}}</p>"
+            for i, d in enumerate(_disclaimers)
+        )
+        _disclaimer_block = (
+            '\n        <div\n'
+            '          className="mt-10 space-y-2 text-xs"\n'
+            '          style={{ color: MUTED, maxWidth: "80ch" }}\n'
+            '        >\n'
+            f'{_items}\n'
+            '        </div>\n'
+        )
     if harvested_footer is not None:
         _footer_cols = [{"title": "Links", "links": harvested_footer}] if harvested_footer else []
     else:
@@ -4572,6 +4606,12 @@ import Link from 'next/link';
 
 const defaultColumns: {{ title: string; links: {{ label: string; href: string }}[] }}[] = {_columns_block};
 
+// The footer ships on every route, so a hardcoded palette here outweighs every
+// converted section template. These read the compiled design system, exactly as
+// section-templates/FEATURES/icon-grid.tsx does.
+const MUTED = "var(--muted, color-mix(in srgb, var(--foreground) 62%, var(--background)))";
+const HAIRLINE = "var(--border, color-mix(in srgb, var(--foreground) 14%, var(--background)))";
+
 export default function Footer({{ menu, shopName }}: {{
   menu?: {{ title: string; items: Array<{{ title: string; url: string; items?: Array<{{ title: string; url: string }}> }}> }};
   shopName?: string;
@@ -4584,12 +4624,22 @@ export default function Footer({{ menu, shopName }}: {{
     : defaultColumns;
 
   return (
-    <footer className="bg-gray-900 text-gray-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
+    <footer
+      style={{{{
+        background: "var(--surface, var(--background))",
+        color: "var(--foreground)",
+        paddingTop: "var(--section-py, 96px)",
+        paddingBottom: "calc(var(--section-py, 96px) * 0.6)",
+      }}}}
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
           {{displayColumns.map((col, i) => (
             <div key={{i}}>
-              <h3 className="text-white font-semibold text-sm uppercase tracking-wider mb-4">
+              <h3
+                className="text-sm uppercase tracking-wider mb-4"
+                style={{{{ fontFamily: "var(--font-heading, inherit)", fontWeight: 500 }}}}
+              >
                 {{col.title}}
               </h3>
               <ul className="space-y-2">
@@ -4597,7 +4647,8 @@ export default function Footer({{ menu, shopName }}: {{
                   <li key={{j}}>
                     <Link
                       href={{link.href}}
-                      className="text-sm text-gray-400 hover:text-white transition-colors"
+                      className="text-sm transition-opacity hover:opacity-70"
+                      style={{{{ color: MUTED, fontFamily: "var(--font-body, inherit)" }}}}
                     >
                       {{link.label}}
                     </Link>
@@ -4607,7 +4658,10 @@ export default function Footer({{ menu, shopName }}: {{
             </div>
           ))}}
         </div>
-        <div className="mt-12 pt-8 border-t border-gray-800 text-center text-sm text-gray-500">
+{_disclaimer_block}        <div
+          className="mt-12 pt-8 border-t text-center text-sm"
+          style={{{{ borderColor: HAIRLINE, color: MUTED, fontFamily: "var(--font-body, inherit)" }}}}
+        >
           &copy; {{new Date().getFullYear()}} {{shopName || '{display_name}'}}. All rights reserved.
         </div>
       </div>
@@ -4626,6 +4680,7 @@ def stage_shared_components(
     adapter: DeployAdapter | None = None,
     harvested_nav: list[dict] | None = None,
     harvested_footer: list[dict] | None = None,
+    disclaimers: list[str] | None = None,
 ) -> list[Path]:
     """Layer 6: Generate Navigation and Footer once as shared layout components.
 
@@ -4649,7 +4704,14 @@ def stage_shared_components(
     footer_path = shared_dir / "Footer.tsx"
 
     nav_code = _build_nav_template(project_name, adapter=adapter, harvested_nav=harvested_nav)
-    footer_code = _build_footer_template(project_name, adapter=adapter, harvested_footer=harvested_footer)
+    footer_code = _build_footer_template(
+        project_name, adapter=adapter, harvested_footer=harvested_footer,
+        disclaimers=disclaimers,
+    )
+    if disclaimers:
+        print(f"  ✓ Footer carries {len(disclaimers)} declared disclaimer(s) from phase 0")
+    else:
+        print("  ⚠ Footer carries NO disclaimers — none declared for this tenant (not a pass)")
 
     write_file(nav_path, nav_code)
     print(f"  ✓ Wrote Navigation.tsx (template-driven, no LLM)")
@@ -9241,7 +9303,17 @@ def main():
             print("  ⚠ --skip-to is not supported for multipage; running full multipage pipeline.")
         _mp_page_ids = [p.get("id") for p in site_manifest.get("pages", [])]
         _mp_has_commerce = "collection-template" in _mp_page_ids or "product-template" in _mp_page_ids
-        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce, adapter=_resolve_adapter(args.target_platform), harvested_nav=_harvested_nav, harvested_footer=_harvested_footer)
+        # Declared regulatory text, straight from phase 0. Read here rather than
+        # inside the generator so the source is visible at the call site: the
+        # footer states only what the tenant record declares, and states nothing
+        # when the record declares nothing.
+        _declared_disclaimers = None
+        if tenant_context:
+            _pv = tenant_context.get("phase0_field_values") or {}
+            _rd = _pv.get("required_disclaimers")
+            if isinstance(_rd, list):
+                _declared_disclaimers = [d for d in _rd if isinstance(d, str) and d.strip()]
+        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce, adapter=_resolve_adapter(args.target_platform), harvested_nav=_harvested_nav, harvested_footer=_harvested_footer, disclaimers=_declared_disclaimers)
         save_checkpoint(output_dir, "shared_components", args.project)
         site_manifest = stage_scaffold_multipage(site_manifest, args.project, industry, preset=preset)
         save_checkpoint(output_dir, "scaffold_mp", args.project)
