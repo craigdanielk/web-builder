@@ -867,18 +867,33 @@ function runCLI() {
     process.exit(1);
   }
 
+  // A capture bundle is a complete source, not a crawl accessory. `buildPages()`
+  // reads captures alone, and design tokens come from the compiled benchmark —
+  // so requiring crawl artefacts here is what forced `--from-url` onto every
+  // captures build, and with it a SECOND crawl of a site the audit had already
+  // crawled. With `--captures` the extraction inputs become optional.
+  const capturesRequested = typeof flags.captures === 'string';
+
   const extractionPath = path.join(extractionDir, 'extraction-data.json');
   const extractionData = loadJson(extractionPath, null);
-  if (!extractionData) {
+  if (!extractionData && !capturesRequested) {
     console.error(`[build-site-spec] Missing or invalid extraction-data.json in ${extractionDir}`);
     process.exit(1);
   }
 
   const mappedPath = path.join(extractionDir, 'mapped-sections.json');
   const mappedSections = loadJson(mappedPath, null);
-  if (!mappedSections || !Array.isArray(mappedSections)) {
+  if ((!mappedSections || !Array.isArray(mappedSections)) && !capturesRequested) {
     console.error(`[build-site-spec] Missing or invalid mapped-sections.json in ${extractionDir}`);
     process.exit(1);
+  }
+
+  // Absent extraction, the single-URL `sections[]` and the measured style block
+  // have no source. They are left EMPTY and stamped, never defaulted to
+  // plausible values — `pages[]` carries the real content in this mode.
+  const capturesOnly = capturesRequested && (!extractionData || !Array.isArray(mappedSections));
+  if (capturesOnly) {
+    console.log('[build-site-spec] No extraction data — building from captures alone (style: NOT_MEASURED)');
   }
 
   const animationPath = path.join(extractionDir, 'animation-analysis.json');
@@ -901,8 +916,8 @@ function runCLI() {
   const maxPages = typeof flags['max-pages'] === 'string' ? parseInt(flags['max-pages'], 10) : null;
 
   const siteSpec = buildSiteSpec({
-    extractionData,
-    mappedSections,
+    extractionData: extractionData || { assets: {} },
+    mappedSections: Array.isArray(mappedSections) ? mappedSections : [],
     animationAnalysis,
     componentRegistry,
     projectName,
@@ -910,6 +925,12 @@ function runCLI() {
     routes,
     maxPages,
   });
+
+  if (capturesOnly) {
+    // Stamped so no downstream reader mistakes an unmeasured palette for a
+    // measured one. The design compiler overwrites this from the benchmark.
+    siteSpec.style = Object.assign({}, siteSpec.style, { source: 'NOT_MEASURED' });
+  }
 
   // `output/<project>` is relative to the CWD, which is the web-builder repo.
   // Under `--output-root` the orchestrator reads the spec from the re-rooted

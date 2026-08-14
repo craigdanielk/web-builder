@@ -603,6 +603,105 @@ SITE_DIR_NAME = "site"  # Rendered Next.js project lives at output/{project}/sit
 
 # --- URL Extraction Stage ---
 
+def resolve_source_mode(args):
+    """Which source this build reads from: 'captures', 'url' or 'preset'.
+
+    `--captures` and `--routes` used to be read ONLY inside the `--from-url`
+    branch. Passed without it they were accepted and silently ignored: the build
+    harvested nothing, every section was omitted for having no sourced content,
+    and pre-flight blocked the deploy. Honest failure, lying flag — and the
+    wasted cycle read as a template defect.
+
+    Captures outrank a URL deliberately. A bundle is a crawl that already
+    happened, with HTML on disk; crawling the same site again to satisfy a
+    signature is the second crawl the plan's "one crawl per build" forbids.
+
+    Returns (mode, captures_dir, routes). Refuses a named bundle that is not
+    there, rather than falling back to a source the caller did not ask for.
+    """
+    captures = getattr(args, "captures", None)
+    routes = getattr(args, "routes", None)
+    from_url = getattr(args, "from_url", None)
+
+    if captures:
+        captures_dir = Path(captures).expanduser().resolve()
+        if not captures_dir.exists():
+            raise SystemExit(f"--captures directory not found: {captures_dir}")
+        return "captures", captures_dir, routes
+
+    if routes:
+        # Routes select among captured pages. Without a bundle there is nothing
+        # to select from, and silently ignoring the flag is the defect above.
+        raise SystemExit("--routes requires --captures: routes select among captured pages")
+
+    if from_url:
+        return "url", None, routes
+
+    return "preset", None, routes
+
+
+def stage_captures_extract(project_name, captures_dir, routes=None, max_pages=None):
+    """Build site-spec.json from a capture bundle alone — no crawl.
+
+    The bundle already IS a crawl: same-origin pages with their HTML on disk.
+    `build-site-spec.js` derives `pages[]` from captures without touching
+    extraction data, and design tokens come from the compiled benchmark, so
+    nothing here needs a browser.
+
+    Returns the parsed site_spec, or raises SystemExit. It never falls back to
+    a single-page spec: silently degrading is what starved the builder before.
+    """
+    print("\n📦 Stage 0: Building site spec from capture bundle (no crawl)...")
+    print(f"  Bundle: {captures_dir}")
+
+    out_dir = OUTPUT_DIR / project_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    _cmd = ["node", str(QUALITY_DIR / "build-site-spec.js"),
+            # No extraction dir exists in this mode; the script treats the
+            # inputs as optional precisely when --captures is supplied.
+            str(out_dir / "_no-extraction"), project_name,
+            "--out", str(out_dir), "--captures", str(captures_dir)]
+    if routes:
+        _cmd += ["--routes", routes]
+    if max_pages:
+        _cmd += ["--max-pages", str(max_pages)]
+
+    result = subprocess.run(_cmd, capture_output=True, text=True,
+                            cwd=str(ROOT), timeout=300)
+    for line in (result.stdout or "").strip().split("\n"):
+        if line.strip():
+            print(f"    {line}")
+    if result.returncode != 0:
+        _err = (result.stderr or "").strip() or "(no stderr)"
+        print(f"  ✖ build-site-spec.js failed on the capture bundle: {_err[:600]}")
+        record_build_failure(
+            "site-spec",
+            f"capture harvest failed for {captures_dir} (exit {result.returncode})",
+        )
+        raise SystemExit(EXIT_FAILED)
+
+    spec_path = out_dir / "site-spec.json"
+    if not spec_path.exists():
+        record_build_failure("site-spec", f"no site-spec.json written to {out_dir}")
+        raise SystemExit(EXIT_FAILED)
+
+    site_spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    _pages = site_spec.get("pages") or []
+    if not _pages:
+        # A bundle that yields no pages means the routes matched nothing or the
+        # HTML was unusable. Continuing would build a site from no source.
+        record_build_failure(
+            "site-spec",
+            f"capture bundle {captures_dir} yielded 0 pages"
+            + (f" for routes {routes}" if routes else ""),
+        )
+        raise SystemExit(EXIT_FAILED)
+    print(f"  ✓ {len(_pages)} page(s) harvested from captures: "
+          f"{', '.join(p.get('page_id', '?') for p in _pages)}")
+    return site_spec
+
+
 def stage_url_extract(
     url: str,
     project_name: str,
@@ -8843,8 +8942,13 @@ def main():
     identification = None    # Only populated in URL clone mode (v0.9.0)
     site_spec = None         # Only populated when build-site-spec.js succeeds (--from-url)
 
+    # Which source this build reads from. Captures outrank a URL: a bundle is a
+    # crawl that already happened, and crawling again to satisfy a flag
+    # signature is the second crawl "one crawl per build" forbids.
+    _source_mode, _captures_dir, _routes = resolve_source_mode(args)
+
     # ── URL Clone Mode ──────────────────────────────────────────────
-    if args.from_url:
+    if _source_mode == "url":
         print(f"\n{'═' * 60}")
         print(f"  Website Builder — URL Clone Mode")
         print(f"  Project: {args.project}")
@@ -8882,8 +8986,22 @@ def main():
             print(f"  Site spec: {len(site_spec.get('sections', []))} sections")
         print(f"{'═' * 60}")
 
-    # ── Standard Mode ───────────────────────────────────────────────
+    # ── Standard Mode (and Captures Mode, which shares its preset/brief rules) ──
     else:
+        if _source_mode == "captures":
+            print(f"\n{'═' * 60}")
+            print(f"  Website Builder — Captures Mode")
+            print(f"  Project: {args.project}")
+            print(f"  Bundle:  {_captures_dir}")
+            print(f"  Time:    {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+            print(f"{'═' * 60}")
+            site_spec = stage_captures_extract(
+                args.project, _captures_dir,
+                routes=_routes,
+                max_pages=getattr(args, "max_pages", None),
+            )
+            save_checkpoint(output_dir, "extract", args.project)
+
         # Brief: --brief flag > compiled-dir/brief.md > briefs/{project}.md
         compiled_brief_path = None
         if getattr(args, "brief", None):
