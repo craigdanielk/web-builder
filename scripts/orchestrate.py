@@ -5993,39 +5993,101 @@ class VercelAdapter(DeployAdapter):
         return "#"
 
 
-def resolve_target_platform(tenant_context: dict | None) -> str:
-    """Resolve the deploy target platform from tenant configuration.
+#: Where a built site is deployed.
+TARGET_PLATFORMS = ("shopify", "vercel")
 
-    BRIEF #33318: Reads deploy target from tenant config rather than
-    defaulting to 'shopify'. When tenant_context is available, queries
-    the tenants table for deploy_target; otherwise falls back to 'shopify'.
+#: What the tenant's existing site runs on. `unknown` is a DECLARED value — an
+#: operator saying "we looked and could not tell" — which is a different state
+#: from the field being absent, and the two must not collapse.
+SOURCE_PLATFORMS = (
+    "shopify", "woocommerce", "magento", "wordpress", "ghost", "custom", "unknown",
+)
 
-    Args:
-        tenant_context: Dict with tenant_id and other tenant context data
 
-    Returns:
-        str: The resolved target platform ('shopify' or 'vercel')
+class PlatformNotDeclared(Exception):
+    """A platform was needed and the tenant record does not declare it.
+
+    Raised instead of returning a default. The previous implementation returned
+    "shopify" for every input — including None, and including a tenant whose own
+    phase 0 record says it is not an e-commerce merchant — so a real resolution
+    and four distinct failures were indistinguishable.
+    """
+
+
+def _declared_platform(tenant_context, field, allowed, what):
+    """Read a COLLECTED platform declaration from phase 0, or refuse.
+
+    Never inferred. `tech_stack` prose, connector booleans and domain patterns
+    are all evidence an operator may use when *collecting* this field, but the
+    build reads only the declaration itself. Fuzzy-matching them here would be
+    a guess wearing the costume of a decision — the same failure the spec
+    forbids for benchmark selection.
     """
     if not tenant_context:
-        return "shopify"
+        raise PlatformNotDeclared(
+            f"no tenant context, so no {what} declaration to read — "
+            f"pass --tenant <slug>, or state it explicitly"
+        )
 
-    tenant_id = tenant_context.get("tenant_id")
-    if not tenant_id:
-        return "shopify"
+    slug = tenant_context.get("slug") or tenant_context.get("coordinate") or "<unknown tenant>"
+    values = tenant_context.get("phase0_field_values") or {}
+    raw = values.get(field)
 
-    # Query tenants table for deploy_target
-    try:
-        if TENANT_CONTEXT_AVAILABLE and load_tenant_context:
-            from lib.supabase_client import _get
-            rows = _get("tenants", f"id=eq.{tenant_id}&select=deploy_target")
-            if rows and isinstance(rows, list) and rows:
-                deploy_target = rows[0].get("deploy_target")
-                if deploy_target in ("shopify", "vercel"):
-                    return deploy_target
-    except Exception:
-        pass
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raise PlatformNotDeclared(
+            f"tenant '{slug}' does not declare {field}. "
+            f"Collect it at phase 0 as one of: {', '.join(allowed)}. "
+            f"It is not inferred from tech_stack or connector flags."
+        )
 
-    return "shopify"
+    value = str(raw).strip().lower()
+    if value not in allowed:
+        raise PlatformNotDeclared(
+            f"tenant '{slug}' declares {field}={value!r}, which is not a "
+            f"supported {what}. Supported: {', '.join(allowed)}."
+        )
+    return value
+
+
+def resolve_target_platform(tenant_context: dict | None) -> str:
+    """The declared deploy target, or refuse.
+
+    Reads `phase0_field_values.target_platform`. The former implementation
+    queried `tenants.deploy_target`, a column that does not exist: the query
+    raised HTTPError 400, a bare `except Exception: pass` swallowed it, and the
+    function returned "shopify" — for every input that has ever been passed.
+    """
+    return _declared_platform(tenant_context, "target_platform", TARGET_PLATFORMS, "deploy target")
+
+
+def resolve_source_platform(tenant_context: dict | None) -> str:
+    """The declared platform the tenant's existing site runs on, or refuse."""
+    return _declared_platform(tenant_context, "source_platform", SOURCE_PLATFORMS, "source platform")
+
+
+def platform_modules(target_platform: str, source_platform: str = "unknown") -> dict:
+    """Which modules, hosts and packages this platform pair loads.
+
+    One place that turns a declaration into what the build actually pulls in, so
+    "which platform is this?" and "what does that platform need?" cannot drift
+    apart. The adapter stays the authority on its own behaviour; this reads it.
+    """
+    adapter = _resolve_adapter(target_platform)
+
+    image_hosts = []
+    if adapter.should_inject_commerce:
+        image_hosts = ["cdn.shopify.com", "**.myshopify.com"]
+
+    return {
+        "target_platform": adapter.name,
+        "source_platform": source_platform,
+        "adapter": adapter,
+        "inject_commerce": bool(adapter.should_inject_commerce),
+        "write_env": bool(adapter.should_write_env),
+        "generate_l7_pages": bool(adapter.should_generate_l7_pages()),
+        "image_hosts": image_hosts,
+        "npm_packages": dict(adapter.get_package_extra_deps()),
+    }
 
 
 def _resolve_adapter(target_platform: str) -> DeployAdapter:
@@ -8880,15 +8942,38 @@ def main():
     # Resolved tenant UUID threaded into build_log (None = column omitted).
     tenant_id = tenant_context.get("tenant_id") if tenant_context else None
 
-    # ── Resolve target platform from tenant config (BRIEF #33318) ──
-    # If --target-platform is not explicitly set, resolve from tenant config
+    # ── Resolve platforms from the tenant's phase 0 declaration ────
+    # --target-platform stays an explicit override. Absent it, the declaration
+    # decides — and an undeclared target REFUSES rather than silently building
+    # for Shopify, which is what happened to every tenant before today.
+    _source_platform = "unknown"
+    if tenant_context:
+        try:
+            _source_platform = resolve_source_platform(tenant_context)
+        except PlatformNotDeclared as exc:
+            # A source platform is not yet load-bearing for the build, so this
+            # is stated and carried as `unknown` rather than fatal. It is never
+            # guessed from prose.
+            print(f"  ⚠ Source platform not declared: {exc}")
+
     if getattr(args, "target_platform", None) is None:
-        resolved_platform = resolve_target_platform(tenant_context)
-        args.target_platform = resolved_platform
-        if tenant_context:
-            print(f"  🎯 Target platform resolved from tenant config: {resolved_platform}")
-        else:
-            print(f"  🎯 Target platform (no tenant config): {resolved_platform}")
+        try:
+            args.target_platform = resolve_target_platform(tenant_context)
+            print(f"  🎯 Target platform, declared at phase 0: {args.target_platform}")
+        except PlatformNotDeclared as exc:
+            print(f"\n❌ Cannot resolve a deploy target: {exc}")
+            print("   Pass --target-platform explicitly to override for this run.")
+            record_build_failure("resolve", f"target platform undeclared: {exc}")
+            sys.exit(EXIT_FAILED)
+    else:
+        print(f"  🎯 Target platform, overridden by flag: {args.target_platform}")
+
+    _modules = platform_modules(args.target_platform, _source_platform)
+    print(f"  📦 Modules for {_modules['target_platform']} ← source {_modules['source_platform']}: "
+          f"commerce={_modules['inject_commerce']}, env={_modules['write_env']}, "
+          f"l7_pages={_modules['generate_l7_pages']}, "
+          f"image_hosts={len(_modules['image_hosts'])}, "
+          f"extra_npm={len(_modules['npm_packages'])}")
 
     # ── Output-root injection: re-root the base output directory ──
     # Default (flag absent) is a no-op — OUTPUT_DIR stays <web-builder>/output.
