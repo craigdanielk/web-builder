@@ -142,6 +142,83 @@ async function dismissCookieModals(page) {
   console.log('[extract] No cookie modal detected');
 }
 
+/**
+ * Clear an anti-flicker visibility gate before anything is measured.
+ *
+ * Sites commonly hide the whole document until a personalisation script
+ * resolves, then reveal it — Webflow/GeoTargetly ships exactly this pattern:
+ *
+ *     <style id="geo-loading">.HIDE_CLASS body{visibility:hidden!important}</style>
+ *
+ * If that script never reveals — bvnk.com does not, for every region this
+ * crawler resolves to — the page stays `visibility: hidden` indefinitely.
+ * `visibility` is an inherited property, so one rule on `body` hides every
+ * descendant, and a visibility-filtered DOM walk returns **zero** elements
+ * while text, images and animation data still extract normally. That
+ * combination is what makes the failure so quiet: the extraction looks like a
+ * success and every downstream consumer receives an empty design system.
+ *
+ * The override is applied only when a gate is actually detected, and is always
+ * reported back to the caller, because it means the capture reflects what the
+ * page *would* show rather than what this crawler was served.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<Object>} Adjustment record; `detected: false` when no gate.
+ */
+async function clearVisibilityGate(page) {
+  const measure = () =>
+    page.evaluate(() => {
+      let visible = 0;
+      let hidden = 0;
+      for (const el of document.body ? document.body.querySelectorAll('*') : []) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) continue;
+        if (getComputedStyle(el).visibility === 'hidden') hidden++;
+        else visible++;
+      }
+      return {
+        visible,
+        hidden,
+        bodyVisibility: document.body
+          ? getComputedStyle(document.body).visibility
+          : 'no-body',
+      };
+    });
+
+  const before = await measure();
+  const laidOut = before.visible + before.hidden;
+  // A gate hides essentially everything. A page legitimately hiding a few
+  // elements (dropdown panels, off-screen menus) must not trip this.
+  const gated =
+    laidOut > 0 && (before.bodyVisibility === 'hidden' || before.visible === 0);
+
+  if (!gated) {
+    console.log('[extract] No visibility gate detected');
+    return { detected: false, ...before };
+  }
+
+  await page.addStyleTag({
+    content: 'body, body * { visibility: visible !important; }',
+  });
+  await page.waitForTimeout(500);
+  const after = await measure();
+
+  console.log(
+    `[extract] Visibility gate cleared: ${before.visible} -> ${after.visible} visible elements ` +
+      `(body was '${before.bodyVisibility}')`
+  );
+
+  return {
+    detected: true,
+    method: 'visibility-override-stylesheet',
+    before,
+    after,
+    note:
+      'Document was hidden by an anti-flicker gate that never revealed. ' +
+      'Styles below are the page as authored, not as served to this crawler.',
+  };
+}
+
 // ── Pre-extraction scroll to trigger lazy content ───────────────
 async function triggerLazyContent(page) {
   const viewportHeight = 900;
@@ -228,6 +305,11 @@ async function extractReference(url, outputDir) {
 
     // ── Cookie modal dismissal ──────────────────────────────────────
     await dismissCookieModals(page);
+
+    // ── Clear anti-flicker visibility gate ──────────────────────────
+    // Must precede every measurement and screenshot below: a gated document
+    // yields a blank capture and an empty DOM walk.
+    const captureAdjustments = await clearVisibilityGate(page);
 
     // ── Trigger lazy-loaded content ─────────────────────────────────
     await triggerLazyContent(page);
@@ -962,6 +1044,7 @@ async function extractReference(url, outputDir) {
       timestamp: new Date().toISOString(),
       viewport: VIEWPORT,
       pageHeight,
+      captureAdjustments,
       sections,
       renderedDOM,
       textContent,

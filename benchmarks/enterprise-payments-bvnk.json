@@ -1,0 +1,108 @@
+{
+  "_meta": {
+    "market": "enterprise-stablecoin-payments",
+    "captured_from": [
+      "https://www.bvnk.com/",
+      "https://www.bvnk.com/payments",
+      "https://www.bvnk.com/embedded-wallets",
+      "https://www.bvnk.com/digital-assets",
+      "https://www.bvnk.com/about-us"
+    ],
+    "captured_at": "2026-08-14",
+    "method": "computed_style",
+    "patterns_only": true,
+    "note": "PATTERNS ONLY. No markup, copy, asset, SVG or shader is lifted from the reference. Numbers below are measured frequencies over rendered computed styles.",
+    "capture_caveat": "bvnk.com paints nothing to this crawler: a Webflow/GeoTargetly anti-flicker gate injects '.<HIDE_CLASS> body{visibility:hidden!important}' and its reveal never fires (HIDE_CLASS stringifies to 'undefined'; the live markup carries class=\"w-mod-js undefined w-mod-ix\"). Every measurement here was taken after clearing that gate — see clearVisibilityGate() in scripts/quality/lib/extract-reference.js. These are the styles as authored, not as served.",
+    "page_selection_rationale": {
+      "home": "HERO, NAV, FOOTER, CTA, LOGO-BAR, display type scale",
+      "payments": "FEATURES, PRODUCT-SHOWCASE, card system",
+      "embedded-wallets": "HOW-IT-WORKS, developer-facing density",
+      "digital-assets": "FEATURES, data-dense surfaces",
+      "about-us": "ABOUT, TEAM, section rhythm at its most generous"
+    },
+    "elements_measured": 3888,
+    "supersedes": "consumer-crypto-robinhood.json — ratified 2026-08-14 as the consumer-crypto benchmark, superseded the same day when the target site was changed to bvnk.com. That benchmark is dark (bg_primary #000000); this one is light. They cannot both be authoritative, and a build that mixes them produces the invisible-accent class of failure.",
+    "contributions": {
+      "type_system": "https://www.bvnk.com",
+      "card_system": "https://www.bvnk.com",
+      "shadow_system": "https://www.bvnk.com",
+      "rhythm": "https://www.bvnk.com",
+      "palette_roles": "https://www.bvnk.com (structural bg/surface/border/text) + capecrypto (accent)"
+    }
+  },
+  "palette_roles": {
+    "bg_primary": "#ffffff",
+    "bg_secondary": "#f1f7ff",
+    "surface": "#f0f3f5",
+    "text_primary": "#242d35",
+    "text_muted": "#465869",
+    "accent": "#004e89",
+    "on_accent": "#ffffff",
+    "border": "#dee3e8",
+    "_source": {
+      "bg_primary": "bvnk page ground, 17 elements measured white; the hero is a white-to-pale-blue gradient over this ground",
+      "bg_secondary": "bvnk banding background, 21 elements, 1.06:1 step from bg_primary — the pale blue section band",
+      "surface": "bvnk neutral card surface, 22 elements, 12.55:1 with text_primary",
+      "text_primary": "bvnk body and heading colour, 516 occurrences, 13.98:1 on bg_primary",
+      "text_muted": "bvnk secondary text colour, 163 occurrences, 7.34:1 on bg_primary",
+      "border": "bvnk measured borderColor on borderWidth>0, 21 elements, 1.13:1 from bg_primary — a separator, not an outline",
+      "_border_emphasis_excluded": "#242d35 measured on 48 elements is the dark pill/button outline, an emphasis stroke rather than a separator; using it as `border` would put button-weight strokes on every card edge",
+      "_reference_accent_not_adopted": "bvnk's own accent is #0b57f4 (71 text occurrences, 15 backgrounds). It is NOT adopted: accent carries tenant identity, and Cape Crypto is FSP No. 53746 trading under its own mark, not a BVNK sub-brand",
+      "accent": "capecrypto.com tenant identity rgb(0,78,137) — NOT from reference",
+      "on_accent": "chosen for 8.57:1 on tenant accent"
+    }
+  },
+  "type_scale": {
+    "ratio": 1.284,
+    "base_px": 16,
+    "heading_weight": 500,
+    "body_weight": 400
+  },
+  "type_system": {
+    "weights_used": [300, 400, 500, 700],
+    "scale_px": [12, 13, 14, 16, 18, 20, 24, 32, 48, 64, 96],
+    "heading_sizes_px": [96, 64, 48, 24],
+    "_source": {
+      "ratio": "geometric ratio across the measured 13px-96px range over 8 steps",
+      "heading_weight": "every measured H1/H2 renders at 500 — the reference never uses bold for display type; 700 appears on 24 inline elements only",
+      "display_sizes": "H2 at 64px (13 occurrences) and 96px (7); a single H1 at 165px on the home hero is an outlier and is not carried into the scale"
+    }
+  },
+  "rhythm": {
+    "section_py_px": 120,
+    "block_gap_px": 24,
+    "card_pad_px": 40,
+    "grid_px": 4,
+    "_source": {
+      "section_py_px": "120px/0px measured on 13 full-width blocks; 180px/0px (25) is hero-specific top padding and 304px (8) is the home hero alone — carrying either as the section default would double the page height of every content section",
+      "block_gap_px": "24px, the dominant measured flex/grid gap, 200 elements",
+      "card_pad_px": "40px measured on 18 rounded backgrounded surfaces",
+      "grid_px": "every measured gap (4/8/16/20/24/28/40/48/80) is divisible by 4"
+    }
+  },
+  "card_system": {
+    "radius_px": [16, 32, 24],
+    "_source": "measured borderRadius on backgrounded surfaces: 16px (56), 32px (16), 24px (9). 100px (79) and 100% (22) are pills and avatars, carried in cta_buttons rather than here"
+  },
+  "cta_buttons": {
+    "radius_px": [100],
+    "_source": "100px measured on 79 elements — the reference is unambiguously a full-pill button system"
+  },
+  "shadow_system": {
+    "max_layers": 1,
+    "observation": "5 shadowed elements measured, all a single soft layer: rgba(22,22,78,0.1) 0px 1px 8px 0px. Elevation is carried by surface tint and radius, not by shadow"
+  },
+  "palette": {
+    "max_unique": 20
+  },
+  "font_system": {
+    "families": ["Circular", "CircularXX"],
+    "_source": "Circular (556 text elements) and CircularXX (447). Both are proprietary Lineto faces and cannot be loaded. font_match.py resolves Circular to Poppins on genre geometric-sans; CircularXX returns UNMATCHED because the name signals no genre, so its role must be assigned deliberately rather than guessed. Note the reference's own declared fallback chain is 'Circular, Inter, sans-serif' — Inter is a neo-grotesque and a poorer geometric match than Poppins, so the matcher's choice is kept and this disagreement is recorded rather than silently resolved."
+  },
+  "density": "spacious",
+  "motion": {
+    "intensity": "expressive",
+    "duration_ms": 600,
+    "_source": "animation detector scored 39.2 'expressive' at 100% confidence; GSAP with ScrollTrigger, SplitText, Draggable, Inertia, Observer, CustomEase and Lottie all present"
+  }
+}
