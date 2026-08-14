@@ -29,6 +29,12 @@ import { motion, AnimatePresence } from "framer-motion";
  *   {faqs[].answer}     → "Deposit Rands directly from your bank…"
  */
 
+// The machine-read declaration. `slot_contract.declared_slots()` reads ONLY a
+// `// Tokens:` line or a `Slot placeholders` block — the prose "Slots:" list
+// above is neither, so without this line the contract falls back to a
+// permissive brace sweep and substitutes this file's own JS identifiers away.
+// Tokens: {section_title} {section_subtitle} {faqs[].question} {faqs[].answer}
+
 interface Faq {
   question: string;
   answer: string;

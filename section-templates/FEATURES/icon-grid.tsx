@@ -39,6 +39,12 @@ import { motion } from "framer-motion";
  *   {features[].description} → "We offer the most competitive trading fees…"
  */
 
+// The machine-read declaration. `slot_contract.declared_slots()` reads ONLY a
+// `// Tokens:` line or a `Slot placeholders` block — the prose "Slots:" list
+// above is neither, so without this line the contract falls back to a
+// permissive brace sweep and substitutes this file's own JS identifiers away.
+// Tokens: {section_title} {section_subtitle} {features[].title} {features[].description}
+
 interface Feature {
   title: string;
   description: string;

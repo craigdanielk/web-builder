@@ -46,6 +46,12 @@ import { motion } from "framer-motion";
  *   {secondary_cta_url}  → optional
  */
 
+// The machine-read declaration. `slot_contract.declared_slots()` reads ONLY a
+// line beginning `// Tokens:` (or a bracketed placeholder block) — the prose
+// list above is neither, so without this line the contract falls back to a
+// permissive brace sweep and substitutes this file's own JS identifiers away.
+// Tokens: {eyebrow} {headline} {subheadline} {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url}
+
 interface HeroCenteredProps {
   eyebrow?: string;
   headline?: string;
