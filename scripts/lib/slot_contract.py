@@ -72,7 +72,23 @@ _BODY_FIELDS = frozenset({
     "description", "answer", "body", "text", "subtitle", "subheadline",
     "quote", "bio", "excerpt", "detail", "caption", "desc", "content",
     "sublabel", "benefit", "body_text", "editorial_text", "company_description",
-    "section_description", "empty_message", "disclaimer", "pairing_reason",
+    "section_description", "empty_message", "pairing_reason",
+})
+
+#: Regulatory disclosure. Its own type, and NOT `text-long`, because the two
+#: differ in where a legitimate value may come from. A `text-long` slot draws
+#: from the harvest's `body_text[]`, which for a section with a spare body
+#: string would put arbitrary page prose — "Proudly South African, based in Cape
+#: Town" — into a slot the template renders as the site's legal disclosure. For
+#: an authorised FSP that is not a copy defect, it is a false regulatory
+#: statement. The only admissible source is the tenant's own declared
+#: `required_disclaimers` (see `lib/tenant_context.compliance_declaration`),
+#: carried verbatim; the harvest carries no such list, so a slot of this type
+#: resolves empty on the harvest path and is recorded as unfilled. Empty is the
+#: correct outcome for a tenant that declares nothing.
+_DISCLAIMER_FIELDS = frozenset({
+    "disclaimer", "disclaimers", "legal_disclaimer", "legal_text", "disclosure",
+    "risk_warning", "risk_disclosure", "compliance_note", "regulatory_notice",
 })
 
 #: Fields whose value is structured data, not page prose: a price, a date, an
@@ -113,16 +129,23 @@ BARE_FIELD = "__bare__"
 def infer_type(field: str) -> str:
     """The kind of value a slot wants.
 
-    Returns one of: alt / image / url / text-long / text-short / data /
-    unclassified. The last two are deliberately *unfillable* from a harvest
-    that carries only headings, body text, CTAs and images — a field this
-    function cannot identify gets left empty and recorded rather than filled
-    with whatever list came to hand. The alternative, a catch-all that falls
-    back to the heading list, is how `post[].date` and `feature[].icon` would
-    come to hold section headings.
+    Returns one of: alt / image / url / cta / disclaimer / text-long /
+    text-short / data / unclassified. `data` and `unclassified` are deliberately
+    *unfillable* from a harvest that carries only headings, body text, CTAs and
+    images — a field this function cannot identify gets left empty and recorded
+    rather than filled with whatever list came to hand. The alternative, a
+    catch-all that falls back to the heading list, is how `post[].date` and
+    `feature[].icon` would come to hold section headings. `disclaimer` is
+    unfillable from the harvest for a stronger reason: its only admissible
+    source is the tenant's declared regulatory text.
+
+    Checked before the body-text test, because several of these field names
+    would otherwise read as ordinary prose and draw from `body_text[]`.
     """
     if field == BARE_FIELD:
         return "text-short"  # `{filter_1}` renders as a short label
+    if field in _DISCLAIMER_FIELDS or field.endswith("_disclaimer"):
+        return "disclaimer"
     if field in _ALT_FIELDS or field.endswith("_alt"):
         return "alt"
     if field in _IMAGE_FIELDS or field.endswith("_image_url") or field.endswith("_image"):

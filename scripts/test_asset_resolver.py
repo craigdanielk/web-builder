@@ -315,19 +315,77 @@ export default function LogoBarScrollingMarquee() {
     test("resolved logo srcs are rewritten off capecrypto.com entirely",
          "capecrypto.com" not in logo_out.tsx, logo_out.tsx)
 
-    # 2b. The real ABOUT section — dave.webp is referenced in the build but
-    # is genuinely absent from extraction-data.json's 12 images. It must
-    # come back unresolved, not silently pass through or get placeheld.
+    # 2b. The real ABOUT section — dave.webp is referenced in the build and is
+    # genuinely absent from extraction-data.json's 12 images, because that file
+    # is a crawl of the HOMEPAGE ONLY and dave.webp lives on /about. It is
+    # nonetheless real, live, same-origin source imagery (verified: 13206 bytes
+    # off capecrypto.com), so it must be downloaded and localised.
+    #
+    # This assertion used to demand the opposite — that dave.webp come back
+    # unresolved with the remote URL left in the tsx. That is what shipped: the
+    # deployed /about hotlinked capecrypto.com for the one image on the page.
+    # "Not in the single page we crawled" is not "not from this site".
     ABOUT_TSX = '<Image src="https://capecrypto.com/content/images/2026/06/dave.webp" alt="Dave" fill />'
     about_art = SectionArtifact(tsx=ABOUT_TSX, archetype="ABOUT", variant="editorial-split",
                                 section_uid="about1", intensity="subtle", origin="supabase_template",
                                 provenance=[], assets=[], animation=None)
     about_out = resolve_assets(about_art, real, TMP / "public-real", download_fn=fake_download)
-    test("dave.webp (not present in extraction-data.json) is reported unresolved",
-         any(a["origin"] == "unresolved" and "dave.webp" in a["src"] for a in about_out.assets),
+    test("dave.webp resolves as same-origin source imagery the homepage crawl never saw",
+         any(a["origin"] == "extracted" and "dave" in a["src"] for a in about_out.assets),
          str(about_out.assets))
-    test("unresolved dave.webp src is left untouched in tsx (still the remote URL)",
-         "https://capecrypto.com/content/images/2026/06/dave.webp" in about_out.tsx, about_out.tsx)
+    test("resolved dave.webp is rewritten off capecrypto.com (no hotlink ships)",
+         "capecrypto.com" not in about_out.tsx, about_out.tsx)
+
+    # 2b-ii. The widening is to the SOURCE SITE, not to the open internet. An
+    # image URL on a host the crawl never vouched for is still refused.
+    FOREIGN_TSX = '<Image src="https://cdn.evil-example.com/tracker.png" alt="x" fill />'
+    foreign_art = SectionArtifact(tsx=FOREIGN_TSX, archetype="ABOUT", variant="editorial-split",
+                                  section_uid="foreign1", intensity="subtle", origin="supabase_template",
+                                  provenance=[], assets=[], animation=None)
+    foreign_out = resolve_assets(foreign_art, real, TMP / "public-foreign", download_fn=fake_download)
+    test("an image on a host the crawl never served is still reported unresolved",
+         all(a["origin"] == "unresolved" for a in foreign_out.assets) and foreign_out.assets,
+         str(foreign_out.assets))
+
+    # 2b-iii. A template's own documentation is prose, not markup. ABOUT
+    # editorial-split's docblock explains that `<Image src="">` throws in
+    # next/image; scanning the raw file read that sentence as an empty image
+    # slot and filed a generation job against it. Every ABOUT section in the
+    # cape-crypto build carried one of these phantoms.
+    COMMENTED_TSX = (
+        '/**\n'
+        ' * The image is optional. `<Image src="">` THROWS in next/image, so an\n'
+        ' * unresolved src must never reach the DOM.\n'
+        ' * Docs also cite https://capecrypto.com/assets/images/partners/xago.png\n'
+        ' */\n'
+        '// see also src="/placeholder.svg"\n'
+        'export default function A() { return <p>It doesn\'t render an image.</p>; }\n'
+    )
+    commented_art = SectionArtifact(tsx=COMMENTED_TSX, archetype="ABOUT", variant="editorial-split",
+                                    section_uid="cmt1", intensity="subtle", origin="supabase_template",
+                                    provenance=[], assets=[], animation=None)
+    commented_out = resolve_assets(commented_art, real, TMP / "public-cmt", download_fn=fake_download)
+    test("src=\"\" inside a doc comment is not mistaken for an image slot",
+         commented_out.assets == [], str(commented_out.assets))
+    test("a section that is all prose files no phantom generation job",
+         gaps(commented_out) == [], str(gaps(commented_out)))
+    test("comments survive resolution (only the SCAN is masked, not the output)",
+         "THROWS in next/image" in commented_out.tsx, commented_out.tsx)
+
+    # An apostrophe in JSX prose must not derail the comment mask — a quote-
+    # tracking tokenizer would treat "doesn't" as an unterminated string and
+    # blank the rest of the file, silently hiding every real slot after it.
+    APOS_TSX = (
+        '// it doesn\'t matter\n'
+        '<div><p>It doesn\'t render.</p>'
+        '<img src="https://capecrypto.com/assets/images/partners/xago.png?v=abc" /></div>'
+    )
+    apos_art = SectionArtifact(tsx=APOS_TSX, archetype="ABOUT", variant="editorial-split",
+                               section_uid="apos1", intensity="subtle", origin="supabase_template",
+                               provenance=[], assets=[], animation=None)
+    apos_out = resolve_assets(apos_art, real, TMP / "public-apos", download_fn=fake_download)
+    test("an apostrophe in JSX prose does not blind the scanner to a later real image",
+         any(a["origin"] == "extracted" for a in apos_out.assets), str(apos_out.assets))
 
     # 2c. sectionIndex-scoped placeholder fill: a HERO placeholder should
     # only be filled from an extracted image whose sectionIndex matches

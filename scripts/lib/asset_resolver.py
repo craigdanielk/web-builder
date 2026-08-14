@@ -27,6 +27,17 @@ Two more real-world wrinkles this module accounts for:
    fill produced the section — the same physical asset shows up under two
    different full URLs. Matching must fall back to the URL with its query
    string stripped.
+3. extraction-data.json is a SINGLE-PAGE crawl (of the source site's
+   homepage), while a multipage build fills sections for every route from
+   the site spec. An `/about` section legitimately carries an image URL
+   from the source site's /about page that the homepage crawl never saw.
+   Requiring a lookup hit before downloading therefore rejects real,
+   live, same-origin source imagery — see `_known_hosts`.
+4. Template .tsx carries prose documentation, and that documentation
+   talks about `src` attributes and asset URLs. Scanning the raw file
+   makes a comment that mentions `<Image src="">` register as a real
+   unresolved image slot. Scanning must ignore comments — see
+   `_mask_comments`.
 """
 from __future__ import annotations
 
@@ -34,6 +45,7 @@ import hashlib
 import re
 import shutil
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -49,6 +61,35 @@ IMG_URL_RE = re.compile(
 )
 
 PLACEHOLDERS = {"/placeholder.svg", "/placeholder.jpg", "/placeholder.png", "#", ""}
+
+# Comment spans to blank out before scanning for image references.
+#
+# Block comments are matched non-greedily so consecutive JSDoc blocks stay
+# separate. Line comments require the `//` NOT to be preceded by a colon, so
+# the `//` in `https://…` inside a string literal is never mistaken for the
+# start of a comment. Deliberately regex-based rather than a full JS
+# tokenizer: these templates carry apostrophes in JSX prose ("doesn't"), and
+# a state machine that tracked quotes would treat one as an unterminated
+# string literal and swallow the rest of the file.
+_COMMENT_RE = re.compile(r"/\*.*?\*/|(?<!:)//[^\n]*", re.DOTALL)
+
+
+def _mask_comments(tsx: str) -> str:
+    """Return `tsx` with every comment blanked to spaces, same length.
+
+    Length is preserved so a match found in the masked text sits at the same
+    offset as in the original — and so multi-line block comments keep their
+    newlines, which the line-comment branch above depends on.
+
+    A template's own documentation discusses the markup it generates: ABOUT
+    editorial-split explains that `<Image src="">` throws in next/image. Read
+    literally, that comment is an empty src attribute, so every section built
+    from that template reported a phantom unresolved image slot — imagery
+    that no generator could ever fill because the "slot" is a sentence.
+    """
+    def blank(m):
+        return "".join("\n" if c == "\n" else " " for c in m.group(0))
+    return _COMMENT_RE.sub(blank, tsx)
 
 # Some origin servers (confirmed: capecrypto.com) return 403 Forbidden to
 # Python's default User-Agent ("Python-urllib/3.x") while serving the same
@@ -198,6 +239,34 @@ def _build_lookup(extraction_data: dict) -> dict:
     return lookup
 
 
+def _known_hosts(extraction_data: dict) -> set:
+    """Hosts the extraction crawl actually served assets from.
+
+    extraction-data.json is a crawl of ONE page (the source homepage), but a
+    multipage build fills sections for every route from the site spec, and
+    those fills carry image URLs the homepage crawl never recorded — the real
+    Cape Crypto /about sections reference `/content/images/…/dave.webp` and
+    `leon-portrait.webp`, both live and fetchable, neither in the crawl.
+    Gating the download on a lookup hit declared them unresolved and left the
+    remote URL in the shipped .tsx, so the deployed site hotlinked the source
+    origin for an image it was supposed to own.
+
+    A URL on a host the crawl already vouched for is source imagery whether or
+    not this particular crawl page happened to reference it. Anything on any
+    other host is still refused: this widens the resolver from one page of the
+    source site to the whole source site, not to the open internet.
+    """
+    hosts = set()
+    for entry in _entries(extraction_data):
+        url = entry.get("src") or entry.get("url")
+        if not url:
+            continue
+        host = urllib.parse.urlsplit(url).netloc.lower()
+        if host:
+            hosts.add(host)
+    return hosts
+
+
 def _local_rel_path(canonical_url: str) -> str:
     """Derive a collision-free, cache-stable local path for a source URL.
 
@@ -248,6 +317,7 @@ def resolve_assets(artifact, extraction_data: dict, public_dir: Path,
     image the slot is recorded unresolved, not silently placeheld.
     """
     lookup = _build_lookup(extraction_data)
+    known_hosts = _known_hosts(extraction_data)
     section_pool = _images_for_section(extraction_data, section_index)
     used_section_srcs = set()
     tsx = artifact.tsx
@@ -274,11 +344,19 @@ def resolve_assets(artifact, extraction_data: dict, public_dir: Path,
             return "/" + local_rel.lstrip("/"), size
         return None
 
+    # Both passes scan the comment-masked text, never the raw .tsx: a
+    # template's documentation talks about `src` attributes and asset URLs,
+    # and matching it invents image slots that no generator can fill. Only
+    # the SCAN uses the mask — every rewrite below still targets `tsx`, so
+    # the emitted file keeps its comments intact.
+    scan = _mask_comments(tsx)
+
     # Pass 1: remote image URLs already referenced in the tsx (attribute or
     # JS object literal), matched against extraction data by exact-or-
-    # query-stripped URL.
+    # query-stripped URL, or accepted as same-origin source imagery the
+    # single-page crawl simply didn't see.
     seen = set()
-    for m in IMG_URL_RE.finditer(tsx):
+    for m in IMG_URL_RE.finditer(scan):
         full_url = m.group("url") + (m.group("query") or "")
         if full_url in seen:
             continue
@@ -290,6 +368,11 @@ def resolve_assets(artifact, extraction_data: dict, public_dir: Path,
         if match:
             canonical_url = match.get("src") or match.get("url") or bare_url
             resolved = _resolve_and_download(full_url, canonical_url)
+        elif urllib.parse.urlsplit(bare_url).netloc.lower() in known_hosts:
+            # Same source site, different page than the one crawled. The
+            # query-stripped URL is the canonical name here — there is no
+            # extraction record to take one from.
+            resolved = _resolve_and_download(full_url, bare_url)
         if resolved:
             local_src, size = resolved
             tsx = tsx.replace(full_url, local_src)
@@ -299,7 +382,7 @@ def resolve_assets(artifact, extraction_data: dict, public_dir: Path,
 
     # Pass 2: bare src="" / placeholder slots. Try a section-scoped
     # extracted image first; otherwise declare the gap.
-    for _, val in SRC_ATTR_RE.findall(tsx):
+    for _, val in SRC_ATTR_RE.findall(scan):
         if val not in PLACEHOLDERS:
             continue  # either already local-and-real, or handled in pass 1
 
