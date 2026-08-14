@@ -5,30 +5,68 @@ import { motion, AnimatePresence } from "framer-motion";
 
 /**
  * CURRENCY-MAP | interactive
- * Parameterized section template — brand tokens injected at build time.
+ * Token-driven section template — tenant content filled at build time.
  *
- * An interactive world currency visualization with plotted currency nodes.
- * Each node represents a currency pair with exchange data, marker position,
- * and interactive detail on hover/click. All text is driven by slot_schema
- * content — no hard-coded copy.
+ * A plotted currency map: each node is a currency, positioned on a schematic
+ * world canvas, with hover tooltip and click-through detail. Ported off the
+ * brand-mustache scheme (31 references, zero of them resolvable by the token
+ * filler) onto CSS custom properties. Four deliberate departures from what
+ * shipped:
  *
- * Token placeholders (replaced by orchestrator):
- *   {{brand.bg_primary}}           -> e.g. "gray-50" / "stone-50"
- *   {{brand.bg_secondary}}         -> e.g. "white"
- *   {{brand.text_primary}}         -> e.g. "gray-900"
- *   {{brand.text_muted}}           -> e.g. "gray-500"
- *   {{brand.accent}}               -> e.g. "blue-600"
- *   {{brand.accent_hover}}         -> e.g. "blue-700"
- *   {{brand.heading_font}}         -> e.g. "DM Serif Display"
- *   {{brand.body_font}}            -> e.g. "DM Sans"
+ *   1. EVERY COLOUR IS A TOKEN. Not one Tailwind palette literal, not one hex.
+ *      The build compiles the market benchmark into custom properties
+ *      (--accent, --surface, --foreground, --muted, --border, --radius-card …)
+ *      and this file reads them. A class like `bg-` plus a mustache brand key
+ *      was never something Tailwind could compile, nor a token the filler could
+ *      substitute — it was a class name that reached production as literal text.
+ *
+ *   2. THE MAP SCALE IS DERIVED, NOT INVENTED. An interactive map wants a
+ *      colour ramp, and the obvious move — pick a saturated scale — bakes in a
+ *      dark ground. Every fill here is a `color-mix` of --accent, --surface and
+ *      --border, so the ramp is whatever the design system's accent is, at the
+ *      contrast the light ground needs. See RAMP below.
+ *
+ *   3. DIRECTION IS CARRIED BY THE GLYPH, NOT BY COLOUR. Rise/fall reads from
+ *      ▲ / ▼ / ◆ first. Colour reinforces it and is overridable via optional
+ *      --positive / --negative, but falls back to accent/muted — both of which
+ *      clear 4.5:1 on --background and on --surface. Nothing depends on a
+ *      viewer distinguishing green from red.
+ *
+ *   4. NO FABRICATED RATES. The shipped default node set carried twelve
+ *      invented exchange rates ("18.6415", "+0.31%") that would render on any
+ *      page whose harvest supplied no `nodes`. On an FSP-regulated site an
+ *      invented mid-rate is not placeholder copy, it is a false quote. `rate`,
+ *      `change` and `direction` are now optional; the fallback set carries only
+ *      ISO codes and map positions, which are facts, and the rate row renders
+ *      only where real data was supplied.
+ *
+ * Hierarchy comes from size and space. Weight comes from --heading-weight and
+ * never exceeds 500 — the benchmark reference uses no bold display type.
+ *
+ * Slots:
+ *   {headline}    → "Global Currency Exchange Rates"
+ *   {subheadline} → "Rates for major world currencies. Tap any node…"
+ *   {disclaimer}  → "Rates shown are indicative market mid-rates…"
+ *
+ * `nodes` is structured data (code, rate, position), not page prose — it is a
+ * prop sourced from `metrics.nodes`, never a `{token}`, because a harvest of
+ * headings and body text cannot supply it.
  */
+
+// The machine-read declaration. `slot_contract.declared_slots()` reads ONLY a
+// `// Tokens:` line or a `Slot placeholders` block — the prose "Slots:" list
+// above is neither, so without this line the contract falls back to a
+// permissive brace sweep and substitutes this file's own JS identifiers away.
+// Tokens: {headline} {subheadline} {disclaimer}
 
 interface CurrencyNode {
   label: string;
   code: string;
-  rate: string;
-  change: string;
-  direction: "up" | "down" | "flat";
+  /** Omitted unless a real rate was supplied; never invented. */
+  rate?: string;
+  change?: string;
+  direction?: "up" | "down" | "flat";
+  /** Map position as a 0–100 percentage of the canvas. */
   x: number;
   y: number;
 }
@@ -40,28 +78,66 @@ interface CurrencyMapInteractiveProps {
   disclaimer?: string;
 }
 
-const defaultNodes: CurrencyNode[] = [
-  { label: "US Dollar", code: "USD", rate: "1.0000", change: "0.00%", direction: "flat", x: 22, y: 48 },
-  { label: "Euro", code: "EUR", rate: "0.9213", change: "+0.14%", direction: "up", x: 52, y: 36 },
-  { label: "British Pound", code: "GBP", rate: "0.7885", change: "-0.08%", direction: "down", x: 50, y: 32 },
-  { label: "Japanese Yen", code: "JPY", rate: "149.72", change: "+0.22%", direction: "up", x: 78, y: 28 },
-  { label: "Swiss Franc", code: "CHF", rate: "0.8761", change: "-0.03%", direction: "down", x: 55, y: 40 },
-  { label: "Canadian Dollar", code: "CAD", rate: "1.3642", change: "+0.05%", direction: "up", x: 18, y: 55 },
-  { label: "Australian Dollar", code: "AUD", rate: "1.5427", change: "-0.11%", direction: "down", x: 76, y: 60 },
-  { label: "Chinese Yuan", code: "CNY", rate: "7.2431", change: "+0.01%", direction: "flat", x: 72, y: 34 },
-  { label: "Indian Rupee", code: "INR", rate: "83.2810", change: "+0.07%", direction: "up", x: 62, y: 50 },
-  { label: "Brazilian Real", code: "BRL", rate: "4.9735", change: "-0.18%", direction: "down", x: 28, y: 68 },
-  { label: "South African Rand", code: "ZAR", rate: "18.6415", change: "+0.31%", direction: "up", x: 54, y: 62 },
-  { label: "Singapore Dollar", code: "SGD", rate: "1.3284", change: "+0.03%", direction: "up", x: 70, y: 26 },
+/**
+ * Fallback plot. ISO codes and approximate map positions only — no rate, no
+ * change, no direction. See note 4: the section renders a geography, and the
+ * numbers appear only when the fill supplies them.
+ */
+const fallbackNodes: CurrencyNode[] = [
+  { label: "US Dollar", code: "USD", x: 22, y: 48 },
+  { label: "Euro", code: "EUR", x: 52, y: 36 },
+  { label: "British Pound", code: "GBP", x: 50, y: 32 },
+  { label: "Japanese Yen", code: "JPY", x: 78, y: 28 },
+  { label: "Swiss Franc", code: "CHF", x: 55, y: 40 },
+  { label: "Canadian Dollar", code: "CAD", x: 18, y: 55 },
+  { label: "Australian Dollar", code: "AUD", x: 76, y: 60 },
+  { label: "Chinese Yuan", code: "CNY", x: 72, y: 34 },
+  { label: "Indian Rupee", code: "INR", x: 62, y: 50 },
+  { label: "Brazilian Real", code: "BRL", x: 28, y: 68 },
+  { label: "South African Rand", code: "ZAR", x: 54, y: 62 },
+  { label: "Singapore Dollar", code: "SGD", x: 70, y: 26 },
 ];
 
-const directionColors: Record<string, string> = {
-  up: "text-green-600",
-  down: "text-red-500",
-  flat: "text-{{brand.text_muted}}",
+const FOREGROUND = "var(--foreground)";
+const MUTED = "var(--muted, color-mix(in srgb, var(--foreground) 62%, var(--background)))";
+const HAIRLINE = "var(--border, color-mix(in srgb, var(--foreground) 12%, var(--background)))";
+const ACCENT = "var(--accent, var(--foreground))";
+const ON_ACCENT = "var(--on-accent, var(--background))";
+const CANVAS = "var(--surface, var(--background))";
+
+/**
+ * RAMP — the map's colour scale, derived rather than invented.
+ *
+ * A stock choropleth ramp assumes a dark ground; mixed against --surface these
+ * stay legible on the benchmark's white page and pale-grey surface. Idle nodes
+ * sit at --background with a hairline ring and --foreground text (≈13:1);
+ * active nodes invert to --accent with --on-accent text (≈9:1 at the
+ * benchmark's deep-blue accent). The connecting web is accent-at-low-alpha —
+ * decorative, aria-hidden, and not load-bearing for contrast.
+ */
+const RAMP = {
+  webIdle: "color-mix(in srgb, var(--accent) 22%, transparent)",
+  webActive: "color-mix(in srgb, var(--accent) 55%, transparent)",
+  graticule: "color-mix(in srgb, var(--muted, var(--foreground)) 20%, transparent)",
+  nodeIdle: "var(--background)",
+  nodeIdleRing: HAIRLINE,
+  nodeHoverRing: "color-mix(in srgb, var(--accent) 45%, transparent)",
+  nodeActive: ACCENT,
+  nodeActiveRing: "color-mix(in srgb, var(--accent) 70%, var(--foreground))",
 };
 
-const directionIcons: Record<string, string> = {
+/**
+ * Direction tone. --positive / --negative are honoured when the design system
+ * defines them; the fallbacks are tokens already proven against both grounds,
+ * so an undefined pair degrades to legible rather than to a guessed hex.
+ */
+const directionTones: Record<string, string> = {
+  up: `var(--positive, ${ACCENT})`,
+  down: `var(--negative, ${MUTED})`,
+  flat: MUTED,
+};
+
+const directionGlyphs: Record<string, string> = {
   up: "▲",
   down: "▼",
   flat: "◆",
@@ -73,202 +149,266 @@ export default function SectionCurrencyMapInteractive({
   nodes = [],
   disclaimer = "{disclaimer}",
 }: CurrencyMapInteractiveProps) {
-  const [activeNode, setActiveNode] = useState<number | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<number | null>(null);
   const [selectedNode, setSelectedNode] = useState<number | null>(null);
-  const displayNodes = nodes.length > 0 ? nodes : defaultNodes;
+  const plottedNodes = nodes.length > 0 ? nodes : fallbackNodes;
+
+  // A heading over an empty canvas is worse than no section.
+  if (!plottedNodes.length) return null;
+
+  const originNode = plottedNodes[0];
+  const detailNode = selectedNode !== null ? plottedNodes[selectedNode] : null;
 
   return (
-    <section className="bg-{{brand.bg_primary}} py-16 md:py-24 lg:py-28">
-      <div className="container mx-auto px-4 max-w-6xl">
-        {/* Header */}
-        <div className="text-center mb-12 md:mb-16">
-          <motion.h2
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.7, ease: "easeOut" }}
-            className="text-3xl md:text-4xl lg:text-5xl font-bold text-{{brand.text_primary}} leading-tight tracking-tight"
-            style={{ fontFamily: "var(--font-heading, '{{brand.heading_font}}')" }}
+    <section
+      className="w-full"
+      style={{
+        background: "var(--background)",
+        color: FOREGROUND,
+        paddingTop: "var(--section-py, 96px)",
+        paddingBottom: "var(--section-py, 96px)",
+      }}
+    >
+      <div className="mx-auto w-full max-w-6xl px-6">
+        {(headline || subheadline) && (
+          <div
+            className="mx-auto max-w-3xl text-center"
+            style={{ marginBottom: "var(--block-gap, 48px)" }}
           >
-            {headline}
-          </motion.h2>
-          {subheadline && (
-            <motion.p
-              initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-60px" }}
-              transition={{ duration: 0.7, delay: 0.15, ease: "easeOut" }}
-              className="mt-4 text-lg md:text-xl text-{{brand.text_muted}} max-w-3xl mx-auto leading-relaxed"
-              style={{ fontFamily: "var(--font-body, '{{brand.body_font}}')" }}
-            >
-              {subheadline}
-            </motion.p>
-          )}
-        </div>
+            {headline && (
+              <motion.h2
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-60px" }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className="text-3xl md:text-[2.75rem] leading-[1.1] tracking-tight"
+                style={{
+                  fontFamily: "var(--font-heading, inherit)",
+                  fontWeight: "var(--heading-weight, 400)" as unknown as number,
+                }}
+              >
+                {headline}
+              </motion.h2>
+            )}
+            {subheadline && (
+              <motion.p
+                initial={{ opacity: 0, y: 14 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-60px" }}
+                transition={{ duration: 0.6, delay: 0.12, ease: "easeOut" }}
+                className="mt-5 text-lg leading-relaxed"
+                style={{ color: MUTED, fontFamily: "var(--font-body, inherit)" }}
+              >
+                {subheadline}
+              </motion.p>
+            )}
+          </div>
+        )}
 
-        {/* Map container */}
         <motion.div
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-          className="relative w-full aspect-[2/1] bg-{{brand.bg_secondary}} rounded-2xl border border-{{brand.text_muted}}/10 shadow-lg overflow-hidden"
+          transition={{ duration: 0.7, delay: 0.15 }}
+          className="relative w-full aspect-[2/1] overflow-hidden"
+          style={{
+            background: CANVAS,
+            border: `1px solid ${HAIRLINE}`,
+            borderRadius: "var(--radius-card, 16px)",
+          }}
         >
-          {/* Background map pattern - subtle grid overlay for world-map feel */}
-          <div className="absolute inset-0 opacity-[0.04] pointer-events-none"
+          {/* Graticule — a dot lattice standing in for landmass; decorative. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
             style={{
-              backgroundImage:
-                "radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)",
+              backgroundImage: `radial-gradient(circle at 1px 1px, ${RAMP.graticule} 1px, transparent 0)`,
               backgroundSize: "32px 32px",
             }}
           />
 
-          {/* Connecting lines between nodes */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
-            {displayNodes.map((node, i) => {
-              const pctToSvg = (pct: number, dim: number) => (pct / 100) * dim;
-              const parent = displayNodes[0]; // always lines to base (USD)
-              if (i === 0) return null;
-              const x1 = pctToSvg(parent.x, 100);
-              const y1 = pctToSvg(parent.y, 100);
-              const x2 = pctToSvg(node.x, 100);
-              const y2 = pctToSvg(node.y, 100);
-              const isActive = activeNode === i || selectedNode === i;
+          {/* Web of relations back to the base currency. */}
+          <svg
+            className="pointer-events-none absolute inset-0 h-full w-full"
+            aria-hidden="true"
+          >
+            {plottedNodes.map((node, index) => {
+              if (index === 0) return null;
+              const isLit = hoveredNode === index || selectedNode === index;
               return (
                 <line
-                  key={`line-${i}`}
-                  x1={`${x1}%`}
-                  y1={`${y1}%`}
-                  x2={`${x2}%`}
-                  y2={`${y2}%`}
-                  stroke="currentColor"
-                  strokeWidth={isActive ? 1.5 : 0.5}
-                  className="text-{{brand.accent}}/30 transition-all duration-300"
+                  key={`web-${index}`}
+                  x1={`${originNode.x}%`}
+                  y1={`${originNode.y}%`}
+                  x2={`${node.x}%`}
+                  y2={`${node.y}%`}
+                  stroke={isLit ? RAMP.webActive : RAMP.webIdle}
+                  strokeWidth={isLit ? 1.5 : 0.75}
+                  className="transition-all duration-300"
                 />
               );
             })}
           </svg>
 
-          {/* Currency nodes */}
-          {displayNodes.map((node, i) => {
-            const isActive = activeNode === i;
-            const isSelected = selectedNode === i;
-            const isHighlighted = isActive || isSelected;
+          {plottedNodes.map((node, index) => {
+            const isLit = hoveredNode === index || selectedNode === index;
+            const isSelected = selectedNode === index;
+            // camelCase, always: a lowercase local rendered as `{glyph}` is
+            // indistinguishable from a `{headline}` slot to the token sweep.
+            const directionTone = node.direction ? directionTones[node.direction] : MUTED;
+            const directionGlyph = node.direction ? directionGlyphs[node.direction] : "";
 
             return (
               <motion.button
-                key={`node-${i}`}
+                key={`node-${index}`}
+                type="button"
                 initial={{ scale: 0, opacity: 0 }}
                 whileInView={{ scale: 1, opacity: 1 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: 0.3 + i * 0.06, ease: "backOut" }}
-                className={`
-                  absolute transform -translate-x-1/2 -translate-y-1/2
-                  flex flex-col items-center justify-center
-                  rounded-full cursor-pointer
-                  transition-all duration-300 ease-out
-                  focus-visible:outline-2 focus-visible:outline-offset-2
-                  focus-visible:outline-{{brand.accent}}
-                  ${isHighlighted ? "z-20 scale-110" : "z-10 hover:scale-105"}
-                `}
-                style={{ left: `${node.x}%`, top: `${node.y}%` }}
-                onMouseEnter={() => setActiveNode(i)}
-                onMouseLeave={() => setActiveNode(null)}
-                onClick={() => setSelectedNode(isSelected ? null : i)}
-                aria-label={`${node.label} (${node.code}): ${node.rate} ${node.change}`}
+                transition={{ duration: 0.45, delay: 0.25 + index * 0.05, ease: "backOut" }}
+                className={`absolute flex -translate-x-1/2 -translate-y-1/2 transform cursor-pointer flex-col items-center justify-center transition-all duration-300 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                  isLit ? "z-20 scale-110" : "z-10 hover:scale-105"
+                }`}
+                style={{
+                  left: `${node.x}%`,
+                  top: `${node.y}%`,
+                  borderRadius: "var(--radius-button, 100px)",
+                  outlineColor: ACCENT,
+                }}
+                onMouseEnter={() => setHoveredNode(index)}
+                onMouseLeave={() => setHoveredNode(null)}
+                onFocus={() => setHoveredNode(index)}
+                onBlur={() => setHoveredNode(null)}
+                onClick={() => setSelectedNode(isSelected ? null : index)}
+                aria-pressed={isSelected}
+                aria-label={
+                  node.rate
+                    ? `${node.label} (${node.code}): ${node.rate}${node.change ? `, ${node.change}` : ""}`
+                    : `${node.label} (${node.code})`
+                }
               >
-                {/* Node dot */}
                 <span
-                  className={`
-                    flex items-center justify-center w-12 h-12 md:w-14 md:h-14 rounded-full
-                    shadow-md border-2 transition-all duration-300
-                    ${isHighlighted
-                      ? "bg-{{brand.accent}} text-white border-{{brand.accent_hover}} shadow-lg"
-                      : "bg-{{brand.bg_secondary}} text-{{brand.text_primary}} border-{{brand.text_muted}}/20 hover:border-{{brand.accent}}/50"
-                    }
-                  `}
-                  style={{ fontFamily: "var(--font-body, '{{brand.body_font}}')" }}
+                  className="flex h-12 w-12 items-center justify-center rounded-full transition-all duration-300 md:h-14 md:w-14"
+                  style={{
+                    background: isLit ? RAMP.nodeActive : RAMP.nodeIdle,
+                    color: isLit ? ON_ACCENT : FOREGROUND,
+                    border: `1px solid ${
+                      isLit
+                        ? RAMP.nodeActiveRing
+                        : hoveredNode === index
+                          ? RAMP.nodeHoverRing
+                          : RAMP.nodeIdleRing
+                    }`,
+                    fontFamily: "var(--font-body, inherit)",
+                  }}
                 >
-                  <span className="text-sm md:text-base font-bold">{node.code}</span>
+                  <span className="text-sm md:text-base" style={{ fontWeight: 500 }}>
+                    {node.code}
+                  </span>
                 </span>
 
-                {/* Tooltip on hover */}
                 <AnimatePresence>
-                  {isActive && !isSelected && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 4, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 4, scale: 0.95 }}
-                      transition={{ duration: 0.2 }}
-                      className={`
-                        absolute -bottom-2 translate-y-full
-                        px-3 py-2 rounded-lg shadow-lg text-xs whitespace-nowrap
-                        bg-{{brand.bg_secondary}} border border-{{brand.text_muted}}/10
-                        text-{{brand.text_primary}}
-                      `}
-                      style={{ fontFamily: "var(--font-body, '{{brand.body_font}}')" }}
+                  {hoveredNode === index && !isSelected && (
+                    <motion.span
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 4 }}
+                      transition={{ duration: 0.18 }}
+                      className="absolute -bottom-2 block translate-y-full whitespace-nowrap px-3 py-2 text-xs"
+                      style={{
+                        background: "var(--background)",
+                        color: FOREGROUND,
+                        border: `1px solid ${HAIRLINE}`,
+                        borderRadius: "var(--radius-card, 12px)",
+                        fontFamily: "var(--font-body, inherit)",
+                      }}
                     >
-                      <div className="font-semibold">{node.label}</div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="font-mono">{node.rate}</span>
-                        <span className={`flex items-center gap-0.5 text-xs ${directionColors[node.direction]}`}>
-                          {directionIcons[node.direction]} {node.change}
+                      <span className="block" style={{ fontWeight: 500 }}>
+                        {node.label}
+                      </span>
+                      {node.rate && (
+                        <span className="mt-0.5 flex items-center gap-1.5">
+                          <span className="font-mono">{node.rate}</span>
+                          {node.change && (
+                            <span style={{ color: directionTone }}>
+                              {directionGlyph} {node.change}
+                            </span>
+                          )}
                         </span>
-                      </div>
-                    </motion.div>
+                      )}
+                    </motion.span>
                   )}
                 </AnimatePresence>
               </motion.button>
             );
           })}
 
-          {/* Selected node detail panel */}
           <AnimatePresence>
-            {selectedNode !== null && displayNodes[selectedNode] && (
+            {detailNode && (
               <motion.div
-                initial={{ opacity: 0, x: 20 }}
+                initial={{ opacity: 0, x: 16 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
-                className="absolute bottom-4 right-4 md:bottom-6 md:right-6 px-5 py-4 rounded-xl shadow-xl bg-{{brand.bg_secondary}} border border-{{brand.text_muted}}/10 max-w-[240px]"
-                style={{ fontFamily: "var(--font-body, '{{brand.body_font}}')" }}
+                exit={{ opacity: 0, x: 16 }}
+                transition={{ duration: 0.28, ease: "easeOut" }}
+                className="absolute bottom-4 right-4 z-30 max-w-[240px] px-5 py-4 md:bottom-6 md:right-6"
+                style={{
+                  background: "var(--background)",
+                  border: `1px solid ${HAIRLINE}`,
+                  borderRadius: "var(--radius-card, 16px)",
+                  fontFamily: "var(--font-body, inherit)",
+                }}
               >
                 <button
+                  type="button"
                   onClick={() => setSelectedNode(null)}
-                  className="absolute top-2 right-2 text-{{brand.text_muted}} hover:text-{{brand.text_primary}} transition-colors text-sm leading-none"
+                  className="absolute right-2 top-2 text-sm leading-none transition-colors"
+                  style={{ color: MUTED }}
                   aria-label="Close detail panel"
                 >
                   ✕
                 </button>
-                <div className="text-sm font-semibold text-{{brand.text_primary}}">
-                  {displayNodes[selectedNode].label}
+                <div className="text-sm" style={{ color: FOREGROUND, fontWeight: 500 }}>
+                  {detailNode.label}
                 </div>
-                <div className="text-xs text-{{brand.text_muted}} mt-0.5">
-                  {displayNodes[selectedNode].code}
+                <div className="mt-0.5 text-xs" style={{ color: MUTED }}>
+                  {detailNode.code}
                 </div>
-                <div className="mt-3 flex items-baseline justify-between">
-                  <span className="text-lg font-mono font-bold text-{{brand.text_primary}}">
-                    {displayNodes[selectedNode].rate}
-                  </span>
-                  <span className={`flex items-center gap-1 text-sm font-medium ${directionColors[displayNodes[selectedNode].direction]}`}>
-                    {directionIcons[displayNodes[selectedNode].direction]}
-                    {displayNodes[selectedNode].change}
-                  </span>
-                </div>
+                {detailNode.rate && (
+                  <div className="mt-3 flex items-baseline justify-between gap-3">
+                    <span
+                      className="font-mono text-lg"
+                      style={{ color: FOREGROUND, fontWeight: 500 }}
+                    >
+                      {detailNode.rate}
+                    </span>
+                    {detailNode.change && (
+                      <span
+                        className="flex items-center gap-1 text-sm"
+                        style={{
+                          color: detailNode.direction
+                            ? directionTones[detailNode.direction]
+                            : MUTED,
+                        }}
+                      >
+                        {detailNode.direction ? directionGlyphs[detailNode.direction] : ""}
+                        {detailNode.change}
+                      </span>
+                    )}
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
         </motion.div>
 
-        {/* Disclaimer */}
         {disclaimer && (
           <motion.p
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6, delay: 0.5 }}
-            className="mt-6 text-xs text-{{brand.text_muted}}/60 max-w-2xl mx-auto text-center leading-relaxed"
-            style={{ fontFamily: "var(--font-body, '{{brand.body_font}}')" }}
+            transition={{ duration: 0.5, delay: 0.35 }}
+            className="mx-auto mt-6 max-w-2xl text-center text-xs leading-relaxed"
+            style={{ color: MUTED, fontFamily: "var(--font-body, inherit)" }}
           >
             {disclaimer}
           </motion.p>

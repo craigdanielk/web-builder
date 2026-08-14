@@ -4,19 +4,19 @@ import { motion } from "framer-motion";
 
 /**
  * TRUST-BADGES | icon-strip
- * Parameterized section template — tenant content filled at build time.
+ * Token-driven section template — tenant content filled at build time.
  *
- * A hairline-separated strip of credibility statements: a short label (a
- * figure, a licence, a capability) over a one-line qualifier. The library had
+ * A separated strip of credibility statements: a short label (a figure, a
+ * licence, a capability) over a one-line qualifier. The library had
  * `horizontal-strip` and `inline-strip` but not this variant, so every page
  * carrying it fell through to the LLM.
  *
- * Three decisions worth stating, because each is a deliberate departure:
+ * Four decisions worth stating, because each is a deliberate departure:
  *
  *   1. ARITY IS NOT FIXED. The badge row is written once, between the
  *      `/* repeat:badges *\/` markers, and emitted once per harvested item —
  *      three on a page with three, six on a page with six, none on a page with
- *      none. The 17 archetypes that spell out `{badge_1_label} … {badge_6_label}`
+ *      none. The 17 archetypes that spell out `badge_1_label … badge_6_label`
  *      cap the render at whatever number their author typed, which is what
  *      keeps the fabrication tables alive; this one has no such number.
  *
@@ -27,22 +27,32 @@ import { motion } from "framer-motion";
  *      each badge is therefore a CSS rule, decorative and content-free, not a
  *      slot pretending to hold an icon.
  *
- *   3. COLOUR, RHYTHM AND WEIGHT COME FROM THE PAGE. `{{brand.*}}` tokens are
+ *   3. COLOUR, RHYTHM AND WEIGHT COME FROM THE PAGE. Mustache brand tokens are
  *      only substituted on the `--industry` path, where a BuildCache carries a
  *      style config; a harvest-driven build has none, and a template written
- *      against them ships `bg-{{brand.bg_dark}}` as a literal class. Everything
- *      here reads the CSS custom properties the generated `globals.css`
- *      actually defines — `--accent`, `--foreground`, `--background`,
- *      `--muted`, `--border`, `--section-py`, `--block-gap`, `--card-pad`,
- *      `--heading-weight` — with translucent tones derived via `color-mix` off
- *      those same properties so they hold on light AND dark ground. Nothing
- *      here reaches for `font-bold`: weight is `--heading-weight`, because the
- *      benchmark's defining observation is that reference headlines are LIGHT.
+ *      against them ships the unsubstituted mustache as a literal class name.
+ *      Everything here reads the CSS custom properties the generated
+ *      `globals.css` actually defines — --accent, --foreground, --background,
+ *      --surface, --muted, --border, --section-py, --block-gap, --card-pad,
+ *      --radius-card, --heading-weight — with translucent tones derived via
+ *      `color-mix` off those same properties so they hold on light AND dark
+ *      ground. Fallbacks carry the ratified light benchmark
+ *      (benchmarks/enterprise-payments-bvnk.json), which supersedes the dark
+ *      Robinhood capture. Nothing here reaches for font-bold: display weight is
+ *      --heading-weight, and the benchmark measures every H1/H2 at 500.
  *
- *      The section band is `--section-py` scaled, not `py-14 md:py-20`. A
- *      credibility strip is deliberately tighter than a content section, so it
- *      DERIVES from the rhythm token rather than opting out of it — a literal
- *      pair cannot follow a tenant whose sections breathe wider or narrower.
+ *      The section band is --section-py itself — not a Tailwind step, and not a
+ *      ratio of the token either. This file historically carried the library's
+ *      one real rhythm literal — a hardcoded Tailwind padding pair — which
+ *      silently overrode the benchmark's 120px; a 0.7 multiplier overrode it
+ *      just as silently, to 84px. The band is the tenant's rhythm, unscaled.
+ *
+ *   4. THE BADGE SURFACE IS A TOKEN, THE BADGE ARTWORK IS UNTOUCHED. Regulator,
+ *      licence and compliance marks on an FSP-regulated site are evidentiary
+ *      imagery; recolouring them to suit a ground is a misrepresentation, not a
+ *      style fix. So the cell's ground is --surface and the marks themselves are
+ *      never filtered, inverted or tinted. See the note in the header of the
+ *      cell block for the residual risk this leaves.
  *
  * Slot placeholders (filled by tenant data):
  *   {section_title}     → "Everything you need to integrate"  (may be empty)
@@ -51,6 +61,10 @@ import { motion } from "framer-motion";
  *   {badges[].detail}   → "Trading volume" / "Clean, predictable JSON endpoints."
  */
 
+// The machine-read declaration. `slot_contract.declared_slots()` reads ONLY a
+// `// Tokens:` line or a `Slot placeholders` block — the prose list above is
+// neither, so without this line the contract falls back to a permissive brace
+// sweep and substitutes this file's own JS identifiers away.
 // Tokens: {section_title} {section_subtitle} {badges[].label} {badges[].detail}
 
 interface Badge {
@@ -70,13 +84,12 @@ const harvestedBadges: Badge[] = [
   /* /repeat */
 ];
 
-const MUTED = "var(--muted, color-mix(in srgb, var(--foreground) 62%, var(--background)))";
-const HAIRLINE = "var(--border, color-mix(in srgb, var(--foreground) 14%, var(--background)))";
-const ACCENT = "var(--accent, var(--foreground))";
+const mutedColor = "var(--muted, color-mix(in srgb, var(--foreground) 62%, var(--background)))";
+const hairlineColor = "var(--border, color-mix(in srgb, var(--foreground) 12%, var(--background)))";
+const accentColor = "var(--accent, var(--foreground))";
 // The mark's halo is foreground-derived, never a fixed rgba — a translucent
 // white ring vanishes on a light ground and a black one on a dark one.
-const HALO = "color-mix(in srgb, var(--foreground) 10%, transparent)";
-
+const haloColor = "color-mix(in srgb, var(--foreground) 10%, transparent)";
 
 export default function TrustBadgesIconStrip({
   sectionTitle = "{section_title}",
@@ -92,21 +105,19 @@ export default function TrustBadgesIconStrip({
       style={{
         background: "var(--background)",
         color: "var(--foreground)",
-        // A strip is a tighter band than a content section, but the tightness
-        // is a RATIO of the tenant's rhythm, never a number typed here.
-        paddingTop: "calc(var(--section-py, 96px) * 0.7)",
-        paddingBottom: "calc(var(--section-py, 96px) * 0.7)",
+        paddingTop: "var(--section-py, 120px)",
+        paddingBottom: "var(--section-py, 120px)",
       }}
     >
       <div className="mx-auto w-full max-w-6xl px-6">
         {(sectionTitle || sectionSubtitle) && (
-          <div className="max-w-3xl" style={{ marginBottom: "var(--block-gap, 48px)" }}>
+          <div className="max-w-3xl" style={{ marginBottom: "var(--block-gap, 24px)" }}>
             {sectionTitle && (
               <h2
-                className="text-2xl md:text-3xl tracking-tight leading-tight"
+                className="text-3xl md:text-[2.75rem] leading-[1.1] tracking-tight"
                 style={{
                   fontFamily: "var(--font-heading, inherit)",
-                  fontWeight: "var(--heading-weight, 400)" as unknown as number,
+                  fontWeight: "var(--heading-weight, 500)" as unknown as number,
                 }}
               >
                 {sectionTitle}
@@ -114,8 +125,8 @@ export default function TrustBadgesIconStrip({
             )}
             {sectionSubtitle && (
               <p
-                className="mt-3 text-base md:text-lg leading-relaxed"
-                style={{ color: MUTED, fontFamily: "var(--font-body, inherit)" }}
+                className="mt-5 text-lg leading-relaxed"
+                style={{ color: mutedColor, fontFamily: "var(--font-body, inherit)" }}
               >
                 {sectionSubtitle}
               </p>
@@ -123,9 +134,15 @@ export default function TrustBadgesIconStrip({
           </div>
         )}
 
+        {/* Hairline separation is the grid's own background showing through a
+            1px gap, so the cells need no borders and the strip needs no rules
+            that would have to be recoloured per ground. */}
         <ul
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 border-t"
-          style={{ borderColor: HAIRLINE }}
+          className="grid grid-cols-1 gap-px overflow-hidden sm:grid-cols-2 lg:grid-cols-3"
+          style={{
+            background: hairlineColor,
+            borderRadius: "var(--radius-card, 16px)",
+          }}
         >
           {badges.map((badge, index) => (
             <motion.li
@@ -134,19 +151,21 @@ export default function TrustBadgesIconStrip({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-60px" }}
               transition={{ duration: 0.5, delay: index * 0.06, ease: "easeOut" }}
-              className="flex gap-4 border-b"
+              className="flex gap-4"
               style={{
-                borderColor: HAIRLINE,
-                paddingTop: "calc(var(--card-pad, 32px) * 0.75)",
-                paddingBottom: "calc(var(--card-pad, 32px) * 0.75)",
-                paddingRight: "var(--card-pad, 32px)",
+                // Badge marks are supplied artwork and are never restyled — the
+                // GROUND moves instead of the mark. --surface is the benchmark's
+                // neutral card tint, so a mark reads against a tinted panel
+                // rather than floating on raw page white.
+                background: "var(--surface, var(--background))",
+                padding: "var(--card-pad, 40px)",
               }}
             >
               {/* Decorative mark — deliberately content-free; see note 2 above. */}
               <span
                 aria-hidden="true"
                 className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ background: ACCENT, boxShadow: `0 0 0 4px ${HALO}` }}
+                style={{ background: accentColor, boxShadow: `0 0 0 4px ${haloColor}` }}
               />
               <div className="min-w-0">
                 <p
@@ -161,7 +180,7 @@ export default function TrustBadgesIconStrip({
                 {badge.detail && (
                   <p
                     className="mt-1.5 text-sm md:text-base leading-relaxed"
-                    style={{ color: MUTED, fontFamily: "var(--font-body, inherit)" }}
+                    style={{ color: mutedColor, fontFamily: "var(--font-body, inherit)" }}
                   >
                     {badge.detail}
                   </p>

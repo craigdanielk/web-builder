@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
  * Token-driven section template — tenant content filled at build time.
  *
  * The Supabase template this replaces put a bold headline, a subtitle and one
- * dark button in the middle of an empty white page — the first thing a visitor
+ * flat dark button in the middle of an empty page — the first thing a visitor
  * sees, and the weakest thing on the site. It also left roughly a screen of
  * dead space below the button, because its padding was a fixed `py-24` with
  * nothing to fill it.
@@ -19,14 +19,23 @@ import { motion } from "framer-motion";
  *
  * Decisions:
  *
- *   1. A COMPOSED GROUND, NOT A VOID. Two very soft accent-tinted radial
- *      washes, built from the accent token via color-mix, sit behind the copy.
- *      No image, no asset, nothing fabricated — pure CSS derived from the
- *      palette, so it adapts to any tenant and cannot break.
+ *   1. THE REFERENCE'S GRADIENT GROUND, DERIVED NOT COPIED. The ratified
+ *      benchmark's hero is a white-to-pale-blue gradient over the page ground.
+ *      The token vocabulary carries no pale-blue token (bg_secondary was not
+ *      compiled), so rather than invent a hex the wash is mixed from tokens
+ *      that do exist: a few percent of --accent into --background. The tenant
+ *      accent IS blue (#004e89), so this lands in the same family while staying
+ *      tenant-derived on any future palette. One soft radial sits over the
+ *      linear ramp for depth. No image, no asset, nothing fabricated — pure CSS
+ *      derived from the palette, so it adapts to any tenant and cannot break.
+ *      It is deliberately the same gradient language as HERO |
+ *      full-bleed-overlay, so a site using either reads as one design.
  *
- *   2. DISPLAY SCALE, LIGHT WEIGHT. The benchmark's headlines are 300-400 at
- *      large sizes; hierarchy comes from size and space. clamp() lets the
- *      headline actually behave as display type instead of a big paragraph.
+ *   2. DISPLAY SCALE, WEIGHT CAPPED AT 500. Every measured H1/H2 in the
+ *      reference renders at 500 and none above it; 700 appears on inline text
+ *      only. Hierarchy comes from size and space, and clamp() ramps the
+ *      headline across the two display sizes the reference actually uses —
+ *      64px and 96px — instead of letting it behave like a big paragraph.
  *
  *   3. MEASURE IS CAPPED. The old subtitle ran the full container and wrapped
  *      awkwardly mid-phrase ("XRP and / USDT"). Prose is capped near 60ch,
@@ -35,6 +44,14 @@ import { motion } from "framer-motion";
  *   4. THE SECONDARY ACTION DISAPPEARS WHEN UNSOURCED. This build harvested one
  *      CTA, not two; `{secondary_cta_text}` comes back empty and the button is
  *      simply not rendered, rather than shipping a ghost button to nowhere.
+ *
+ *   5. NO GLOW UNDER THE BUTTON. The primary action previously carried a 40px
+ *      accent-tinted drop shadow — a dark-system device, where a coloured bloom
+ *      reads as light emitted onto a black ground. The ratified benchmark
+ *      measured a single soft 0.1-alpha layer on five elements and states
+ *      outright that elevation is carried by surface tint and radius, not by
+ *      shadow. On a white ground that bloom is a smear, so it is removed; the
+ *      button's presence comes from the accent fill and the full-pill radius.
  *
  * Slots:
  *   {eyebrow}            → "Licensed FSP"              (optional)
@@ -65,8 +82,11 @@ interface HeroCenteredProps {
 const MUTED = "var(--muted, color-mix(in srgb, var(--foreground) 62%, var(--background)))";
 const HAIRLINE = "var(--border, color-mix(in srgb, var(--foreground) 12%, var(--background)))";
 const ACCENT = "var(--accent, var(--foreground))";
-const WASH_A = "color-mix(in srgb, var(--accent, #444) 9%, transparent)";
-const WASH_B = "color-mix(in srgb, var(--accent, #444) 5%, transparent)";
+//: See note 1. Both washes mix the ACCENT token — whose own fallback is
+//: --foreground — into --background, so no opaque literal is ever named and the
+//: ground follows the palette on any tenant rather than one grey.
+const GROUND = `linear-gradient(180deg, var(--background) 0%, color-mix(in srgb, ${ACCENT} 6%, var(--background)) 100%)`;
+const WASH = `color-mix(in srgb, ${ACCENT} 9%, transparent)`;
 
 export default function HeroCentered({
   eyebrow = "{eyebrow}",
@@ -83,10 +103,12 @@ export default function HeroCentered({
     <section
       className="relative w-full overflow-hidden"
       style={{
-        background: "var(--background)",
+        background: GROUND,
         color: "var(--foreground)",
-        paddingTop: "calc(var(--section-py, 96px) * 1.4)",
-        paddingBottom: "calc(var(--section-py, 96px) * 1.4)",
+        // 120px * 1.5 = the 180px hero-specific top padding the benchmark
+        // measured on 25 elements; the 120px default carries the bottom.
+        paddingTop: "calc(var(--section-py, 120px) * 1.5)",
+        paddingBottom: "var(--section-py, 120px)",
       }}
     >
       {/* Composed ground — derived from the accent token, no asset. */}
@@ -94,7 +116,7 @@ export default function HeroCentered({
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"
         style={{
-          background: `radial-gradient(58% 46% at 50% 0%, ${WASH_A} 0%, transparent 70%), radial-gradient(42% 38% at 82% 88%, ${WASH_B} 0%, transparent 72%)`,
+          background: `radial-gradient(58% 46% at 50% 0%, ${WASH} 0%, transparent 70%)`,
         }}
       />
 
@@ -104,8 +126,12 @@ export default function HeroCentered({
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
-            className="mb-7 inline-flex items-center gap-2.5 rounded-full border px-4 py-1.5"
-            style={{ borderColor: HAIRLINE, background: "var(--background)" }}
+            className="inline-flex items-center gap-2.5 rounded-full border px-4 py-1.5"
+            style={{
+              borderColor: HAIRLINE,
+              background: "var(--background)",
+              marginBottom: "var(--block-gap, 24px)",
+            }}
           >
             <span
               aria-hidden="true"
@@ -113,8 +139,12 @@ export default function HeroCentered({
               style={{ background: ACCENT }}
             />
             <span
-              className="text-xs uppercase tracking-[0.14em]"
-              style={{ color: MUTED, fontFamily: "var(--font-body, inherit)" }}
+              className="uppercase tracking-[0.14em]"
+              style={{
+                color: MUTED,
+                fontFamily: "var(--font-body, inherit)",
+                fontSize: "0.75rem",
+              }}
             >
               {eyebrow}
             </span>
@@ -128,10 +158,11 @@ export default function HeroCentered({
           className="text-balance"
           style={{
             fontFamily: "var(--font-heading, inherit)",
-            fontWeight: "var(--heading-weight, 400)" as unknown as number,
-            fontSize: "clamp(2.6rem, 6.2vw, 4.5rem)",
-            lineHeight: 1.03,
-            letterSpacing: "-0.03em",
+            fontWeight: "var(--heading-weight, 500)" as unknown as number,
+            // 48px → 96px: the display sizes the reference actually renders.
+            fontSize: "clamp(3rem, 6.4vw, 6rem)",
+            lineHeight: 1.05,
+            letterSpacing: "-0.025em",
           }}
         >
           {headline}
@@ -142,10 +173,12 @@ export default function HeroCentered({
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.08, ease: "easeOut" }}
-            className="mt-7 text-pretty text-lg leading-relaxed md:text-xl"
+            className="text-pretty leading-relaxed"
             style={{
               color: MUTED,
               fontFamily: "var(--font-body, inherit)",
+              fontSize: "1.25rem",
+              marginTop: "var(--block-gap, 24px)",
               maxWidth: "58ch",
             }}
           >
@@ -158,7 +191,8 @@ export default function HeroCentered({
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.16, ease: "easeOut" }}
-            className="mt-11 flex flex-wrap items-center justify-center gap-4"
+            className="flex flex-wrap items-center justify-center gap-4"
+            style={{ marginTop: "calc(var(--block-gap, 24px) * 2)" }}
           >
             {primaryCtaText && (
               <a
@@ -166,12 +200,13 @@ export default function HeroCentered({
                 className="inline-flex items-center px-8 py-4 text-base transition-opacity hover:opacity-90"
                 style={{
                   background: ACCENT,
-                  color: "var(--on-accent, #fff)",
-                  borderRadius: "var(--radius-button, 4px)",
+                  // --on-accent is always emitted and is compiled for 8.57:1 on
+                  // the tenant accent; the fallback is the ground the accent
+                  // sits on, never a literal white. No boxShadow — see note 5.
+                  color: "var(--on-accent, var(--background))",
+                  borderRadius: "var(--radius-button, 100px)",
                   fontFamily: "var(--font-body, inherit)",
                   fontWeight: 500,
-                  boxShadow:
-                    "0 20px 40px -28px color-mix(in srgb, var(--accent, #000) 70%, transparent)",
                 }}
               >
                 {primaryCtaText}
@@ -183,7 +218,7 @@ export default function HeroCentered({
                 className="inline-flex items-center border px-8 py-4 text-base transition-colors"
                 style={{
                   borderColor: HAIRLINE,
-                  borderRadius: "var(--radius-button, 4px)",
+                  borderRadius: "var(--radius-button, 100px)",
                   fontFamily: "var(--font-body, inherit)",
                   fontWeight: 500,
                 }}
