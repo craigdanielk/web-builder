@@ -4809,8 +4809,18 @@ def stage_shared_components(
     )
     if disclaimers:
         print(f"  ✓ Footer carries {len(disclaimers)} declared disclaimer(s) from phase 0")
+    elif disclaimers is None:
+        # `None` means nobody asked the tenant record — the usual cause is a
+        # build invoked without --tenant, so load_tenant_context never ran. The
+        # previous message asserted "none declared for this tenant", a claim
+        # about a record it had not read. For a regulated tenant that reads as
+        # a clean compliance result when in fact compliance was never consulted,
+        # which is the same failure class as a skipped stage reporting passed.
+        print("  ⚠ Footer carries NO disclaimers — NO TENANT BOUND (no --tenant), "
+              "so the tenant's declared disclaimers were never read. This is NOT "
+              "evidence that none are required.")
     else:
-        print("  ⚠ Footer carries NO disclaimers — none declared for this tenant (not a pass)")
+        print("  ⚠ Footer carries NO disclaimers — tenant record read and declares none (not a pass)")
 
     write_file(nav_path, nav_code)
     print(f"  ✓ Wrote Navigation.tsx (template-driven, no LLM)")
@@ -6114,10 +6124,16 @@ def stage_git_publish(
     """
     import subprocess
 
-    site_dir = output_dir / project_name / "site"
+    # `output_dir` is already OUTPUT_DIR / project_name (see main()), so joining
+    # project_name again looked for output/<project>/<project>/site — a path no
+    # build has ever produced. The stage therefore warned and returned None on
+    # every run since it was written, which is why the tenant repo's site/ has
+    # only ever been updated by hand. The warning named the doubled path in full
+    # and was still read as "this build had nothing to publish".
+    site_dir = output_dir / "site"
     if not site_dir.exists():
-        site_dir = output_dir / project_name
-    if not site_dir.exists():
+        site_dir = output_dir
+    if not (site_dir / "package.json").exists():
         print(f"  ⚠ git-publish: no built site at {site_dir}")
         return None
 
@@ -6389,6 +6405,13 @@ def stage_deploy(
         "--accent": _tok("accent", "#1c1917"),
         "--on-accent": _tok("on_accent", "#ffffff"),
         "--border": _tok("border", "#e7e5e4"),
+        # A named dark ground for sections that are dark on purpose (CTA bands,
+        # feature bands). Falling back to text_primary rather than a literal:
+        # deriving the surface from the palette's ink is wrong as a *default*
+        # only because it makes the section's identity a side effect of the
+        # palette — as a fallback it is the darkest ground the compiled
+        # vocabulary can supply, and it is a real measured surface.
+        "--surface-inverse": _tok("surface_inverse", _tok("text_primary", "#1c1917")),
         "--font-heading": f'"{_heading_font}", sans-serif',
         "--font-body": f'"{_body_font}", sans-serif',
         "--heading-weight": str(_scale.get("heading_weight", 600)),
@@ -9009,6 +9032,21 @@ def main():
     output_dir = OUTPUT_DIR / args.project
     if args.clean and output_dir.exists():
         import shutil
+        # --clean is rmtree. With --output-root pointed at a tenant checkout,
+        # output_dir IS that tenant's repo root (<root>/<project>), so a routine
+        # "always a full rebuild" would delete .git, TENANT.yaml, CLAUDE.md and
+        # .env.tenant along with the build. Refuse rather than warn: this is not
+        # recoverable from the build's own outputs, and the flag combination
+        # that triggers it is the normal one.
+        if (output_dir / ".git").exists():
+            print(
+                f"\n  ✖ REFUSING --clean: {output_dir} is a git repository.\n"
+                f"    --clean removes the directory outright, which would destroy\n"
+                f"    the checkout (.git and every tracked file), not just build\n"
+                f"    artifacts. Build without --clean to write into a repo, or\n"
+                f"    point --output-root at a scratch directory."
+            )
+            return 2
         shutil.rmtree(output_dir)
         print(f"  🗑 Removed existing output: {output_dir}")
 

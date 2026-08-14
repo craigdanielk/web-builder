@@ -39,6 +39,7 @@
     "accent": "#004e89",
     "on_accent": "#ffffff",
     "border": "#dee3e8",
+    "surface_inverse": "#242d35",
     "_source": {
       "bg_primary": "bvnk page ground, 17 elements measured white; the hero is a white-to-pale-blue gradient over this ground",
       "bg_secondary": "bvnk banding background, 21 elements, 1.06:1 step from bg_primary — the pale blue section band",
@@ -46,6 +47,7 @@
       "text_primary": "bvnk body and heading colour, 516 occurrences, 13.98:1 on bg_primary",
       "text_muted": "bvnk secondary text colour, 163 occurrences, 7.34:1 on bg_primary",
       "border": "bvnk measured borderColor on borderWidth>0, 21 elements, 1.13:1 from bg_primary — a separator, not an outline",
+      "surface_inverse": "bvnk dark accent ground, 17 elements measured #242d35 (a further 10 at #080a0c). A light benchmark still needs a named dark surface: sections like the CTA band are dark ON PURPOSE, and deriving that from text_primary makes the section's identity a side effect of the palette — a dark compiled palette would then silently produce a white 'dark-band'. 13.98:1 with on_accent white",
       "_border_emphasis_excluded": "#242d35 measured on 48 elements is the dark pill/button outline, an emphasis stroke rather than a separator; using it as `border` would put button-weight strokes on every card edge",
       "_reference_accent_not_adopted": "bvnk's own accent is #0b57f4 (71 text occurrences, 15 backgrounds). It is NOT adopted: accent carries tenant identity, and Cape Crypto is FSP No. 53746 trading under its own mark, not a BVNK sub-brand",
       "accent": "capecrypto.com tenant identity rgb(0,78,137) — NOT from reference",
