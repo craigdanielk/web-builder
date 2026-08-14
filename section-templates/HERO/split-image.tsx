@@ -40,6 +40,15 @@ import { motion } from "framer-motion";
  *   {image_alt}          → alt text for the above
  */
 
+// The prose block above is documentation. THIS line is the contract:
+// `slot_contract.declared_slots()` reads only `// Tokens:` (and the one legacy
+// `Slot placeholders:` block). With neither, `no_declaration` is true and every
+// non-reserved brace token in the body is treated as fillable — that is how a
+// JSX `key` prop holding a loop variable had its value substituted away and
+// took a build down with `Expected '</', got 'ident'`. Declared, the sweep
+// never runs and only the nine names below are ever substituted.
+// Tokens: {eyebrow} {headline} {subheadline} {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url} {image_url} {image_alt}
+
 interface HeroSplitImageProps {
   eyebrow?: string;
   headline?: string;
@@ -55,6 +64,12 @@ interface HeroSplitImageProps {
 const MUTED = "var(--muted, color-mix(in srgb, var(--foreground) 62%, var(--background)))";
 const HAIRLINE = "var(--border, color-mix(in srgb, var(--foreground) 12%, var(--background)))";
 const ACCENT = "var(--accent, var(--foreground))";
+//: The media panel's lift. Derived from --foreground, not from a fixed navy —
+//: `rgba(15,27,45,…)` is a shadow for ONE palette on ONE ground; on a dark
+//: tenant it is an invisible smudge and on a warm one it reads blue.
+const MEDIA_SHADOW =
+  "0 30px 60px -40px color-mix(in srgb, var(--foreground) 28%, transparent)," +
+  " 0 12px 28px -18px color-mix(in srgb, var(--foreground) 16%, transparent)";
 
 export default function HeroSplitImage({
   eyebrow = "{eyebrow}",
@@ -67,7 +82,10 @@ export default function HeroSplitImage({
   imageUrl = "{image_url}",
   imageAlt = "{image_alt}",
 }: HeroSplitImageProps) {
-  if (!headline && !subheadline) return null;
+  // A hero is its headline. The old guard passed a section carrying only a
+  // subheadline — an orphan line of body copy at 3.5rem of top padding, above
+  // the fold, as the first thing a visitor sees. Worse than no hero.
+  if (!headline || !headline.trim()) return null;
 
   // An unresolved src must never reach next/image — it throws, and the whole
   // route errors while every string and brace check passes.
@@ -137,7 +155,10 @@ export default function HeroSplitImage({
                   className="inline-flex items-center px-7 py-3.5 text-base transition-opacity hover:opacity-90"
                   style={{
                     background: ACCENT,
-                    color: "var(--on-accent, #fff)",
+                    // --on-accent is always emitted; the fallback is the ground
+                    // the accent sits on, not a literal white, so a pale accent
+                    // on a dark tenant still yields legible label text.
+                    color: "var(--on-accent, var(--background))",
                     borderRadius: "var(--radius-button, 4px)",
                     fontFamily: "var(--font-body, inherit)",
                     fontWeight: 500,
@@ -173,8 +194,7 @@ export default function HeroSplitImage({
             style={{
               borderRadius: "var(--radius-card, 8px)",
               border: `1px solid ${HAIRLINE}`,
-              boxShadow:
-                "0 30px 60px -40px rgba(15,27,45,0.28), 0 12px 28px -18px rgba(15,27,45,0.16)",
+              boxShadow: MEDIA_SHADOW,
             }}
           >
             <Image
