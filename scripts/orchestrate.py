@@ -6919,12 +6919,117 @@ def resolve_source_platform(tenant_context: dict | None) -> str:
     )
 
 
-def platform_modules(target_platform: str, source_platform: str = "unknown") -> dict:
+#: What each declared module value pulls in. Two properties are load-bearing.
+#:
+#: 1. The npm versions are MEASURED, not chosen. They are the pins in the one
+#:    implementation of this CMS that exists — `site/package.json` in the Xago
+#:    tenant repo, read 2026-08-17 (docs/census/2026-08-17-xago-rails.md §2). A
+#:    `latest` here would mean the emitted app is not the app that was censused.
+#:    `mammoth ^1.12.0` is in that file and is deliberately NOT here: it serves
+#:    `.docx` post import, which is out of scope, and a dependency nothing
+#:    imports is weight with no evidence behind it.
+#: 2. `email: resend` pulls NO package. Resend's REST API is reachable with
+#:    `fetch`, which is how the whole Xago data layer is written (`leads.ts:78`).
+#:    An empty `npm_packages` here is a measured result, not a placeholder.
+#:
+#: `env_names` are NAMES ONLY and are never valued from here — same contract as
+#: `DeployAdapter.DECLARED_ENV`: a name declared and not valued is a statement
+#: that the operator supplies it. The CMS set is the measured `process.env` read
+#: set of the Xago site (census §1.6), with the tenant-prefixed `XAGO_TENANT_ID`
+#: generalised to `CMS_TENANT_ID`. The email set is census §5's three keys.
+_MODULE_CATALOGUE: dict = {
+    "cms": {
+        "none": {"npm_packages": {}, "env_names": ()},
+        "block-store": {
+            "npm_packages": {
+                "@measured/puck": "^0.20.2",
+                "@supabase/supabase-js": "^2.110.8",
+                "@tiptap/core": "^3.29.2",
+                "@tiptap/pm": "^3.29.2",
+                "@tiptap/react": "^3.29.2",
+                "sanitize-html": "^2.17.6",
+                "sharp": "^0.34.5",
+            },
+            "env_names": (
+                "SUPABASE_URL",
+                "SUPABASE_ANON_KEY",
+                "SUPABASE_SERVICE_ROLE_KEY",
+                "CMS_TENANT_ID",
+                "CMS_MEDIA_BUCKET",
+                "ADMIN_ALLOWED_HOSTS",
+                "ADMIN_PASSWORD",
+                "ADMIN_SESSION_SECRET",
+            ),
+        },
+    },
+    "email": {
+        "none": {"npm_packages": {}, "env_names": ()},
+        "resend": {
+            "npm_packages": {},
+            "env_names": (
+                "RESEND_API_KEY",
+                "EMAIL_SEND_DOMAIN",
+                "EMAIL_NOTIFY_TO",
+            ),
+        },
+    },
+}
+
+
+def _module_entry(tenant_context: "dict | None", field: str, reader) -> "dict | None":
+    """One declared module's resolution, or None when it was not declared.
+
+    None means "no key in the returned dict" — deliberately, and this is the
+    honest half of the design rather than a shortcut. A `{"cms": {...empty...}}`
+    on an undeclared tenant reads as "we checked and it needs nothing", which is
+    the class of defect this repo keeps removing.
+
+    The cost is that the two refusals collapse here: `platform_modules` cannot
+    tell a caller whether the key is absent because nobody declared `cms` or
+    because the tenant context never loaded. It must not, because recording that
+    distinction means adding a key, and a key added on the undeclared path
+    changes the resolution of every tenant that declares neither — cape-crypto
+    today. A caller that needs the difference calls `declared_cms` /
+    `declared_email` directly and catches the subclass; both refusals name the
+    field, the tenant and what was allowed.
+    """
+    try:
+        declared = reader(tenant_context)
+    except _tenant_vocab.PlatformDeclarationError:
+        return None
+    spec = _MODULE_CATALOGUE[field][declared]
+    return {
+        # "none" is a DECLARATION and is recorded as one: the key is present with
+        # nothing behind it, which is a different fact from the key being absent.
+        "declared": declared,
+        "npm_packages": dict(spec["npm_packages"]),
+        "env_names": list(spec["env_names"]),
+    }
+
+
+def platform_modules(
+    target_platform: str,
+    source_platform: str = "unknown",
+    tenant_context: "dict | None" = None,
+) -> dict:
     """Which modules, hosts and packages this platform pair loads.
 
     One place that turns a declaration into what the build actually pulls in, so
     "which platform is this?" and "what does that platform need?" cannot drift
     apart. The adapter stays the authority on its own behaviour; this reads it.
+
+    `tenant_context` adds the two declaration-driven modules that are ORTHOGONAL
+    to the deploy target — `cms` and `email`. They are resolved through
+    `lib/tenant_context.declared_cms` / `declared_email`, on the same closed
+    vocabulary + refusal contract as `target_platform`, and NOT off a
+    `DeployAdapter`: a Shopify-target tenant can declare `cms: block-store`, so
+    putting them on the adapter would force `_resolve_adapter` to stop being a
+    two-branch platform dispatch (census §6.3).
+
+    A declared module contributes a `"cms"` / `"email"` key AND folds its pins
+    into `npm_packages`. An undeclared one contributes nothing at all — see
+    `_module_entry`. With no `tenant_context` the shape is byte-identical to
+    before this parameter existed.
     """
     adapter = _resolve_adapter(target_platform)
 
@@ -6932,7 +7037,9 @@ def platform_modules(target_platform: str, source_platform: str = "unknown") -> 
     if adapter.should_inject_commerce:
         image_hosts = ["cdn.shopify.com", "**.myshopify.com"]
 
-    return {
+    npm_packages = dict(adapter.get_package_extra_deps())
+
+    modules = {
         "target_platform": adapter.name,
         "source_platform": source_platform,
         "adapter": adapter,
@@ -6940,8 +7047,30 @@ def platform_modules(target_platform: str, source_platform: str = "unknown") -> 
         "write_env": bool(adapter.should_write_env),
         "generate_l7_pages": bool(adapter.should_generate_l7_pages()),
         "image_hosts": image_hosts,
-        "npm_packages": dict(adapter.get_package_extra_deps()),
+        "npm_packages": npm_packages,
     }
+
+    for field, reader in (
+        ("cms", _tenant_vocab.declared_cms),
+        ("email", _tenant_vocab.declared_email),
+    ):
+        entry = _module_entry(tenant_context, field, reader)
+        if entry is None:
+            continue
+        modules[field] = entry
+        for package, version in entry["npm_packages"].items():
+            existing = npm_packages.get(package)
+            if existing is not None and existing != version:
+                # Two pins for one package is not resolvable here and picking
+                # one is a silent decision about what the app installs.
+                raise ValueError(
+                    f"{field}={entry['declared']!r} pins {package}=={version}, but "
+                    f"the {adapter.name} adapter already pins {existing}. One of "
+                    "the two must change; this resolver will not choose."
+                )
+            npm_packages[package] = version
+
+    return modules
 
 
 def _resolve_adapter(target_platform: str) -> DeployAdapter:
@@ -10451,12 +10580,22 @@ def main():
     else:
         print(f"  🎯 Target platform, overridden by flag: {args.target_platform}")
 
-    _modules = platform_modules(args.target_platform, _source_platform)
+    _modules = platform_modules(args.target_platform, _source_platform, tenant_context)
     print(f"  📦 Modules for {_modules['target_platform']} ← source {_modules['source_platform']}: "
           f"commerce={_modules['inject_commerce']}, env={_modules['write_env']}, "
           f"l7_pages={_modules['generate_l7_pages']}, "
           f"image_hosts={len(_modules['image_hosts'])}, "
           f"extra_npm={len(_modules['npm_packages'])}")
+    # cms/email are printed only when DECLARED, and the undeclared case is
+    # printed as itself rather than as "cms=none". A build log reading `cms=none`
+    # for a tenant nobody asked is the exact confusion the reader refuses to make.
+    for _field in ("cms", "email"):
+        _entry = _modules.get(_field)
+        if _entry is None:
+            print(f"  ○ {_field}: not declared — no module resolved (not the same as 'none')")
+        else:
+            print(f"  📦 {_field}: declared {_entry['declared']!r} — "
+                  f"npm={len(_entry['npm_packages'])}, env declared-not-valued={len(_entry['env_names'])}")
 
     # ── Output-root injection: re-root the base output directory ──
     # Default (flag absent) is a no-op — OUTPUT_DIR stays <web-builder>/output.

@@ -356,6 +356,64 @@ def declared_platforms(tenant_context: dict | None) -> dict[str, Any]:
     }
 
 
+# ─── Module declarations: cms and email ───────────────────────────
+# Two more collected fields, read exactly like the platform trio above and for
+# the same reason. They are ORTHOGONAL to the deploy target: a Shopify-target
+# tenant can declare `cms: block-store`, so these do not live on a deploy
+# adapter and `_resolve_adapter` stays a two-branch platform dispatch.
+#
+# `"none"` is IN the vocabulary, and that is the whole point. The `absent ≠
+# False` argument recorded on `source_api_access` above applies verbatim: an
+# absent `cms` is "nobody has been asked whether this tenant edits its own
+# content"; `cms: "none"` is "we asked, and it does not". Defaulting the first to
+# the second turns an open question into a recorded finding, and here it does it
+# silently — the build would simply emit no admin surface and no one would know
+# whether that was a decision.
+#
+# Measured 2026-08-17 (docs/census/2026-08-17-xago-rails.md §4): NO tenant
+# declares either field today, so every caller must be able to handle the
+# refusal. `platform_modules()` handles it by omitting the module entirely — no
+# key, rather than an empty list that reads as "checked and empty".
+
+#: Whether the tenant edits its own content, and with what.
+#: `block-store` is the Supabase-table-backed block store with a Puck editor
+#: censused in the Xago tenant repo (§1) — the only implementation that exists.
+CMS_KINDS = ("none", "block-store")
+
+#: How the site sends transactional mail. `resend` needs no npm package —
+#: Resend's REST API is reachable with `fetch` (census §6.2).
+EMAIL_SENDERS = ("none", "resend")
+
+
+def declared_cms(tenant_context: dict | None) -> str:
+    """The declared CMS, or refuse — never defaulted to "none".
+
+    Returns one of ``CMS_KINDS``.
+
+    Raises
+    ------
+    PlatformNotMeasured
+        The context never loaded. Nothing is known about this tenant.
+    PlatformNotDeclared
+        The context loaded and `cms` is absent or out of vocabulary.
+    """
+    return declared_platform(tenant_context, "cms", CMS_KINDS, "CMS")
+
+
+def declared_email(tenant_context: dict | None) -> str:
+    """The declared transactional-mail sender, or refuse.
+
+    Returns one of ``EMAIL_SENDERS``. Same three states as `declared_cms`.
+
+    Note what this does NOT do: it does not check that `RESEND_API_KEY` is in
+    the environment. A tenant declaring `resend` with no key is a gate failure
+    (NOT_MEASURED) at the stage that would emit the sender, not a re-reading of
+    what the operator declared. Emitting a sender that silently never delivers
+    is worse than not having one.
+    """
+    return declared_platform(tenant_context, "email", EMAIL_SENDERS, "email sender")
+
+
 # ─── Compliance declaration ───────────────────────────────────────
 # Phase 0 collects the tenant's regulatory position as data:
 #
