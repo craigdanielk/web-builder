@@ -67,9 +67,9 @@ const ACCENT = "var(--accent, var(--foreground))";
 //: The media panel's lift. Derived from --foreground, not from a fixed navy —
 //: `rgba(15,27,45,…)` is a shadow for ONE palette on ONE ground; on a dark
 //: tenant it is an invisible smudge and on a warm one it reads blue.
+//: ONE layer — see ABOUT | editorial-split. shadow_system.max_layers = 1.
 const MEDIA_SHADOW =
-  "0 30px 60px -40px color-mix(in srgb, var(--foreground) 28%, transparent)," +
-  " 0 12px 28px -18px color-mix(in srgb, var(--foreground) 16%, transparent)";
+  "0 18px 44px -30px color-mix(in srgb, var(--foreground) 28%, transparent)";
 
 export default function HeroSplitImage({
   eyebrow = "{eyebrow}",

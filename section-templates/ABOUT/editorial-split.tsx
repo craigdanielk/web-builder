@@ -82,9 +82,13 @@ const ACCENT = "var(--accent, var(--foreground))";
 //: The media panel's lift. Derived from --foreground, not from a fixed navy —
 //: a literal rgba shadow is a shadow for ONE palette on ONE ground; on a dark
 //: tenant it is an invisible smudge and on a warm one it reads blue.
+//: ONE layer, not two. The benchmark declares shadow_system.max_layers = 1 and
+//: states outright that elevation is carried by surface tint and radius, not by
+//: shadow — the reference's five shadowed elements are all a single soft layer.
+//: The stacked ambient+contact pair this replaces was a two-layer elevation ramp
+//: borrowed from a different design system; the single layer keeps the lift.
 const MEDIA_SHADOW =
-  "0 30px 60px -40px color-mix(in srgb, var(--foreground) 26%, transparent)," +
-  " 0 12px 28px -18px color-mix(in srgb, var(--foreground) 14%, transparent)";
+  "0 18px 44px -30px color-mix(in srgb, var(--foreground) 26%, transparent)";
 
 /** A slot value that survived the fill. Empty, whitespace, or an unsubstituted
  *  placeholder are all "the harvest had nothing here". */
