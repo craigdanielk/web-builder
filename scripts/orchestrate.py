@@ -1397,6 +1397,438 @@ def section_identity(section: dict, fallback_index: int = 0) -> str:
     return str(section.get("source_index", section.get("index", fallback_index)))
 
 
+# ---------------------------------------------------------------------------
+# Classification loss
+#
+# The omission register cannot see a misclassification, because the
+# classifier's output IS the register's input. A block classified as an
+# archetype whose slot contract has no room for its items loses those items
+# with no record anywhere: cape-crypto's /merchants shipped a CTA holding a
+# headline while six harvested feature cards went nowhere, and that build was
+# counted as 21 sections emitted, 0 content lost.
+#
+# Two mechanisms below, and they are independent on purpose. `reclassify_
+# sections_by_arity` fixes what it can prove; `classification_loss_report`
+# counts what is lost either way, including the cases the fix does not reach.
+# ---------------------------------------------------------------------------
+
+#: A repeater has no ceiling — the row is written once and emitted once per
+#: harvested item. Represented as a number so capacity comparisons stay
+#: ordinary arithmetic.
+_UNBOUNDED_ARITY = 10 ** 6
+
+#: Site chrome. NAV, FOOTER and HERO are identified from the DOM's structure
+#: (tag, role, document position), not from what their items look like — a
+#: footer's link columns and a features grid are the same shape. Their identity
+#: is not the arity signal's to overrule.
+_STRUCTURAL_ARCHETYPES = frozenset({"NAV", "FOOTER", "HERO"})
+
+_ITEM_CAPACITY_CACHE: dict[tuple[str, str], int] = {}
+
+
+def archetype_item_capacity(archetype: str, variant: str) -> int:
+    """How many repeated items the library's template for this pair can hold.
+
+    Read off the template BODY through the same contract parser the fill path
+    uses, so capacity is what the template will actually render, never what a
+    `slot_schema` column claims (it is populated on 2 of 74 rows).
+
+    An archetype+variant the library does not carry has capacity 0 — it can
+    hold nothing because it renders nothing. That is not a guess; a section
+    with no template is omitted by the content policy either way.
+    """
+    key = (archetype or "", variant or "")
+    if key in _ITEM_CAPACITY_CACHE:
+        return _ITEM_CAPACITY_CACHE[key]
+
+    capacity = 0
+    resolver = globals().get("check_template_exists")
+    if resolver is not None and key[0] and key[1]:
+        try:
+            tpl = resolver(key[0], key[1], template_memo())
+            code = tpl.read_text(encoding="utf-8") if isinstance(tpl, Path) else tpl
+            if isinstance(code, str) and code.strip():
+                contract = template_contract(code)
+                if contract.get("repeaters"):
+                    capacity = _UNBOUNDED_ARITY
+                elif contract.get("arrays"):
+                    capacity = max(a["arity"] for a in contract["arrays"].values())
+        except Exception:
+            # Capacity is a signal, not a gate. An unreachable library must not
+            # crash a build; it makes the signal unavailable, and an unavailable
+            # signal reclassifies nothing (0 capacity only ever fires alongside
+            # a POSITIVELY identified target that itself has to resolve).
+            capacity = 0
+
+    _ITEM_CAPACITY_CACHE[key] = capacity
+    return capacity
+
+
+def _item_has(item: dict, field: str) -> bool:
+    value = item.get(field)
+    if field == "image":
+        return bool(value and (value.get("src") if isinstance(value, dict) else value))
+    return bool(str(value or "").strip())
+
+
+def item_shape_target(items: list[dict]) -> tuple[str, str] | None:
+    """The archetype a run of harvested items IS, judged only by its own shape.
+
+    Deliberately narrow. Every rule below demands the shape of EVERY item, so
+    an accidental repeat (two CTA buttons in a hero, a nav's links) matches
+    nothing and is left where it is. Returning None is the common, correct
+    answer; this function exists to catch the cases where the source's own DOM
+    states the archetype plainly and the classifier read something else.
+    """
+    items = [i for i in (items or []) if isinstance(i, dict)]
+    if len(items) < 2:
+        return None
+
+    has_image = [_item_has(i, "image") for i in items]
+    has_heading = [_item_has(i, "heading") for i in items]
+    has_body = [_item_has(i, "body") for i in items]
+
+    # A strip of logos: every item is an image and none carries copy. The
+    # heading, when present, is the image's alt text.
+    if all(has_image) and not any(has_body):
+        return ("LOGO-BAR", "scrolling-marquee")
+    # Person cards: portrait + name + role/bio, on every item.
+    if all(has_image) and all(has_heading) and all(has_body):
+        return ("TEAM", "headshot-grid-square")
+    # Feature cards: title + description, no imagery on any item.
+    if all(has_heading) and all(has_body) and not any(has_image):
+        return ("FEATURES", "icon-grid")
+    return None
+
+
+def reclassify_sections_by_arity(sections: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Move blocks the classifier put in an archetype that cannot hold them.
+
+    The rule, and it is general: **an archetype whose slot contract cannot hold
+    the harvested arity is the wrong archetype.** Three conditions must all
+    hold before anything moves, and each one is a fact about this build's
+    library or this block's DOM — never about a URL:
+
+      1. the block carries a grouped repeater of 2+ items;
+      2. its current archetype's template can hold fewer than that;
+      3. the item shape positively identifies a target whose template CAN.
+
+    Returns (sections, moves). Input is never mutated: reconciliation runs more
+    than once per build and a rewritten harvest would compound.
+    """
+    out: list[dict] = []
+    moves: list[dict] = []
+    for position, sec in enumerate(sections or []):
+        if not isinstance(sec, dict):
+            out.append(sec)
+            continue
+        entry = dict(sec)
+        content = entry.get("content") or {}
+        items = content.get("items") or []
+        archetype = canonical_archetype(entry.get("archetype", ""))
+        variant = entry.get("variant") or ""
+
+        if archetype in _STRUCTURAL_ARCHETYPES or len(items) < 2:
+            out.append(entry)
+            continue
+
+        capacity = archetype_item_capacity(entry.get("archetype", ""), variant)
+        if capacity >= len(items):
+            out.append(entry)
+            continue
+
+        target = item_shape_target(items)
+        if not target or canonical_archetype(target[0]) == archetype:
+            out.append(entry)
+            continue
+        if archetype_item_capacity(*target) < len(items):
+            out.append(entry)  # the target cannot hold them either — no gain
+            continue
+
+        moves.append({
+            "index": entry.get("index", position),
+            "section_uid": entry.get("section_uid"),
+            "from": f"{entry.get('archetype', '')}/{variant}",
+            "to": f"{target[0]}/{target[1]}",
+            "item_count": len(items),
+            "capacity": capacity,
+            "classified_by": entry.get("method", ""),
+            "confidence": entry.get("confidence"),
+            "heading": (content.get("section_headings") or [""])[0],
+        })
+        entry["archetype"] = target[0]
+        entry["variant"] = target[1]
+        entry["reclassified_from"] = moves[-1]["from"]
+        out.append(entry)
+    return out, moves
+
+
+#: Below this many characters a string matches by accident. Reported as
+#: untraceable rather than counted either way — a gate that guesses in its own
+#: favour is the failure this task exists to remove.
+_MIN_TRACEABLE_CHARS = 4
+
+
+def _normalize_trace(value: str) -> str:
+    """Alphanumerics only, lowercased.
+
+    The emitted TSX escapes apostrophes as `{"'"}`, wraps lines and re-cases
+    nothing, so punctuation and whitespace are noise on both sides of the
+    comparison.
+    """
+    return "".join(c for c in str(value or "").lower() if c.isalnum())
+
+
+def _trace_key(value: str) -> str:
+    """The needle: a harvested string, normalized and capped.
+
+    Capped at 60 characters so a template that truncates a long description
+    still counts as having placed it. Only ever applied to the harvested side —
+    capping the rendered page would make the whole page unsearchable.
+    """
+    return _normalize_trace(value)[:60]
+
+
+def _block_traces(block: dict) -> tuple[list[str], list[dict]]:
+    """(section-level strings, per-item records) a harvested block contributes."""
+    content = block.get("content") or {}
+    section_strings = list(content.get("section_headings") or []) + \
+        list(content.get("section_body_text") or [])
+    if not section_strings:
+        section_strings = list(content.get("headings") or [])[:1]
+    items = []
+    for item in (content.get("items") or []):
+        if not isinstance(item, dict):
+            continue
+        strings = [s for s in (item.get("heading"), item.get("body")) if s]
+        image = item.get("image") or {}
+        items.append({
+            "heading": item.get("heading", ""),
+            "strings": strings,
+            "image_src": (image.get("src") if isinstance(image, dict) else "") or "",
+        })
+    return section_strings, items
+
+
+def classification_loss_report(pages: list[dict], rendered_by_page: dict) -> dict:
+    """What entered the harvest and left no trace in any emitted section.
+
+    Answers the question no existing register can: the omission register is
+    fed by the classifier, so a block sent to the wrong archetype is recorded
+    as a success there. This compares the source side against the rendered
+    side directly.
+
+    Three verdicts, and NOT_MEASURED is never PASS: with no harvest there is
+    nothing to compare, which is a different statement from "nothing was lost".
+    """
+    page_reports: dict[str, dict] = {}
+    blocks_total = blocks_lost = items_total = items_lost = items_untraceable = 0
+    strings_total = strings_lost = 0
+
+    for page in (pages or []):
+        if not isinstance(page, dict):
+            continue
+        page_id = normalize_page_id(page)
+        rendered = _normalize_trace(rendered_by_page.get(page_id, ""))
+        block_rows = []
+        for block in (page.get("sections") or []):
+            if not isinstance(block, dict):
+                continue
+            section_strings, items = _block_traces(block)
+            placed_strings = [s for s in section_strings
+                              if len(_trace_key(s)) >= _MIN_TRACEABLE_CHARS
+                              and _trace_key(s) in rendered]
+            traceable_strings = [s for s in section_strings
+                                 if len(_trace_key(s)) >= _MIN_TRACEABLE_CHARS]
+            lost_items, untraceable = [], 0
+            for item in items:
+                keys = [_trace_key(s) for s in item["strings"]]
+                keys = [k for k in keys if len(k) >= _MIN_TRACEABLE_CHARS]
+                src = item["image_src"]
+                if not keys and not src:
+                    untraceable += 1
+                    continue
+                if any(k in rendered for k in keys):
+                    continue
+                if src and _trace_key(src.rsplit("/", 1)[-1]) in rendered:
+                    continue
+                lost_items.append(item)
+
+            block_rows.append({
+                "index": block.get("index"),
+                "archetype": block.get("archetype", ""),
+                "variant": block.get("variant", ""),
+                "section_uid": block.get("section_uid"),
+                "block_placed": bool(placed_strings) or len(lost_items) < len(items),
+                "strings_total": len(traceable_strings),
+                "strings_placed": len(placed_strings),
+                "items_total": len(items),
+                "items_lost": len(lost_items),
+                "items_untraceable": untraceable,
+                "items_lost_detail": [{"heading": i["heading"]} for i in lost_items],
+            })
+            blocks_total += 1
+            if not block_rows[-1]["block_placed"]:
+                blocks_lost += 1
+            items_total += len(items)
+            items_lost += len(lost_items)
+            items_untraceable += untraceable
+            strings_total += len(traceable_strings)
+            strings_lost += len(traceable_strings) - len(placed_strings)
+
+        page_reports[page_id] = {
+            "rendered_chars": len(rendered),
+            "blocks": block_rows,
+            "blocks_lost": sum(1 for b in block_rows if not b["block_placed"]),
+            "items_lost": sum(b["items_lost"] for b in block_rows),
+        }
+
+    if blocks_total == 0:
+        verdict = "NOT_MEASURED"
+    elif blocks_lost or items_lost:
+        verdict = "FAIL"
+    else:
+        verdict = "PASS"
+
+    return {
+        "schema": "aurelix.classification_loss.v1",
+        "verdict": verdict,
+        "summary": {
+            "blocks_total": blocks_total,
+            "blocks_lost": blocks_lost,
+            "items_total": items_total,
+            "items_lost": items_lost,
+            "items_untraceable": items_untraceable,
+            "strings_total": strings_total,
+            "strings_lost": strings_lost,
+        },
+        "pages": page_reports,
+    }
+
+
+def read_rendered_pages(project_name: str) -> dict:
+    """page_id -> the concatenated TSX of everything that renders on that page.
+
+    Shared layout components count. NAV and FOOTER are generated once and
+    filtered out of every page's section list, so a page-local search would
+    report every nav link and footer column as lost content on all six pages —
+    a gate that reports 27 losses of which 16 are its own blind spot teaches
+    the reader to ignore it.
+    """
+    root = OUTPUT_DIR / project_name
+    base = root / "sections"
+    shared_dir = root / "shared"
+    shared = "\n".join(p.read_text(encoding="utf-8", errors="ignore")
+                       for p in sorted(shared_dir.glob("*.tsx"))) if shared_dir.is_dir() else ""
+    out: dict[str, str] = {}
+    if not base.is_dir():
+        return out
+    subdirs = [d for d in sorted(base.iterdir()) if d.is_dir()]
+    if subdirs:
+        for d in subdirs:
+            out[d.name] = shared + "\n" + "\n".join(
+                p.read_text(encoding="utf-8", errors="ignore") for p in sorted(d.glob("*.tsx")))
+    else:
+        out["homepage"] = shared + "\n" + "\n".join(
+            p.read_text(encoding="utf-8", errors="ignore") for p in sorted(base.glob("*.tsx")))
+    return out
+
+
+def run_classification_loss_gate(project_name: str) -> dict:
+    """Measure classification loss for a build on disk and write the report."""
+    spec_path = OUTPUT_DIR / project_name / "site-spec.json"
+    pages: list[dict] = []
+    if spec_path.exists():
+        try:
+            spec = json.loads(spec_path.read_text())
+            pages = spec.get("pages") or (
+                [{"page_id": "homepage", "sections": spec.get("sections") or []}]
+                if spec.get("sections") else []
+            )
+        except Exception:
+            pages = []
+    report = classification_loss_report(pages, read_rendered_pages(project_name))
+    write_file(OUTPUT_DIR / project_name / "classification-loss.json",
+               json.dumps(report, indent=2))
+    s = report["summary"]
+    print(f"  🔎 Classification loss: {report['verdict']} — "
+          f"{s['blocks_lost']}/{s['blocks_total']} source blocks left no trace, "
+          f"{s['items_lost']}/{s['items_total']} harvested items lost")
+    return report
+
+
+#: Slots that make a section a header and nothing else. A template that
+#: declares rows and rendered none, with only these filled, imports and returns
+#: `null` — counted as emitted, visible to nobody.
+_HEADER_ONLY_SLOTS = frozenset({"section_title", "section_subtitle", "eyebrow"})
+
+
+def omission_cause_for(section: dict, coverage: dict) -> tuple[str, str] | None:
+    """(reason, cause) for a template section that should not be written, else None.
+
+    Splits three outcomes that were previously one bucket:
+
+      * `registry_gap_fill_no_source` — the industry sequence demanded an
+        archetype the source page does not contain, and it was appended with an
+        empty content dict. Unfillable at append time; the content rule working,
+        not a library deficiency. 13 of cape-crypto's 17 were this.
+      * `declared_repeater_no_rows` — a real harvested section whose template
+        declares rows and got none, leaving a title with nothing under it.
+      * `no_sourced_content` — a real harvested section that filled no slot.
+    """
+    filled = coverage.get("filled", 0)
+    if filled == 0 and (coverage.get("empty", 0) or coverage.get("filled_slots") is not None):
+        if section.get("_registry_gap_fill"):
+            return ("registry gap-fill: the registry demanded this archetype and "
+                    "the source page has no such block", "registry_gap_fill_no_source")
+        return ("template resolved but the harvest filled no slot", "no_sourced_content")
+
+    repeaters = coverage.get("repeat_rows") or {}
+    if repeaters and not any(rows for rows in repeaters.values()):
+        filled_slots = set(coverage.get("filled_slots") or [])
+        if filled_slots and filled_slots <= _HEADER_ONLY_SLOTS:
+            return ("template declares a repeater the harvest filled with 0 rows; "
+                    "the section renders a heading and nothing else",
+                    "declared_repeater_no_rows")
+    return None
+
+
+def nearest_variant_in_library(archetype: str, variant: str) -> str | None:
+    """A sibling variant to use when the requested one is not in the library.
+
+    Resolution is exact on archetype+variant, so `STATS/metric-row` misses
+    `STATS/counter` and `PORTFOLIO/filtered-grid` misses `PORTFOLIO/masonry` —
+    both present, both reviewed. Substituting a sibling of the SAME archetype
+    keeps the section's semantics and its sourced content; only the layout
+    differs. Returns None when the requested variant resolves (nothing to do)
+    or when the archetype itself is absent (nothing to substitute).
+    """
+    archetype = (archetype or "").strip()
+    variant = (variant or "").strip()
+    if not archetype:
+        return None
+    resolver = globals().get("check_template_exists")
+    if resolver is not None and variant:
+        try:
+            if resolver(archetype, variant, template_memo()) is not None:
+                return None
+        except Exception:
+            pass
+    available = [v for v in _variants_for_archetype(archetype) if v and v != variant]
+    if not available:
+        return None
+    # Deterministic and explainable: the alphabetically first sibling that
+    # actually resolves. "Nearest" cannot mean "most similar name" — the names
+    # describe layout, and no ordering over them carries meaning.
+    for candidate in sorted(available):
+        try:
+            if resolver is None or resolver(archetype, candidate, template_memo()) is not None:
+                return candidate
+        except Exception:
+            continue
+    return None
+
+
 def reconcile_page_sections(
     registry_sections: list[dict],
     harvested_sections: list[dict],
@@ -1424,6 +1856,14 @@ def reconcile_page_sections(
     harvested = [s for s in (harvested_sections or []) if isinstance(s, dict)]
     if not harvested:
         return reconcile_sections(registry_sections, [])
+
+    # An archetype whose slot contract cannot hold the harvested arity is the
+    # wrong archetype, and everything downstream inherits the mistake: the
+    # section is emitted without its items, or omitted as a library gap that
+    # was never the cause. Corrected here, on the spine, before the registry
+    # gap-fill runs — so a block moved INTO an archetype stops that archetype
+    # being appended a second time with empty content.
+    harvested, reclassified = reclassify_sections_by_arity(harvested)
 
     registry = [s for s in (registry_sections or []) if isinstance(s, dict)]
     registry_variant: dict[str, str] = {}
@@ -1459,6 +1899,12 @@ def reconcile_page_sections(
             continue
         gap = dict(sec)
         gap.setdefault("content", {})
+        # Marked at APPEND time, which is when its fate is decided: a gap-fill
+        # enters section generation with a literally empty content dict and is
+        # therefore unfillable before a single slot is looked at. Without this
+        # flag its later omission is indistinguishable from a harvest failure,
+        # and 13 of cape-crypto's 17 "harvest filled no slot" rows were this.
+        gap["_registry_gap_fill"] = True
         seen_archetypes.add(arch)
         final.append(gap)
         gap_filled += 1
@@ -1468,6 +1914,8 @@ def reconcile_page_sections(
         "registry_count": len(registry),
         "harvest_count": len(harvested),
         "gap_filled_count": gap_filled,
+        "reclassified_count": len(reclassified),
+        "reclassified": reclassified,
         # Under a harvest spine duplicates are KEPT, not resolved. Reported so
         # the number that used to mean "silently deleted" now means "preserved".
         "duplicates_resolved": 0,
