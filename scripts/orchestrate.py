@@ -113,6 +113,18 @@ from lib import tenant_context as _tenant_vocab
 # it. See scripts/lib/render_facts.py.
 from lib.render_facts import format_render_facts, read_render_facts
 
+# Pre-deploy compliance gate (D4). Optional import: a build in a tree without
+# it must say NOT_MEASURED, never proceed silently as though it had passed.
+try:
+    from lib.compliance_gate import ComplianceFailure, compliance_gate
+except ImportError:  # pragma: no cover - exercised by the NOT_MEASURED branch
+    compliance_gate = None  # type: ignore
+
+    class ComplianceFailure(RuntimeError):  # type: ignore
+        """Placeholder so `except ComplianceFailure` stays valid."""
+
+        result: dict = {}
+
 # Layer 6: Site manifest for multi-page generation
 try:
     from lib import site_manifest as site_manifest_lib
@@ -274,8 +286,35 @@ class UsageErrorParser(argparse.ArgumentParser):
         self.exit(EXIT_USAGE, f"{self.prog}: error: {message}\n")
 
 
+# gate name → "pass" | "fail" | "not_measured". Every pre-deploy gate records
+# its verdict here so a build cannot report success on a gate that never ran.
+# A gate absent from this dict did not run at all, which is also not a pass.
+GATE_RESULTS: dict[str, str] = {}
+
+
+def record_gate_result(gate: str, status: str, detail: str = "") -> None:
+    GATE_RESULTS[gate] = status
+    mark = {"pass": "✓", "fail": "✖", "not_measured": "⊘"}.get(status, "?")
+    print(f"  {mark} GATE {gate}: {status.upper()}" + (f" — {detail}" if detail else ""))
+
+
+def reset_gate_results() -> None:
+    GATE_RESULTS.clear()
+
+
+def unmeasured_gates() -> list[str]:
+    return sorted(g for g, s in GATE_RESULTS.items() if s == "not_measured")
+
+
 def resolve_build_outcome(
-    render_audit_status: str, deploy_requested: bool, audit_ran: bool = True
+    render_audit_status: str,
+    deploy_requested: bool,
+    audit_ran: bool = True,
+    # Quoted: scripts/test_build_outcome.py extracts this function's source and
+    # exec()s it in isolation under Python 3.9, without the module's
+    # `from __future__ import annotations`, so a bare PEP 604 union here is
+    # evaluated and raises at definition time.
+    unmeasured_gates: "list[str] | None" = None,
 ) -> tuple[str, int]:
     """Map recorded failures + render-audit result onto (build_log status, exit code).
 
@@ -311,6 +350,11 @@ def resolve_build_outcome(
         return "failed", EXIT_FAILED
     if not deploy_requested:
         return "completed", EXIT_OK
+    if unmeasured_gates:
+        # A gate that could not measure has not passed. Reporting exit 0 here
+        # is the "gate that only says yes" failure one level up: every
+        # individual gate refuses correctly and the build still says success.
+        return "partial", EXIT_NOT_MEASURED
     if render_audit_status == "passed":
         return "completed", EXIT_OK
     if render_audit_status == "review_needed":
@@ -8683,6 +8727,59 @@ def stage_validate(project_name: str) -> dict:
 # Bill of Sale Orchestration (BoS → build_trace → re-audit loop)
 # ═════════════════════════════════════════════════════════════════════════════
 
+def run_compliance_gate(site_dir, tenant: str | None, tenant_context: dict | None) -> dict:
+    """Pre-deploy compliance gate. A FAIL fails the build.
+
+    Cape Crypto is FSCA-licensed FSP No. 53746: a prohibited phrase or a missing
+    disclosure on a generated page is a regulatory liability, not a styling
+    defect. The scanner (lib.compliance_gate, D4) was fully implemented and
+    fully tested with zero production callers; this is the call site.
+
+    Three outcomes, and NOT_MEASURED is never PASS. `load_tenant_context` never
+    raises — every read degrades to [] — so an unreachable Supabase, a dropped
+    table and an empty tenant are indistinguishable from the returned dict.
+    Printing PASS off a dead database is the worst result this system can
+    produce, so no declaration loaded ⇒ NOT_MEASURED, recorded as itself.
+    """
+    print("\n═══ COMPLIANCE GATE ═══\n")
+    if compliance_gate is None:
+        record_gate_result(
+            "compliance", "not_measured",
+            "lib.compliance_gate could not be imported — nothing was checked",
+        )
+        return {"status": "not_measured", "reason": "compliance_gate unavailable"}
+
+    try:
+        result = compliance_gate(
+            site_dir, tenant, tenant_context=tenant_context, raise_on_fail=True
+        )
+    except ComplianceFailure as exc:
+        result = exc.result
+        record_gate_result("compliance", "fail", str(exc).splitlines()[0])
+        for v in result.get("violations", [])[:10]:
+            print(f"    • prohibited '{v.get('term')}' at {v.get('file')}:{v.get('line')}")
+        for d in result.get("missing_disclaimers", [])[:10]:
+            print(f"    • MISSING disclaimer: {d[:120]}")
+        record_build_failure("compliance", str(exc).splitlines()[0])
+        return result
+    except Exception as exc:  # noqa: BLE001 — the gate itself broke
+        record_gate_result("compliance", "not_measured", f"gate raised {type(exc).__name__}: {exc}")
+        return {"status": "not_measured", "reason": str(exc)}
+
+    status = result.get("status", "not_measured")
+    record_gate_result("compliance", status, result.get("reason", ""))
+    if status == "pass":
+        print(
+            f"    {result.get('prohibited_terms_declared', '?')} prohibited term(s) and "
+            f"{result.get('required_disclaimers_declared', '?')} disclaimer(s) checked against "
+            f"{result.get('files_scanned', '?')} generated file(s) and "
+            f"{result.get('harvested_values_scanned', '?')} harvested value(s)"
+        )
+        for category in result.get("prohibited_language", []) or []:
+            print(f"    NOT machine-checked (human/LLM copy review): {category}")
+    return result
+
+
 def stage_render_audit(project_name: str, site_manifest: dict | None = None) -> str:
     """
     Stage 6: Post-build render audit — invoke render-audit.js against the
@@ -10290,6 +10387,11 @@ def main():
                     harvested_nav=_harvested_nav,
                     design_style=(site_spec or {}).get("style"),
                 )
+                run_compliance_gate(
+                    OUTPUT_DIR / args.project / SITE_DIR_NAME,
+                    getattr(args, "tenant", None),
+                    tenant_context,
+                )
                 save_checkpoint(output_dir, "deploy", args.project)
                 # Only a site that actually compiled counts as deployed; a
                 # failed production build is already in the failure ledger.
@@ -10345,7 +10447,8 @@ def main():
         # measured anything (crashed, timed out, or couldn't start).
         _audit_ran = _render_audit_status in ("passed", "review_needed")
         _build_status, _exit_code = resolve_build_outcome(
-            _render_audit_status, deploy_requested, audit_ran=_audit_ran
+            _render_audit_status, deploy_requested, audit_ran=_audit_ran,
+            unmeasured_gates=unmeasured_gates(),
         )
 
         if build_cache and SUPABASE_AVAILABLE:
@@ -10566,6 +10669,11 @@ def main():
                 )
         if validation['passed'] or args.force:
             stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform, harvested_nav=_harvested_nav, design_style=(site_spec or {}).get("style"))
+            run_compliance_gate(
+                OUTPUT_DIR / args.project / SITE_DIR_NAME,
+                getattr(args, "tenant", None),
+                tenant_context,
+            )
             save_checkpoint(output_dir, "deploy", args.project)
             # Only a site that actually compiled counts as deployed.
             deploy_ran = production_build_ok(OUTPUT_DIR / args.project / SITE_DIR_NAME)
@@ -10605,7 +10713,8 @@ def main():
     # measured anything (crashed, timed out, or couldn't start).
     _audit_ran = _render_audit_status in ("passed", "review_needed")
     _build_status, _exit_code = resolve_build_outcome(
-        _render_audit_status, deploy_requested, audit_ran=_audit_ran
+        _render_audit_status, deploy_requested, audit_ran=_audit_ran,
+        unmeasured_gates=unmeasured_gates(),
     )
 
     if SUPABASE_AVAILABLE:
