@@ -45,13 +45,73 @@ _ID_SAFE_RE = re.compile(r"[^a-z0-9]+")
 _COMPOSITION = {
     "abstract": "abstract composition of layered geometric form, generous negative "
                 "space, no subject at the centre",
-    "scene": "wide environmental scene, natural light, no foreground subject, "
-             "horizon low in frame",
-    "texture": "flat full-bleed material texture, even illumination, no focal "
-               "point, tiles without a visible seam",
+    # NOT "wide": the aspect ratio is DECLARED per slot and the only `scene`
+    # demand on this site is 4:5 portrait. A prompt that says "wide" while the
+    # engine is handed `--aspect_ratio 4:5` asks for two different pictures and
+    # gets the worse of both.
+    "scene": "environmental scene with real depth — landscape or architecture, "
+             "natural directional light, no foreground subject",
+    # Rewritten after looking at what the first version bought. "flat
+    # full-bleed material texture ... tiles without a visible seam" produced a
+    # dense blue-and-white CHECKERBOARD: "tiles" was read as an instruction to
+    # draw tiles, and "even illumination, no focal point" as an instruction to
+    # fill every pixel equally. The result was maximum visual noise behind a
+    # headline — the exact opposite of the declared `decorative` role. The
+    # word "tile" is gone and the anti-pattern is now stated positively AND
+    # negatively, because a generator will happily satisfy a description of
+    # what to avoid by drawing it.
+    "texture": "an almost-empty field of soft continuous tonal gradation with "
+               "fine photographic grain, one broad diffuse band of light "
+               "crossing it, and large areas of near-flat ground; no repeating "
+               "motif, no grid, no checkerboard, no mosaic, no tiles, no cells, "
+               "no geometric shapes, nothing that reads as a pattern",
     "diagram": "flat schematic composition of simple unlabelled shapes and "
                "connectors, generous margins",
     "product": "unreachable — a generated product depiction is refused",
+}
+
+#: How the picture opens. Split out of the prompt because ONE lead sentence
+#: cannot serve every intent: "Non-representational scene artwork" is a
+#: contradiction, and it was what this module asked for until the first real
+#: job set was read before spending. A `scene` is representational by
+#: definition; what keeps it claim-free is that it depicts no people, no
+#: signage and no product — which the negative prompt and the sentence below
+#: both say outright.
+_LEAD = {
+    "abstract": "Non-representational abstract artwork",
+    "texture": "Non-representational material texture",
+    "diagram": "Non-representational schematic artwork",
+    "scene": "A photographic environmental scene, unpeopled and without signage",
+    "product": "unreachable — a generated product depiction is refused",
+}
+
+#: What the picture has to DO on the page, which the template declares as
+#: `role`. A decorative backdrop sits behind text and must recede; a
+#: load-bearing image is the subject of its own frame beside body copy. Asking
+#: for "a quiet backdrop" in the second case produces exactly the washed-out
+#: filler this system is trying to stop shipping.
+_USAGE = {
+    # "no element competing with a headline" was not specific enough. The first
+    # backdrop that satisfied it put its tonal mass through the middle of the
+    # frame, and `object-cover` on a wide hero cropped that mass to exactly the
+    # band where the muted subheadline sits — legible at the left, fighting the
+    # ground by the right edge, on all five pages. The contrast fact-check
+    # cannot see it: it measures the token pair, not the composited image. So
+    # the constraint is now spatial, which is the thing that was actually
+    # wrong, and it is expressed in terms `object-cover` cannot undo — a clear
+    # middle survives any centre crop.
+    "decorative": "It sits behind text and must recede: low contrast, no "
+                  "element competing with a headline. Keep the middle of the "
+                  "frame — the full horizontal band through its centre — "
+                  "near-empty and near-flat; what tonal mass there is belongs "
+                  "in the outer margins, strongest at the corners and fading "
+                  "out well before the centre. Place it asymmetrically — two "
+                  "corners weighted, the others barely touched — and never as "
+                  "a band or bar running the full width or height, which reads "
+                  "as a vignette rather than as a composition.",
+    "load-bearing": "It stands in its own frame beside body copy and must hold "
+                    "attention on its own: a clear focal structure, full "
+                    "tonal range.",
 }
 
 #: The prohibitions, carried INTO the prompt rather than left to the reviewer.
@@ -67,6 +127,19 @@ NEGATIVE_PROMPT = (
     "certificates, medals, award ribbons, people, faces, hands, portraits, "
     "watermarks, signatures"
 )
+
+
+class UncompiledStyle(Exception):
+    """Raised when a brand is asked for from a style that has no design
+    authority behind it.
+
+    The alternative — falling back to a default palette, or to whatever the
+    crawl produced — is the failure this whole module exists downstream of. A
+    picture generated against the source site's colours clashes with the page
+    the design compiler actually renders, and it costs money to find out. An
+    unmeasured design system must read as unmeasured: no jobs, a recorded
+    reason, and slots that stay empty and named.
+    """
 
 
 class ClaimBearingJob(Exception):
@@ -87,14 +160,34 @@ def _slug(*parts) -> str:
     return out or "job"
 
 
-def _palette(brand: dict) -> list:
+#: Which palette roles a job's colour hint carries, and IN WHAT ORDER, by the
+#: declared role of the slot.
+#:
+#: recraft treats `--colors` as a weighted hint and leans on the ones it is
+#: given first. The first HERO backdrop was handed accent-then-ground-then-the
+#: two dark tones and came back as saturated navy against pure white at maximum
+#: separation — unusable behind a headline, whatever the composition asked for.
+#:
+#: A decorative slot therefore leads with the ground and the tinted surface and
+#: drops the two DARK roles entirely; the accent stays last, present but not
+#: dominant. It stays because dropping it would also drop the property that a
+#: changed accent moves the hash — the design system has to be able to
+#: invalidate this picture, and a colour the job never mentions cannot.
+_PALETTE_KEYS_BY_ROLE = {
+    "decorative": ("background", "surface", "accent"),
+    "load-bearing": ("accent", "background", "foreground", "surface",
+                     "surface_inverse"),
+}
+
+
+def _palette(brand: dict, role: str = "load-bearing") -> list:
     """Brand hexes, in a fixed order, deduplicated, only real hex values.
 
     Order is fixed rather than sorted so the palette reads accent-first to the
     engine, and fixed order is equally deterministic.
     """
     seen, out = set(), []
-    for key in ("accent", "background", "foreground", "surface", "surface_inverse"):
+    for key in _PALETTE_KEYS_BY_ROLE.get(role, _PALETTE_KEYS_BY_ROLE["load-bearing"]):
         val = (brand or {}).get(key)
         if not isinstance(val, str):
             continue
@@ -141,15 +234,23 @@ def to_job_v1(gap: dict, brand: dict) -> dict:
     if intent not in _COMPOSITION:
         raise ValueError("unknown art intent %r" % intent)
 
+    role = (gap.get("role") or "decorative").lower()
     brand = brand or {}
     brand_name = str(brand.get("name") or "").strip()
-    colors = _palette(brand)
-    background = (
-        "ground derived from the brand palette (%s), unbroken, no vignette"
-        % ", ".join(colors)
-        if colors else
-        "unbroken neutral ground, no vignette"
-    )
+    colors = _palette(brand, role=role)
+    if not colors:
+        background = "unbroken neutral ground, no vignette"
+    elif role == "decorative":
+        background = (
+            "ground derived from the brand palette (%s), unbroken, no vignette; "
+            "the first colour dominates the frame and the last appears only as "
+            "the faintest tint, never as a mass" % ", ".join(colors)
+        )
+    else:
+        background = (
+            "ground derived from the brand palette (%s), unbroken, no vignette"
+            % ", ".join(colors)
+        )
     composition = _COMPOSITION[intent]
 
     subject = {
@@ -158,16 +259,17 @@ def to_job_v1(gap: dict, brand: dict) -> dict:
         "archetype": gap.get("archetype") or "",
         "variant": gap.get("variant") or "",
         "slot": gap.get("slot") or "",
-        "role": gap.get("role") or "decorative",
+        "role": role,
+        "lead": _LEAD[intent],
+        "usage": _USAGE.get(role, _USAGE["decorative"]),
     }
 
     # Placeholders resolve from `subject` plus the two output fields the
     # pipeline folds in ({composition}, {background}). Every name used below is
     # present in one of those, so no placeholder can survive into the prompt.
     prompt = (
-        "Non-representational {intent} artwork for the {archetype} section of "
-        "{brand_name}'s website. {composition}. {background}. "
-        "Calm, precise, editorial; suitable as a quiet backdrop behind text. "
+        "{lead} for the {archetype} section of {brand_name}'s website. "
+        "{composition}. {background}. Calm, precise, editorial. {usage} "
         "It must depict no people, no products, no interfaces, no documents and "
         "no data of any kind."
     )
@@ -250,3 +352,116 @@ def job_hash(job: dict) -> str:
     re-billed. The capture filenames in this repo already shipped that bug once.
     """
     return hashlib.sha256(cache_key_json(job).encode("utf-8")).hexdigest()[:16]
+
+
+# ── The brand: the COMPILED design system, and nothing else ────────────────
+#
+# `site-spec.json.style.palette` after `design_system.compile_style()` has run
+# is the same dictionary `globals.css` is written from. It is therefore the
+# only palette that describes the page a commissioned picture will sit on.
+#
+# The crawled palette lives in the same field BEFORE compilation (the compiler
+# overwrites `site_spec["style"]` wholesale), which is exactly why this reads
+# `design_source` rather than trusting the shape: the two are indistinguishable
+# structurally and opposite in effect. For cape-crypto the crawl is a near-black
+# ground with a `#00d18f` green; the compiled system is a white ground with a
+# `#004e89` accent. A texture generated for the first, placed on the second,
+# fights every section it appears in.
+
+#: brand role -> compiled palette key. `surface` takes `bg_secondary` (the
+#: tinted panel that actually appears on the page) rather than the `surface`
+#: key, which in this build is a near-white barely distinct from the ground.
+_BRAND_ROLE_FROM_PALETTE = (
+    ("accent", "accent"),
+    ("background", "bg_primary"),
+    ("foreground", "text_primary"),
+    ("surface", "bg_secondary"),
+    ("surface_inverse", "surface_inverse"),
+)
+
+
+def brand_from_style(style: dict, name: str = "", reference_images=None) -> dict:
+    """The brand dict `to_job_v1` takes, built from a COMPILED style.
+
+    Raises `UncompiledStyle` when the style carries no design authority
+    (`design_source` absent/empty) or no usable palette. Refusing is the point:
+    the caller degrades to "no jobs, reason recorded", never to a guessed
+    palette.
+    """
+    style = style or {}
+    design_source = style.get("design_source")
+    if not isinstance(design_source, str) or not design_source.strip():
+        raise UncompiledStyle(
+            "style carries no design_source — there is no compiled design "
+            "system to generate against"
+        )
+
+    palette = style.get("palette") or {}
+    brand = {"name": str(name or "").strip()}
+    for role, key in _BRAND_ROLE_FROM_PALETTE:
+        val = palette.get(key)
+        if isinstance(val, str) and re.fullmatch(r"#[0-9a-fA-F]{3,8}", val.strip()):
+            brand[role] = val.strip().lower()
+
+    if not any(role in brand for role, _ in _BRAND_ROLE_FROM_PALETTE):
+        raise UncompiledStyle(
+            "compiled style has no usable palette hexes (%s)"
+            % ", ".join(sorted(palette)) or "empty"
+        )
+
+    refs = [r for r in (reference_images or []) if isinstance(r, str) and r.strip()]
+    if refs:
+        brand["reference_images"] = refs
+    return brand
+
+
+def lower_gaps(gap_rows, brand: dict) -> dict:
+    """Every gap row -> the distinct set of pictures it asks for.
+
+    Returns `{"jobs": [{job_hash, job, demands: [...]}], "refused": [...],
+    "unlowered": [...]}`.
+
+    Three outcomes, all recorded, none silent:
+
+    - **jobs** — a lowerable art demand, deduplicated by `job_hash`. The five
+      HERO | centered sections on this site declare byte-identical backdrops;
+      they collapse to one entry with five `demands`, so one picture is bought
+      once. `demands` is what lets a cached file be placed back into all five.
+    - **refused** — a claim-bearing declaration. `asset_resolver` already
+      filters these before they become gaps; this is the second gate, and it
+      writes a line rather than dropping one.
+    - **unlowered** — a gap with no art intent, i.e. a FAILED FETCH
+      (`reason: "no extracted source"`). The source had this image and we could
+      not get it. That is retryable, and it is not a commission: generating a
+      replacement for an image the source really has would substitute invented
+      media for real media without saying so.
+
+    Deterministic: entries come out in first-seen order and the digest ignores
+    key order, so the same set of gaps always produces the same file.
+    """
+    jobs, index, refused, unlowered = [], {}, [], []
+    for gap in gap_rows or []:
+        intent = (gap.get("intent") or "").strip().lower()
+        if not intent:
+            unlowered.append({
+                "gap": gap,
+                "reason": "no art intent — a failed fetch is retried, not "
+                          "commissioned",
+            })
+            continue
+        try:
+            job = to_job_v1(gap, brand)
+        except ClaimBearingJob as e:
+            refused.append({"gap": gap, "reason": "claim-bearing: %s" % e})
+            continue
+        except ValueError as e:
+            unlowered.append({"gap": gap, "reason": str(e)})
+            continue
+        h = job_hash(job)
+        if h in index:
+            index[h]["demands"].append(gap)
+            continue
+        entry = {"job_hash": h, "job": job, "demands": [gap]}
+        index[h] = entry
+        jobs.append(entry)
+    return {"jobs": jobs, "refused": refused, "unlowered": unlowered}

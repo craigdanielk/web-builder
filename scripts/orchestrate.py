@@ -6065,9 +6065,53 @@ def load_animation_injections(project_name: str) -> dict:
         return {}
 
 
-def stage_resolve_assets(output_dir: Path, extraction_data: dict | None) -> dict:
+def _compiled_style(output_dir: Path) -> dict:
+    """The build's COMPILED design style, read back off disk.
+
+    Read from `site-spec.json` rather than threaded down from the caller for
+    one reason: that file is where the design compiler PERSISTS its result
+    (see the `compile_style` block in main()), so it is the same style
+    `globals.css` is written from — including on a `--skip-to deploy` rerun
+    where the in-memory value never existed. Reading the artifact keeps the
+    picture and the page provably in the same palette.
+    """
+    path = Path(output_dir) / "site-spec.json"
+    try:
+        return (json.loads(path.read_text(encoding="utf-8")).get("style")) or {}
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return {}
+
+
+def stage_resolve_assets(output_dir: Path, extraction_data: dict | None,
+                         tenant: str | None = None,
+                         media_cache_dir: Path | None = None) -> dict:
     """Bind every image slot in every section of this build to a real local
     file, or declare it unresolved. Never a placeholder.
+
+    Three things happen here, in this order, and only the first two existed
+    before:
+
+    1. **Resolve** — every image src the section already carries is bound to a
+       downloaded local file or recorded `unresolved`.
+    2. **Ask** — every `// Art:` declaration with no source becomes a demand
+       row (`asset_resolver.art_demand`), and every demand row is LOWERED to a
+       validated `job-v1` spec (`image_jobs.to_job_v1`) written to
+       `image-jobs.json`. Until this call existed, `to_job_v1` had no caller
+       and that file carried raw gap rows the image pipeline could not read.
+    3. **Place** — a demand whose `job_hash` is already in the media cache is
+       copied into the site and written into the section that asked for it,
+       counted as `generated`. A miss is a reported empty slot: no placeholder,
+       no provider call, no blocked build.
+
+    **This stage never generates anything.** Commissioning is out of band
+    (`scripts/quality/commission-media.py`), hand-run, and cost-estimated
+    first. The build only ever reads the cache.
+
+    The palette every job is generated against comes from the COMPILED style
+    (`site-spec.json.style`, `design_source` set) — never from extraction data.
+    Art generated against the crawled colours of the source site clashes with
+    the page the design compiler actually renders. An uncompiled style produces
+    no jobs and a recorded reason, never a guessed palette.
 
     Runs after all pages' sections + animation decisions are on disk (after
     stage_assemble / stage_assemble_multipage), before stage_deploy — deploy
@@ -6091,18 +6135,55 @@ def stage_resolve_assets(output_dir: Path, extraction_data: dict | None) -> dict
     ACCUMULATED and doubled on a repeat run of the same page).
     """
     from lib.section_artifact import SectionArtifact
-    from lib.asset_resolver import resolve_assets, gaps
+    from lib.asset_resolver import resolve_assets, gaps, art_refusals
+    from lib.image_jobs import brand_from_style, lower_gaps, UncompiledStyle
+    from lib.media_cache import (
+        cache_root, resolve_cached, publish_to_site, place_slot)
 
     print("\n🖼️  Resolving section imagery...")
 
     public_dir = output_dir / "site" / "public"
     art_root = output_dir / "section-artifacts"
     counts = {"total": 0, "extracted": 0, "generated": 0, "unresolved": 0}
-    jobs: list = []
+    gap_rows: list = []
+    refusals: list = []
+
+    # The brand a job is generated against. Refusing (rather than defaulting)
+    # when there is no compiled design system is the whole point: the wrong
+    # palette is worse than no picture, and it costs money to discover.
+    tenant = tenant or output_dir.name
+    style = _compiled_style(output_dir)
+    brand, brand_error = None, None
+    # The slug, presented. Nothing on disk carries a display brand name (no
+    # `brand` key in site-spec.json or site-manifest.json), and inventing one
+    # would put a fabricated proper noun into a prompt — so this is a
+    # deterministic re-casing of the slug the tenant already has, nothing more.
+    display_name = " ".join(p.capitalize() for p in str(tenant).split("-") if p)
+    try:
+        brand = brand_from_style(style, name=display_name)
+    except UncompiledStyle as e:
+        brand_error = str(e)
+        print(f"  ⚠ No compiled design system — commissioning nothing ({e})")
+
+    cache_dir = Path(media_cache_dir) if media_cache_dir else cache_root(ROOT, tenant)
+
+    def _write_records(lowered_all: dict, hits: int, misses: int) -> None:
+        write_file(output_dir / "asset-coverage.json", json.dumps(counts, indent=2))
+        write_file(output_dir / "image-jobs.json", json.dumps({
+            "schema": "image-jobs-v2",
+            "brand": brand,
+            "brand_unavailable": brand_error,
+            "cache_dir": str(cache_dir),
+            "demand_rows": len(gap_rows),
+            "cache_hits": hits,
+            "cache_misses": misses,
+            "jobs": lowered_all["jobs"],
+            "refused": lowered_all["refused"] + refusals,
+            "unlowered": lowered_all["unlowered"],
+        }, indent=2))
 
     if not art_root.exists():
-        write_file(output_dir / "asset-coverage.json", json.dumps(counts, indent=2))
-        write_file(output_dir / "image-jobs.json", json.dumps(jobs, indent=2))
+        _write_records({"jobs": [], "refused": [], "unlowered": []}, 0, 0)
         print("  ⊘ No section-artifacts directory — nothing to resolve")
         return counts
 
@@ -6125,9 +6206,38 @@ def stage_resolve_assets(output_dir: Path, extraction_data: dict | None) -> dict
         # (see `_emit_section_artifact`), so that's the one true "not yet
         # resolved" signal — re-resolving anything else is skipped and its
         # existing, already-finalized tally is reused as-is.
+        dirty = False
         if not a.assets:
             a = resolve_assets(a, extraction_data or {}, public_dir, section_index=a.section_index)
+            dirty = True
 
+        # ── Place commissioned art, if it has already been commissioned ──
+        # The demand rows this section raises are lowered here (not only in the
+        # aggregate below) so a cached file can be matched to the exact slot
+        # that asked for it. `art_demand` reads the section's own provenance,
+        # so a slot the harvest filled raises no demand and is never overwritten.
+        rows = gaps(a)
+        gap_rows.extend(rows)
+        refusals.extend(art_refusals(a))
+        if brand:
+            for entry in lower_gaps(rows, brand)["jobs"]:
+                cached = resolve_cached(cache_dir, entry["job_hash"])
+                if cached is None:
+                    continue  # a named empty slot, not a placeholder
+                src, nbytes = publish_to_site(cached, public_dir)
+                for demand in entry["demands"]:
+                    new_tsx, placed = place_slot(a.tsx, demand["slot"], src)
+                    if not placed:
+                        continue
+                    a.tsx = new_tsx
+                    a.assets.append({
+                        "slot": demand["slot"], "src": src,
+                        "origin": "generated", "bytes": nbytes,
+                        "job_hash": entry["job_hash"],
+                    })
+                    dirty = True
+
+        if dirty:
             # Write the .tsx FIRST, the artifact SECOND — deliberately, not
             # incidentally. The idempotency guard above treats a non-empty
             # `assets` list as "already resolved, don't rescan." If the
@@ -6163,12 +6273,24 @@ def stage_resolve_assets(output_dir: Path, extraction_data: dict | None) -> dict
         for asset in a.assets:
             counts["total"] += 1
             counts[asset["origin"]] = counts.get(asset["origin"], 0) + 1
-        jobs.extend(gaps(a))
 
-    write_file(output_dir / "asset-coverage.json", json.dumps(counts, indent=2))
-    write_file(output_dir / "image-jobs.json", json.dumps(jobs, indent=2))
+    # Lower the whole build's demand ONCE, so `image-jobs.json` carries the
+    # DISTINCT set of pictures — five sections asking for the same backdrop is
+    # one job, one hash, one charge.
+    lowered = (lower_gaps(gap_rows, brand) if brand
+               else {"jobs": [], "refused": [],
+                     "unlowered": [{"gap": g, "reason": brand_error or
+                                    "no compiled design system"}
+                                   for g in gap_rows]})
+    hits = sum(1 for j in lowered["jobs"]
+               if resolve_cached(cache_dir, j["job_hash"]) is not None)
+    _write_records(lowered, hits, len(lowered["jobs"]) - hits)
+
     print(f"  Assets: {counts['extracted']} extracted, {counts['generated']} generated, "
           f"{counts['unresolved']} unresolved (of {counts['total']})")
+    print(f"  Art demand: {len(gap_rows)} row(s) → {len(lowered['jobs'])} distinct job(s) "
+          f"({hits} cached, {len(lowered['jobs']) - hits} uncommissioned), "
+          f"{len(lowered['refused']) + len(refusals)} refused")
     return counts
 
 
@@ -10720,7 +10842,8 @@ def main():
         # stage_deploy copies each page's section .tsx into
         # site/src/components/sections/{page_id}/.
         _, _extraction_data_for_assets = load_injection_data(extraction_dir)
-        stage_resolve_assets(output_dir, _extraction_data_for_assets)
+        stage_resolve_assets(output_dir, _extraction_data_for_assets,
+                             tenant=getattr(args, "tenant", None) or args.project)
         save_checkpoint(output_dir, "resolve_assets", args.project)
 
         deploy_ran = False
@@ -11028,7 +11151,8 @@ def main():
     # src is in the .tsx at that moment.
     if section_files:
         _, _extraction_data_for_assets = load_injection_data(extraction_dir)
-        stage_resolve_assets(output_dir, _extraction_data_for_assets)
+        stage_resolve_assets(output_dir, _extraction_data_for_assets,
+                             tenant=getattr(args, "tenant", None) or args.project)
         save_checkpoint(output_dir, "resolve_assets", args.project)
 
     # Stage 5.5: Pre-flight validation (before deploy)

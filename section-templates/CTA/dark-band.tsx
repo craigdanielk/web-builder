@@ -102,7 +102,14 @@ export default function SectionDarkBandCTA({
   if (!ctaHeadline && !ctaSubheadline && !ctaActions.length) return null;
 
   // `<Image src="">` THROWS in next/image — an unresolved slot never renders.
-  const backdrop = backdropUrl && backdropUrl.trim() ? backdropUrl : null;
+  //
+  // NOT named `backdrop`: `{backdrop}` shares its first underscore-segment
+  // with the declared `{backdrop_url}`, which `slot_contract.is_content_token()`
+  // reads as content and fills — emptying the JSX expression below into
+  // `<Image src= ... />`. HERO/centered carried the identical bug and it broke
+  // the parse of all five heroes on this site. A capital letter ends the token
+  // pattern `[a-z][a-z_0-9]*`, so a camelCase local cannot collide.
+  const backdropSrc = backdropUrl && backdropUrl.trim() ? backdropUrl : null;
 
   return (
     <section
@@ -118,13 +125,13 @@ export default function SectionDarkBandCTA({
           it and the copy stays on that measured ground; 0.18 is high enough to
           read as material and low enough that a bright return cannot lift the
           band toward the ink it carries. */}
-      {backdrop && (
+      {backdropSrc && (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0"
           style={{ opacity: 0.18 }}
         >
-          <Image src={backdrop} alt="" fill sizes="100vw" className="object-cover" />
+          <Image src={backdropSrc} alt="" fill sizes="100vw" className="object-cover" />
         </div>
       )}
 

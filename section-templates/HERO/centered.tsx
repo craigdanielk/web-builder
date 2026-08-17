@@ -119,7 +119,16 @@ export default function HeroCentered({
 
   // `<Image src="">` THROWS in next/image, so an unresolved slot must never
   // reach the DOM — the guard is the value being falsy, never a fallback path.
-  const backdrop = backdropUrl && backdropUrl.trim() ? backdropUrl : null;
+  //
+  // NOT named `backdrop`. `slot_contract.is_content_token()` treats a token
+  // sharing its first underscore-segment with a declared slot as content
+  // (`{subtotal_value}` beside a declared `{subtotal_label}`), so `{backdrop}`
+  // in the JSX below was filled — emptied — because `{backdrop_url}` is
+  // declared one line up. That produced `<Image src= alt="" ... />` and a
+  // parse error in every one of the five heroes on this site, visible only
+  // once something finally compiled the output. A camelCase name cannot
+  // collide: the token pattern is `[a-z][a-z_0-9]*` and a capital ends it.
+  const backdropSrc = backdropUrl && backdropUrl.trim() ? backdropUrl : null;
 
   return (
     <section
@@ -140,13 +149,13 @@ export default function HeroCentered({
           ground. At 0.14 over the opaque gradient the composited ground stays
           within a few percent of --background, so the measured ratio holds for
           any picture — including one that comes back brighter than intended. */}
-      {backdrop && (
+      {backdropSrc && (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0"
           style={{ opacity: 0.14 }}
         >
-          <Image src={backdrop} alt="" fill sizes="100vw" className="object-cover" />
+          <Image src={backdropSrc} alt="" fill sizes="100vw" className="object-cover" />
         </div>
       )}
 
