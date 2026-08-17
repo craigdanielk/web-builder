@@ -19,6 +19,9 @@ from urllib.parse import urljoin, urlparse
 
 WEB_BUILDER_ROOT = Path(__file__).resolve().parent.parent
 
+# Exit codes: 0 PASS - 1 FAIL - 3 NOT_MEASURED. NOT_MEASURED is not PASS.
+NOT_MEASURED = 3
+
 
 def fetch(url: str, timeout: int = 15, follow_redirect: bool = True) -> tuple[int, str, str]:
     """Return (status_code, final_url, body). Follows redirects by default."""
@@ -67,6 +70,9 @@ def main() -> int:
     args = parser.parse_args()
 
     errors = []
+    # Set the moment a real check runs. Without it, "no errors" means only
+    # "no checks", and reporting that as PASS is the failure this gate had.
+    measured = False
 
     if args.redirect_map and args.redirect_map.exists():
         base = (args.url or "").rstrip("/")
@@ -82,6 +88,7 @@ def main() -> int:
                 if not from_path or not to_path:
                     continue
                 url = base + "/" + from_path
+                measured = True
                 code, final_url, _ = fetch(url, timeout=args.timeout)
                 if code not in (200, 301, 302):
                     errors.append(f"Redirect check failed: {from_path} -> {code}")
@@ -90,6 +97,7 @@ def main() -> int:
 
     if args.url:
         base = args.url.rstrip("/")
+        measured = True
         code, final_url, body = fetch(base + "/", timeout=args.timeout)
         if code != 200:
             errors.append(f"Gate E failed: home returned {code}")
@@ -102,14 +110,21 @@ def main() -> int:
                 if len(errors) >= 5:
                     break
 
-    if not args.url and not args.redirect_map:
-        print("VERIFY GATE E: No --url or --redirect-map; nothing to check. Pass --url <deployed> for nav link check.", file=sys.stderr)
-        return 0
-
     if errors:
         for e in errors:
             print(f"FAIL: {e}", file=sys.stderr)
         return 1
+
+    if not measured:
+        # Covers both "no inputs at all" and "--redirect-map given but the file
+        # does not exist" — the latter previously fell through and printed PASS.
+        if args.redirect_map and not args.redirect_map.exists():
+            reason = f"redirect map {args.redirect_map} does not exist and no --url was given"
+        else:
+            reason = "no deployed store was reached; pass --url <deployed> (or set GATE_E_URL)"
+        print(f"VERIFY GATE E: NOT_MEASURED - {reason}")
+        return NOT_MEASURED
+
     print("VERIFY GATE E: PASS")
     return 0
 

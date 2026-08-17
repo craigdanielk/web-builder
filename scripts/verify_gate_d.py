@@ -2,7 +2,7 @@
 """
 VERIFY GATE D: Post-deploy — store is live and reachable.
 - When --url is provided: GET deployed URL, /collections/<handle>, /products/<handle>; assert 200.
-- Without --url: legacy check that cart.ts and CartDrawer exist (pre-deploy).
+- Without --url: nothing was reached: NOT_MEASURED (exit 3), never PASS.
 """
 
 from __future__ import annotations
@@ -15,6 +15,9 @@ import urllib.error
 from pathlib import Path
 
 WEB_BUILDER_ROOT = Path(__file__).resolve().parent.parent
+
+# Exit codes: 0 PASS - 1 FAIL - 3 NOT_MEASURED. NOT_MEASURED is not PASS.
+NOT_MEASURED = 3
 
 
 def check_url(url: str, timeout: int = 15) -> tuple[int, str]:
@@ -59,21 +62,15 @@ def main() -> int:
             print(f"  200 {label}")
         return 0
 
-    # Legacy: pre-deploy cart file check
-    cart_ts = WEB_BUILDER_ROOT / "lib" / "shopify" / "cart.ts"
-    drawer = WEB_BUILDER_ROOT / "lib" / "shopify" / "CartDrawer.tsx"
-    if not cart_ts.exists():
-        print("FAIL: lib/shopify/cart.ts not found", file=sys.stderr)
-        return 1
-    if not drawer.exists():
-        print("FAIL: lib/shopify/CartDrawer.tsx not found", file=sys.stderr)
-        return 1
-    text = cart_ts.read_text(encoding="utf-8")
-    if "addToCart" not in text or "getCheckoutUrl" not in text:
-        print("FAIL: cart.ts missing addToCart or getCheckoutUrl", file=sys.stderr)
-        return 1
-    print("VERIFY GATE D (automated): PASS (cart files present; use --url <deployed> for post-deploy check)")
-    return 0
+    # No URL: the store was never reached, so liveness was not measured. The old
+    # behaviour here checked that the web-builder's own cart.ts and
+    # CartDrawer.tsx files exist on disk and reported PASS — file existence
+    # standing in for "the deployed store is live".
+    print(
+        "VERIFY GATE D: NOT_MEASURED - no deployed store was reached; "
+        "pass --url <deployed> (or set GATE_D_URL)"
+    )
+    return NOT_MEASURED
 
 
 if __name__ == "__main__":

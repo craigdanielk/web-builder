@@ -3,7 +3,7 @@
 VERIFY GATE C: Generated app is ready for deployment.
 - Expected app structure (app or src/app with page.tsx)
 - npm run build succeeds in generated app dir
-- Optional: lib/shopify/client.ts in template when not using --app-dir
+- Without --app-dir there is no generated app: NOT_MEASURED (exit 3), never PASS.
 """
 
 from __future__ import annotations
@@ -15,6 +15,9 @@ import sys
 from pathlib import Path
 
 WEB_BUILDER_ROOT = Path(__file__).resolve().parent.parent
+
+# Exit codes: 0 PASS - 1 FAIL - 3 NOT_MEASURED. NOT_MEASURED is not PASS.
+NOT_MEASURED = 3
 
 
 def main() -> int:
@@ -52,16 +55,14 @@ def main() -> int:
         print("  npm run build: OK")
         return 0
 
-    lib_client = WEB_BUILDER_ROOT / "lib" / "shopify" / "client.ts"
-    if not lib_client.exists():
-        print("FAIL: lib/shopify/client.ts not found", file=sys.stderr)
-        return 1
-    text = lib_client.read_text(encoding="utf-8")
-    if "shopifyFetch" not in text:
-        print("FAIL: client.ts does not export shopifyFetch", file=sys.stderr)
-        return 1
-    print("VERIFY GATE C (template): PASS (lib/shopify present). Use --app-dir for generated app + build.")
-    return 0
+    # No app dir: nothing was built, so nothing can be verified. The old
+    # behaviour here checked the web-builder's own lib/shopify template files
+    # and reported PASS — success for a generated app that does not exist.
+    print(
+        "VERIFY GATE C: NOT_MEASURED - no generated app to verify; "
+        "pass --site-dir (or --app-dir) pointing at output/PROJECT/site"
+    )
+    return NOT_MEASURED
 
 
 if __name__ == "__main__":
