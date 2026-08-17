@@ -109,6 +109,17 @@ except ImportError:
 # copy here is the exact defect the single-definition rule exists to prevent.
 from lib import tenant_context as _tenant_vocab
 
+# Phase-0 declarations read as CONTENT (C1/C2). Not degradable for the same
+# reason as the vocabulary above: `phase0` is a legal provenance source and a
+# build that silently loses the ability to compose from a declaration reports
+# a thinner site as a complete one.
+from lib.phase0_content import (
+    DeclarationNotMeasured,
+    compose_declared_sections,
+    declared_content,
+    field_key_for_slot,
+)
+
 # The render probe's facts reader. report.json had no Python consumer; this is
 # it. See scripts/lib/render_facts.py.
 from lib.render_facts import format_render_facts, read_render_facts
@@ -1923,6 +1934,8 @@ def nearest_variant_in_library(archetype: str, variant: str) -> str | None:
 def reconcile_page_sections(
     registry_sections: list[dict],
     harvested_sections: list[dict],
+    declared: dict | None = None,
+    page_id: str = "",
 ) -> tuple[list[dict], dict]:
     """Reconcile ONE page with the HARVEST as the spine and the registry as gap-filler.
 
@@ -1943,10 +1956,30 @@ def reconcile_page_sections(
 
     With no harvest it delegates to reconcile_sections, leaving registry-only
     pages byte-identical to before.
+
+    `declared` — the tenant's phase-0 declarations (`declared_content()`), or
+    None. Composition runs AFTER the harvest spine and BEFORE the registry
+    gap-fill, which is the only ordering that works: precedence is
+    **harvested > phase0 > omitted**, so the harvest must already be on the
+    spine for the composer to see what it covers, and the composed section must
+    claim its archetype before gap-fill or the same archetype is appended a
+    second time with a literally empty content dict. `declared=None` leaves
+    every output byte-identical to before.
     """
     harvested = [s for s in (harvested_sections or []) if isinstance(s, dict)]
     if not harvested:
-        return reconcile_sections(registry_sections, [])
+        # No harvest means no spine, so there is nothing for phase-0
+        # composition to be *relative to*: precedence is defined against what
+        # the source page says, and this page has no source. Recorded rather
+        # than silently absent, so a zero here is a decision and not a gap.
+        _sections, _meta = reconcile_sections(registry_sections, [])
+        _meta["phase0_composed_count"] = 0
+        _meta["phase0_omissions"] = [{
+            "group": "*", "reason": "no_harvest_spine",
+            "detail": "page has no harvested sections; registry-only page, "
+                      "composition precedence is undefined against no source",
+        }] if declared else []
+        return _sections, _meta
 
     # An archetype whose slot contract cannot hold the harvested arity is the
     # wrong archetype, and everything downstream inherits the mistake: the
@@ -1983,6 +2016,23 @@ def reconcile_page_sections(
         entry.setdefault("source_index", sec.get("index", position))
         final.append(entry)
 
+    # ── Phase-0 composition (C2) ──────────────────────────────────────────
+    # The harvest spine is complete, so `seen_archetypes` is exactly what the
+    # source page says. Anything the tenant DECLARED that the page does not
+    # already say is composed here, provenance-stamped `phase0`, and claims its
+    # archetype so the gap-fill below skips it.
+    composed_sections, phase0_omissions = compose_declared_sections(
+        declared, set(seen_archetypes), variant_for_archetype=registry_variant,
+        page_id=page_id,
+    )
+    for sec in composed_sections:
+        if not (sec.get("content_direction") or "").strip() and registry_direction.get(
+            sec["archetype"]
+        ):
+            sec["content_direction"] = registry_direction[sec["archetype"]]
+        seen_archetypes.add(sec["archetype"])
+        final.append(sec)
+
     gap_filled = 0
     for sec in registry:
         arch = canonical_archetype(sec.get("archetype", ""))
@@ -2011,6 +2061,11 @@ def reconcile_page_sections(
         # the number that used to mean "silently deleted" now means "preserved".
         "duplicates_resolved": 0,
         "duplicates_kept": duplicates_kept,
+        # Composed from declaration, and — just as important — what was NOT
+        # composed and why. A count with no omission register cannot tell
+        # "the tenant declared nothing" from "the harvest already covered it".
+        "phase0_composed_count": len(composed_sections),
+        "phase0_omissions": phase0_omissions,
     }
     return final, meta
 
@@ -3313,14 +3368,23 @@ def build_template_fill(
     empty_slots: list[str] = []
     uid = section.get("section_uid") or section_identity(section, section.get("index", 0))
 
+    # A section composed from the tenant's phase-0 declaration (C2) fills
+    # through this same grouped join, so its values must not be stamped
+    # `harvested` — they came from an operator's intake row, not from the
+    # source page. `phase0` is a legal source in the artifact contract and this
+    # is the only place it is ever produced.
+    phase0_field = section.get("_phase0_field") if section.get("_phase0_composed") else None
+
     def record(slot: str, value: str, kind: str) -> None:
         values[slot] = value
         entry = {
             "section_uid": uid,
             "slot": slot,
             "value": value,
-            "source": "harvested" if value else "empty",
+            "source": ("phase0" if phase0_field else "harvested") if value else "empty",
         }
+        if value and phase0_field:
+            entry["field_key"] = field_key_for_slot(slot, phase0_field)
         if not value:
             entry["reason"] = (
                 "no-harvest-supply" if kind in ("data", "unclassified")
@@ -9885,6 +9949,22 @@ def main():
     # Resolved tenant UUID threaded into build_log (None = column omitted).
     tenant_id = tenant_context.get("tenant_id") if tenant_context else None
 
+    # ── Declared content (C1) ─────────────────────────────────────
+    # Read once, here, and threaded into both reconciliation call sites. A
+    # context that never loaded REFUSES: composing nothing because Supabase was
+    # down is indistinguishable from composing nothing because the tenant
+    # declared nothing, and the build must not report the first as the second.
+    declared_for_build = None
+    if tenant_context:
+        try:
+            declared_for_build = declared_content(tenant_context)
+        except DeclarationNotMeasured as exc:
+            print(f"\n  ✖ {exc}")
+            sys.exit(1)
+        print(f"  📋 Declared content: {len(declared_for_build['products'])} products, "
+              f"{len(declared_for_build['pillars'])} content pillars, "
+              f"{len(declared_for_build['proof'])} licence(s)")
+
     # ── Resolve platforms from the tenant's phase 0 declaration ────
     # --target-platform stays an explicit override. Absent it, the declaration
     # decides — and an undeclared target REFUSES rather than silently building
@@ -10541,6 +10621,8 @@ def main():
         _recon_total_harvest = 0
         _recon_total_gaps = 0
         _recon_total_dups = 0
+        _recon_total_phase0 = 0
+        _recon_phase0_omissions: list[dict] = []
         for _page in site_manifest.get("pages", []):
             _raw = _page.get("sections", [])
             _harvested_page = (resolve_page_entry(_site_spec_by_page, _page) or {}).get("sections", [])
@@ -10558,13 +10640,21 @@ def main():
                 _raw = _harvested_page
                 _harvested_page = []
             if _raw or _harvested_page:
-                _reconciled, _meta = reconcile_page_sections(_raw, _harvested_page)
+                _reconciled, _meta = reconcile_page_sections(
+                    _raw, _harvested_page, declared=declared_for_build,
+                    page_id=normalize_page_id(_page),
+                )
                 _page["sections"] = _reconciled
                 _recon_total_registry += _meta["registry_count"]
                 _recon_total_harvest += _meta["harvest_count"]
                 _recon_total_gaps += _meta["gap_filled_count"]
                 _recon_total_dups += _meta["duplicates_resolved"]
                 _recon_total_dups_kept += _meta.get("duplicates_kept", 0)
+                _recon_total_phase0 += _meta.get("phase0_composed_count", 0)
+                for _om in _meta.get("phase0_omissions", []):
+                    _recon_phase0_omissions.append(
+                        {"page": normalize_page_id(_page), **_om}
+                    )
         _recon_total = sum(
             len(p.get("sections", []))
             for p in site_manifest.get("pages", [])
@@ -10576,6 +10666,8 @@ def main():
             "gap_filled_count": _recon_total_gaps,
             "duplicates_resolved": _recon_total_dups,
             "duplicates_kept": _recon_total_dups_kept,
+            "phase0_composed_count": _recon_total_phase0,
+            "phase0_omissions": _recon_phase0_omissions,
         }
         if _recon_total > 0:
             print(
@@ -10583,8 +10675,12 @@ def main():
                 f"{_recon_total} total "
                 f"({_recon_total_registry} registry, {_recon_total_harvest} harvested, "
                 f"{_recon_total_gaps} gap-filled, "
+                f"{_recon_total_phase0} composed from declaration, "
                 f"{_recon_total_dups_kept} same-archetype duplicates preserved)"
             )
+            for _om in _recon_phase0_omissions:
+                print(f"     · not composed on /{_om['page']}: "
+                      f"{_om['group']} — {_om['reason']}")
 
         # ── Template resolution preflight ─────────────────────────────
         # Reported BEFORE generation, because "how much of this site is
@@ -10859,12 +10955,14 @@ def main():
         if _registry_for_recon or _harvested_for_recon:
             sections, _reconciliation_meta = reconcile_page_sections(
                 _registry_for_recon, _harvested_for_recon,
+                declared=declared_for_build, page_id="homepage",
             )
             _rc = _reconciliation_meta
             print(
                 f"\n  🔄 Section reconciliation: {_rc['total']} total "
                 f"({_rc['registry_count']} registry, {_rc['harvest_count']} harvested, "
                 f"{_rc['gap_filled_count']} gap-filled, "
+                f"{_rc.get('phase0_composed_count', 0)} composed from declaration, "
                 f"{_rc.get('duplicates_kept', 0)} same-archetype duplicates preserved)"
             )
 
