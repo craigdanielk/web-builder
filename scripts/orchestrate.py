@@ -8727,6 +8727,99 @@ def stage_validate(project_name: str) -> dict:
 # Bill of Sale Orchestration (BoS → build_trace → re-audit loop)
 # ═════════════════════════════════════════════════════════════════════════════
 
+def run_conformance_gate(
+    site_dir,
+    benchmark: str | None = None,
+    results_json=None,
+    output_dir=None,
+) -> dict:
+    """Pre-deploy design-conformance gate. A measured violation fails the build.
+
+    `scripts/quality/conformance-gate.js` (C3) serves the ALREADY-BUILT site
+    locally and drives the audit's own analyser against the ratified benchmark.
+    It had no call site: the only thing between a compiled design and a site
+    that ignored it was a human looking at the page.
+
+    The verdict is read off `conformance.json` on disk, not off the exit code —
+    same as `_run_compile_gate`, and for the same reason: the artifact is what
+    a later reader sees, and an exit code is a claim about it.
+
+    `results_json` forwards the gate's own `--results-json` verdict seam (used
+    by the wiring tests, and by an operator re-interpreting an existing run).
+    It does not bypass anything: the same `decide()` produces the verdict.
+
+    NOT the gate's decision to soften: a rule that FAILs with a measured value
+    fails the build. On the current cape-crypto build that is three rules
+    (dna_type_scale, dna_font_families, dna_shadow_layers) and the build is
+    therefore red until the templates and the benchmark's font declaration are
+    reconciled. That is the gate working.
+    """
+    print("\n═══ DESIGN CONFORMANCE GATE ═══\n")
+    gate_script = ROOT / "scripts" / "quality" / "conformance-gate.js"
+    site_dir = Path(site_dir)
+    out_dir = Path(output_dir) if output_dir else site_dir.parent
+
+    def _unmeasured(reason: str) -> dict:
+        record_gate_result("conformance", "not_measured", reason)
+        return {"status": "not_measured", "not_measured_reason": reason, "reason": reason}
+
+    if not gate_script.exists():
+        return _unmeasured(f"conformance-gate.js not found at {gate_script}")
+
+    report_path = out_dir / "conformance.json"
+    # A stale report from a previous run must not be mistaken for this one's.
+    if report_path.exists():
+        report_path.unlink()
+
+    cmd = ["node", str(gate_script), "--output", str(out_dir)]
+    if results_json:
+        cmd += ["--results-json", str(results_json)]
+    else:
+        cmd += ["--build-dir", str(site_dir)]
+    if benchmark:
+        cmd += ["--benchmark", str(benchmark)]
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900, cwd=str(ROOT))
+    except FileNotFoundError:
+        return _unmeasured("node is not on PATH")
+    except subprocess.TimeoutExpired:
+        return _unmeasured("conformance gate timed out after 900s")
+
+    for line in (proc.stdout or "").strip().splitlines():
+        print(f"  {line}")
+
+    if not report_path.exists():
+        detail = (proc.stderr or proc.stdout or "").strip()[:300]
+        return _unmeasured(f"gate wrote no conformance.json (exit {proc.returncode}): {detail}")
+
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return _unmeasured(f"unreadable conformance.json: {exc}")
+
+    status = report.get("status", "not_measured")
+    if status == "fail":
+        rules = ", ".join(
+            str(v.get("rule")) for v in report.get("violations", []) if v.get("rule")
+        )
+        detail = f"{len(report.get('violations', []))} measured violation(s): {rules}"
+        record_gate_result("conformance", "fail", detail)
+        record_build_failure("conformance", detail)
+    elif status == "pass":
+        record_gate_result(
+            "conformance", "pass",
+            f"{report.get('counts', {}).get('pass', '?')} rule(s) conform over "
+            f"{len(report.get('routes_measured', []))} route(s)",
+        )
+    else:
+        record_gate_result(
+            "conformance", "not_measured",
+            report.get("not_measured_reason") or report.get("reason") or "no reason recorded",
+        )
+    return report
+
+
 def run_compliance_gate(site_dir, tenant: str | None, tenant_context: dict | None) -> dict:
     """Pre-deploy compliance gate. A FAIL fails the build.
 
@@ -10101,12 +10194,19 @@ def main():
     # That is the emergency-override semantics as the temporary default. It is
     # visible in every site-spec and can never read as a pass. Tighten to a hard
     # refusal once the benchmark library covers the live markets.
+    # The benchmark the conformance gate must judge the built site against. It
+    # is the SAME file the design compiler used: judging a build against a
+    # different benchmark than the one that produced it would measure nothing
+    # about this build. None ⇒ the gate falls back to its own ratified default
+    # and says so in conformance.json.
+    _benchmark_path_for_gate = None
     if site_spec is not None:
         _bm_market = getattr(args, "benchmark", None) or (
             (site_manifest or {}).get("industry") or args.industry or ""
         )
         _bm_path = ROOT / "benchmarks" / f"{_bm_market}.json" if _bm_market else None
         if _bm_path and _bm_path.exists():
+            _benchmark_path_for_gate = _bm_path
             try:
                 from lib.design_system import load_benchmark, compile_style
                 _bm = load_benchmark(_bm_path)
@@ -10396,6 +10496,20 @@ def main():
                 # Only a site that actually compiled counts as deployed; a
                 # failed production build is already in the failure ledger.
                 deploy_ran = production_build_ok(OUTPUT_DIR / args.project / SITE_DIR_NAME)
+                # The conformance gate serves the compiled site; it cannot run
+                # without one. A build that never compiled is NOT_MEASURED,
+                # which the gate records as itself rather than as conforming.
+                if deploy_ran:
+                    run_conformance_gate(
+                        OUTPUT_DIR / args.project / SITE_DIR_NAME,
+                        benchmark=_benchmark_path_for_gate,
+                    )
+                else:
+                    record_gate_result(
+                        "conformance", "not_measured",
+                        "the production build did not compile, so there was no "
+                        "site to serve",
+                    )
                 if deploy_ran and getattr(args, "set_vercel_env", False):
                     stage_vercel_env_and_webhooks(
                         OUTPUT_DIR / args.project / SITE_DIR_NAME,
@@ -10677,6 +10791,17 @@ def main():
             save_checkpoint(output_dir, "deploy", args.project)
             # Only a site that actually compiled counts as deployed.
             deploy_ran = production_build_ok(OUTPUT_DIR / args.project / SITE_DIR_NAME)
+            if deploy_ran:
+                run_conformance_gate(
+                    OUTPUT_DIR / args.project / SITE_DIR_NAME,
+                    benchmark=_benchmark_path_for_gate,
+                )
+            else:
+                record_gate_result(
+                    "conformance", "not_measured",
+                    "the production build did not compile, so there was no "
+                    "site to serve",
+                )
 
     # ── Stage 6: Post-build render audit (single-page) ──
     _render_audit_status = stage_render_audit(
