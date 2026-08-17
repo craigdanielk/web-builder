@@ -1,14 +1,21 @@
 // @ts-nocheck
 "use client";
 
-import { useMemo } from "react";
+import { ReactNode, useMemo } from "react";
 import { motion, Variants } from "framer-motion";
 
-type FadeTextProps = {
+export type FadeTextProps = {
   className?: string;
   direction?: "up" | "down" | "left" | "right";
   framerProps?: Variants;
-  text: string;
+  /** Single string to fade. Ignored when `children` is given. */
+  text?: string;
+  /**
+   * Arbitrary subtree to fade in as one block. The outer motion.div carries
+   * the animation either way, so passing children changes what is faded, not
+   * how — which is why `text` could be made optional rather than replaced.
+   */
+  children?: ReactNode;
 };
 
 function FadeText({
@@ -19,6 +26,7 @@ function FadeText({
     show: { opacity: 1, transition: { type: "spring" } },
   },
   text,
+  children,
 }: FadeTextProps) {
   const directionOffset = useMemo(() => {
     const map = { up: 10, down: -10, left: -10, right: 10 };
@@ -54,7 +62,7 @@ function FadeText({
       viewport={{ once: true }}
       variants={FADE_ANIMATION_VARIANTS}
     >
-      <motion.span className={className}>{text}</motion.span>
+      {children ?? <motion.span className={className}>{text}</motion.span>}
     </motion.div>
   );
 }

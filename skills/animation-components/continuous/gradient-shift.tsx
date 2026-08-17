@@ -4,7 +4,15 @@ import type React from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
-type GradientBackgroundProps = React.ComponentProps<'div'> & {
+export type GradientBackgroundProps = React.ComponentProps<'div'> & {
+	/**
+	 * The component already destructures and renders `children`; it inherited
+	 * the type only through `React.ComponentProps<'div'>`, which a props-shape
+	 * reader that extracts the intersected trailing object literal cannot see.
+	 * Declared explicitly so the shape is legible without executing TypeScript.
+	 */
+	children?: React.ReactNode;
+
 	// Animation customization
 	gradients?: string[];
 	animationDuration?: number;

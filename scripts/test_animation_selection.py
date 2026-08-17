@@ -197,6 +197,64 @@ def test_preferred_role_is_honoured_on_a_fresh_page():
     )
 
 
+# A declared preference that no component can satisfy is aspiration, not
+# mapping. This set is frozen in BOTH directions: the test fails if a new
+# empty preference appears (a regression) and if one disappears (someone
+# closed a gap and should record it here). Widening ROLE_BY_ARCHETYPE cannot
+# satisfy it — every added role must itself hold a usable component.
+EMPTY_PREFERRED_ROLES = {
+    # continuous/ holds marquee (takes `logos[]`, a content-level insert),
+    # count-up (no children), gradient-shift (safe, but an 8s infinite
+    # background loop derives as `dramatic` and is over the moderate
+    # ceiling), motionpath-orbit (needs `pathData`), and floating (a
+    # misdescribed circular image menu). None can wrap a section at moderate.
+    ("LOGO-BAR", "continuous"),
+    # text/ is nine string-splitters: every one takes `text` or
+    # `children: string` and emits per-word or per-character spans. None of
+    # them can wrap JSX, by construction rather than by omission.
+    ("HERO", "text"),
+    # background/ holds aurora-background (wrap-safe, but a full-viewport
+    # animated gradient derives as `dramatic`) and perspective-grid (no
+    # children).
+    ("ABOUT", "background"),
+    # scroll/ holds gsap-pinned-horizontal (wrap-safe, `dramatic`), two
+    # misdescribed demos, a ZoomParallax needing `images[]`, and a
+    # FloatingPathsBackground needing `position`.
+    ("HOW-IT-WORKS", "scroll"),
+}
+
+
+def test_declared_role_preferences_are_backed_by_a_usable_component():
+    proc = subprocess.run(
+        ["node", "-e", "console.log(JSON.stringify(require('./lib/component-inject').ROLE_BY_ARCHETYPE))"],
+        capture_output=True, text=True, cwd=str(QUALITY_DIR), timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    role_by_archetype = json.loads(proc.stdout.strip())
+
+    empty = set()
+    for archetype in sorted({a for page in _cape_pages().values() for a in page}):
+        preferred = role_by_archetype.get(archetype, [])
+        assert preferred, f"{archetype} declares no preferred role at all"
+        # Drain the whole pool to learn which roles are actually reachable.
+        drained, roles_hit = [], set()
+        while True:
+            got = _decide([{"archetype": archetype, "used": drained, "intensity": PRESET_INTENSITY}])[0]
+            if not got["injected"]:
+                break
+            drained.append(got["animationId"])
+            roles_hit.add(got["role"])
+        for role in preferred:
+            if role not in roles_hit:
+                empty.add((archetype, role))
+
+    assert empty == EMPTY_PREFERRED_ROLES, (
+        f"preferred roles holding no usable component changed.\n"
+        f"  now:      {sorted(empty)}\n"
+        f"  expected: {sorted(EMPTY_PREFERRED_ROLES)}"
+    )
+
+
 def test_rows_with_no_file_on_disk_are_never_marked_verified():
     """`dependencies_verified` may only be set on a row backed by a real file.
 

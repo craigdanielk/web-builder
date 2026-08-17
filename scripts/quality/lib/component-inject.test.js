@@ -65,9 +65,13 @@ test('analyzeSafety refuses a component whose root is an inline tag (span)', () 
   assert.match(safety.reason, /inline\/interactive root/);
 });
 
+// Fixture note: this was entrance__fade_up_single until E4 gave FadeText a
+// children prop. interactive__spotlight_follow is a nav pill bar — it renders
+// its own `items[]`, so there is nothing for a wrapped subtree to go into and
+// it is deliberately NOT a conversion candidate.
 test('analyzeSafety refuses a component with no children prop', () => {
   const fs = require('fs');
-  const r = ci.resolveComponent('entrance__fade_up_single');
+  const r = ci.resolveComponent('interactive__spotlight_follow');
   const src = fs.readFileSync(r.absPath, 'utf8');
   const safety = ci.analyzeSafety(src, r.exportName);
   assert.equal(safety.safe, false);

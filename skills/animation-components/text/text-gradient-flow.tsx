@@ -4,7 +4,12 @@ import { type JSX } from 'react';
 import { motion, Transition } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
-type TextShimmerWave = {
+// Named `...Props`, not `TextShimmerWave`: a props shape that shadows its own
+// component name is unreadable to anything that resolves a component's
+// interface by name, so the refusal reason was "could not locate a props type"
+// when the real (correct) reason to refuse is `children: string` — this
+// component splits a string into per-character spans and cannot wrap JSX.
+export type TextShimmerWaveProps = {
   children: string;
   as?: React.ElementType;
   className?: string;
@@ -30,7 +35,7 @@ export function TextShimmerWave({
   scaleDistance = 1.1,
   rotateYDistance = 10,
   transition,
-}: TextShimmerWave) {
+}: TextShimmerWaveProps) {
   const MotionComponent = motion.create(
     Component as keyof JSX.IntrinsicElements
   );

@@ -103,7 +103,13 @@ const ROLE_BY_ARCHETYPE = {
   GALLERY: ['scroll', 'interactive'],
   TEAM: ['entrance', 'interactive'],
   CONTACT: ['entrance'],
-  'LOGO-BAR': ['continuous'],
+  // `continuous` stays first — a logo strip's native motion is a marquee.
+  // But the marquee in the library takes `logos: ReactNode[]`, so it is a
+  // content-level insert, not a section wrapper, and the wrap model cannot
+  // reach it. `entrance` is declared as the honest second preference rather
+  // than left to the blanket fallback, where a logo bar served by an
+  // entrance component read as a mapping failure instead of a design choice.
+  'LOGO-BAR': ['continuous', 'entrance'],
   PRICING: ['entrance', 'interactive'],
   FAQ: ['interactive', 'entrance'],
   NEWSLETTER: ['entrance'],
