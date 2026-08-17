@@ -9,8 +9,8 @@
   "total_archetypes": 26,
   "total_variants": 76,
   "templates_available": 76,
-  "templates_local": 14,
-  "templates_db_only": 62,
+  "templates_local": 15,
+  "templates_db_only": 61,
   "variants_without_template": 0,
   "archetypes": {
     "ABOUT": {
@@ -112,11 +112,11 @@
       "variants": [
         {
           "name": "centered",
-          "resolution": "db",
+          "resolution": "local",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/CTA/centered.tsx",
           "db_has_template": true,
-          "local_file": null
+          "local_file": "centered.tsx"
         },
         {
           "name": "dark-band",
