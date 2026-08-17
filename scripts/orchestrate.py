@@ -8945,6 +8945,76 @@ def stage_validate(project_name: str) -> dict:
 # Bill of Sale Orchestration (BoS → build_trace → re-audit loop)
 # ═════════════════════════════════════════════════════════════════════════════
 
+#: The verticals -> industry mapping, as data. See the file's own `why` block.
+VERTICALS_MAP_PATH = SKILLS_DIR / "verticals-to-industry.json"
+
+_VERTICALS_MAP_CACHE: dict | None = None
+
+
+def slugify_vertical(value: str) -> str:
+    """The mapping table's key rule, in one place.
+
+    Lowercase, collapse every run of non-alphanumerics to a single '-', strip
+    the ends. `"Crypto exchange (retail)"` -> `"crypto-exchange-retail"`.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", str(value).lower()).strip("-")
+
+
+def load_verticals_industry_map(path=None) -> dict:
+    """Load the versioned verticals->industry table.
+
+    Never raises. An unreadable table yields `{"mappings": {}, "error": ...}` so
+    the caller refuses with a stated reason instead of falling back to a guess —
+    an absent mapping file must not become "this tenant has no industry".
+    """
+    global _VERTICALS_MAP_CACHE
+    if path is None and _VERTICALS_MAP_CACHE is not None:
+        return _VERTICALS_MAP_CACHE
+    target = Path(path) if path else VERTICALS_MAP_PATH
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+        table = {
+            "version": data.get("version"),
+            "mappings": data.get("mappings") or {},
+            "path": str(target),
+            "error": None,
+        }
+    except (OSError, json.JSONDecodeError, TypeError) as exc:
+        table = {
+            "version": None,
+            "mappings": {},
+            "path": str(target),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    if path is None:
+        _VERTICALS_MAP_CACHE = table
+    return table
+
+
+def derive_industry_from_vertical(vertical: str, table: dict | None = None) -> dict | None:
+    """Map a declared vertical onto an `industry_styles` handle, or None.
+
+    Returns `{"industry", "key", "derived_from", "mapping_version",
+    "grounding"}` on a hit. None means the table has no row for this vertical —
+    the caller must refuse, never default.
+    """
+    table = table if table is not None else load_verticals_industry_map()
+    key = slugify_vertical(vertical)
+    row = (table.get("mappings") or {}).get(key)
+    if not row:
+        return None
+    handle = row.get("industry") if isinstance(row, dict) else row
+    if not handle:
+        return None
+    return {
+        "industry": handle,
+        "key": key,
+        "derived_from": vertical,
+        "mapping_version": table.get("version"),
+        "grounding": row.get("grounding") if isinstance(row, dict) else None,
+    }
+
+
 def resolve_build_industry(
     args, tenant_context: dict | None, url: str | None = None, captures=None
 ) -> dict:
@@ -8965,18 +9035,34 @@ def resolve_build_industry(
 
     Returns the A3 resolution dict plus:
 
-      source           adds "cli", "undeclared" and "not_measured" to A3's
-                       "phase0" | "tenants" | "resolver".
+      source           adds "cli", "derived-from-verticals", "undeclared" and
+                       "not_measured" to A3's "phase0" | "tenants" | "resolver".
       registry_handle  the handle IFF it exists in the preset registry, else
-                       None. cape-crypto declares "Crypto exchange (retail)";
-                       `industry_styles` has 29 handles and that is not one of
-                       them. Mapping it onto `fintech` would be invention;
-                       issuing the lookup anyway would return an empty preset
-                       that reads as "this tenant has no style". So the handle
-                       is carried, the gap is visible, and no lookup is faked.
+                       None.
 
-    Never raises: an undeclared or unmeasurable industry is a recorded state,
-    because a build can legitimately proceed on a benchmark and a harvest.
+    Three outcomes, never a silent default (P1):
+
+      declared   `phase0.industry` (or `tenants.industry`, or `--industry`) —
+                 used verbatim, recorded with the field it came from.
+      derived    `phase0.industry` absent but `verticals` declared: the first
+                 vertical is mapped onto an `industry_styles` handle through
+                 the versioned table at `skills/verticals-to-industry.json`.
+                 Recorded as `source="derived-from-verticals"` with
+                 `derived_from`, `mapping_key` and `mapping_version`, so a
+                 derivation can never be read as the tenant's own declaration.
+      refused    neither declared, or a vertical the table has no row for. The
+                 resolution records the refusal and names the missing fields;
+                 `refuse_unresolved_industry` turns that into exit 3.
+
+    Until P1 the derived branch did not exist: the declared vertical string was
+    returned verbatim ("Crypto exchange (retail)"), which is not one of the 29
+    `industry_styles` handles, so `registry_handle` was None on every real
+    build and the industry was effectively unresolved. The mapping is data, not
+    code — an operator-authored, diffable decision — which is what separates it
+    from the `"electronics-tech"` guess this node replaced.
+
+    Never raises: the refusal is a recorded state on the returned dict, so it
+    reaches `site-spec.json` before it reaches an exit code.
     """
     flag = getattr(args, "industry", None)
     if flag:
@@ -9011,12 +9097,93 @@ def resolve_build_industry(
             "handle": None, "source": "undeclared", "confidence": None,
             "disagreement": None, "field": None, "handle_in_registry": None,
             "registry_handle": None, "reason": str(exc),
+            "missing_fields": _INDUSTRY_MISSING_FIELDS,
         }
+
+    if resolution.get("field") == "verticals[0]":
+        vertical = resolution.get("handle")
+        table = load_verticals_industry_map()
+        derived = derive_industry_from_vertical(vertical, table)
+        if derived is None:
+            # A declared vertical with no row in the table. Defaulting it would
+            # be the invention this node exists to prevent, and guessing a
+            # handle would silently pick a whole design system for the tenant.
+            reason = (
+                f"vertical {vertical!r} (key {slugify_vertical(vertical)!r}) has no row in "
+                f"{table.get('path')}"
+            )
+            if table.get("error"):
+                reason = f"{table.get('path')} unreadable — {table['error']}"
+            return {
+                "handle": None, "source": "unmapped_vertical", "confidence": None,
+                "disagreement": resolution.get("disagreement"),
+                "field": "verticals[0]", "handle_in_registry": None,
+                "registry_handle": None, "reason": reason,
+                "derived_from": vertical,
+                "mapping_version": table.get("version"),
+                "missing_fields": _INDUSTRY_MISSING_FIELDS,
+            }
+        resolution["handle"] = derived["industry"]
+        resolution["source"] = "derived-from-verticals"
+        resolution["derived_from"] = derived["derived_from"]
+        resolution["mapping_key"] = derived["key"]
+        resolution["mapping_version"] = derived["mapping_version"]
+        resolution["handle_in_registry"] = _industry_in_registry(derived["industry"])
 
     resolution["registry_handle"] = (
         resolution.get("handle") if resolution.get("handle_in_registry") is True else None
     )
     return resolution
+
+
+#: The two fields a refusal names. Both, always — an operator told only about
+#: `industry` would fill it when declaring a vertical was the cheaper fix.
+_INDUSTRY_MISSING_FIELDS = ("phase0.industry", "phase0.verticals")
+
+#: Sources that mean "no industry was resolved". `refuse_unresolved_industry`
+#: turns any of them into exit 3 for a tenant-bound build.
+_INDUSTRY_UNRESOLVED_SOURCES = ("undeclared", "unmapped_vertical", "not_measured")
+
+
+def _industry_in_registry(handle: str):
+    """`industry_styles` membership, or None when the table could not be read."""
+    try:
+        from lib.industry import _in_registry  # noqa: WPS433 - local, keeps import cheap
+
+        return _in_registry(handle)
+    except Exception:  # noqa: BLE001 - unreadable registry is None, never False
+        return None
+
+
+def refuse_unresolved_industry(args, resolution: dict) -> int | None:
+    """Refuse a tenant-bound build whose industry did not resolve.
+
+    Returns the exit code to use, or None when the build may proceed.
+
+    **NOT_MEASURED, not FAILED.** The build is not broken; the declaration is
+    incomplete or unmappable, which is a measurement outcome. Returning 1 would
+    put it in the same bucket as a compile error.
+
+    Scoped to `--tenant`: without a tenant there is no declaration surface to
+    consult, design authority comes from `--preset`/`--benchmark`, and the
+    recorded `not_measured` state is already honest. With a tenant, an
+    unresolved industry means the tenant record does not say what the tenant is,
+    and the build stops rather than proceeding on an implied one.
+    """
+    if not getattr(args, "tenant", None):
+        return None
+    if resolution.get("source") not in _INDUSTRY_UNRESOLVED_SOURCES:
+        return None
+    fields = ", ".join(resolution.get("missing_fields") or _INDUSTRY_MISSING_FIELDS)
+    print(
+        "\n  ⊘ INDUSTRY NOT_MEASURED — refusing to build tenant "
+        f"{getattr(args, 'tenant', None)!r}\n"
+        f"     unresolved because: {resolution.get('reason', 'no reason recorded')}\n"
+        f"     declare one of: {fields}\n"
+        f"     or add the vertical to {VERTICALS_MAP_PATH}\n"
+        "     (exit 3 = NOT_MEASURED; this is not a build failure)"
+    )
+    return EXIT_NOT_MEASURED
 
 
 def record_industry_resolution(site_spec: dict, resolution: dict) -> dict:
@@ -9034,14 +9201,27 @@ def record_industry_resolution(site_spec: dict, resolution: dict) -> dict:
         "handle_in_registry": resolution.get("handle_in_registry"),
         "registry_handle": resolution.get("registry_handle"),
         "reason": resolution.get("reason"),
+        # Present only on a derivation. Recorded so the build record can never
+        # be read as "the tenant declared fintech" when it declared a vertical.
+        "derived_from": resolution.get("derived_from"),
+        "mapping_key": resolution.get("mapping_key"),
+        "mapping_version": resolution.get("mapping_version"),
     }
     return site_spec
 
 
 def print_industry_resolution(resolution: dict) -> None:
     source = resolution.get("source")
-    if source in ("undeclared", "not_measured"):
+    if source in _INDUSTRY_UNRESOLVED_SOURCES:
         print(f"  ⊘ Industry {source.upper()}: {resolution.get('reason', 'no reason recorded')}")
+        return
+    if source == "derived-from-verticals":
+        print(
+            f"  🏭 Industry '{resolution.get('handle')}' DERIVED from "
+            f"verticals[0]={resolution.get('derived_from')!r} via "
+            f"{VERTICALS_MAP_PATH.name} v{resolution.get('mapping_version')}"
+        )
+        print("     (a derivation, not the tenant's own declaration — recorded as such)")
         return
     conf = resolution.get("confidence")
     print(
@@ -10201,6 +10381,12 @@ def main():
         args, tenant_context, url=getattr(args, "from_url", None)
     )
     print_industry_resolution(_industry_resolution)
+    # Declared, derived, or refused (P1). A tenant-bound build whose industry
+    # resolved to nothing stops at NOT_MEASURED rather than proceeding on an
+    # implied one.
+    _industry_refusal = refuse_unresolved_industry(args, _industry_resolution)
+    if _industry_refusal is not None:
+        sys.exit(_industry_refusal)
     # Only a handle the preset registry actually holds is used as one. A
     # declared handle the registry does not know (cape-crypto's "Crypto
     # exchange (retail)") leaves args.industry as it was: the registry path

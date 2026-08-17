@@ -1,0 +1,93 @@
+{
+  "schema": "verticals-to-industry-v1",
+  "version": 1,
+  "measured": "2026-08-17",
+  "registry": {
+    "table": "industry_styles",
+    "column": "industry",
+    "handle_count": 29,
+    "handles": [
+      "artisan-food",
+      "automotive",
+      "beauty-cosmetics",
+      "construction-trades",
+      "creative-studios",
+      "education",
+      "electronics-tech",
+      "events-venues",
+      "fashion-apparel",
+      "fintech",
+      "health-wellness",
+      "home-lifestyle",
+      "hotels-hospitality",
+      "investment-holding",
+      "jewelry-watches",
+      "kids-baby",
+      "luxury-premium",
+      "marketplace",
+      "medical-dental",
+      "nonprofits-social",
+      "outdoor-adventure",
+      "pet-products",
+      "professional-services",
+      "real-estate",
+      "regulated-finance",
+      "restaurants-cafes",
+      "saas",
+      "sports-fitness",
+      "sustainable-eco"
+    ]
+  },
+  "why": [
+    "phase0_field_values.industry is absent for both live tenants; verticals is",
+    "declared for both. Without a mapping, the resolver returned the declared",
+    "vertical string verbatim ('Crypto exchange (retail)'), which is not one of",
+    "the 29 industry_styles handles, so registry_handle was always None and the",
+    "industry was effectively unresolved on every real build.",
+    "",
+    "This file is the mapping, as DATA: an operator-authored, versioned decision",
+    "that is auditable and diffable, never a runtime guess. A resolution that",
+    "comes through this table is recorded as source 'derived-from-verticals' and",
+    "carries derived_from (the declared string) plus mapping_version, so it can",
+    "never be mistaken for the tenant's own declaration. A vertical with no row",
+    "here is NOT defaulted — the build refuses (exit 3, NOT_MEASURED)."
+  ],
+  "key_rule": "keys are the declared vertical string slugified: lowercased, every run of non-alphanumeric characters collapsed to '-', leading/trailing '-' stripped",
+  "mappings": {
+    "crypto-exchange-retail": {
+      "industry": "fintech",
+      "grounding": "a retail crypto exchange is a consumer financial-technology product; 'fintech' is an industry_styles handle",
+      "declared_by": "cape-crypto (verticals[0])"
+    },
+    "wealth-management-advisory-b2b2c": {
+      "industry": "regulated-finance",
+      "grounding": "wealth management and investment advisory are licensed activities; 'regulated-finance' is an industry_styles handle",
+      "declared_by": "cape-crypto (verticals[1])"
+    },
+    "crypto-infrastructure-as-a-service-b2b-fintech-and-banking": {
+      "industry": "fintech",
+      "grounding": "the declaration names itself 'B2B fintech and banking'",
+      "declared_by": "cape-crypto (verticals[2])"
+    },
+    "cross-border-payments": {
+      "industry": "fintech",
+      "grounding": "payments infrastructure is financial technology",
+      "declared_by": "xago (verticals[0])"
+    },
+    "stablecoins": {
+      "industry": "fintech",
+      "grounding": "a stablecoin issuer is a financial-technology product",
+      "declared_by": "xago (verticals[1])"
+    },
+    "fiat-on-off-ramps": {
+      "industry": "fintech",
+      "grounding": "fiat on/off-ramp is a payments/financial-technology service",
+      "declared_by": "xago (verticals[2])"
+    },
+    "crypto-asset-gateway": {
+      "industry": "fintech",
+      "grounding": "a crypto asset gateway is a payments/financial-technology service",
+      "declared_by": "xago (verticals[3])"
+    }
+  }
+}
