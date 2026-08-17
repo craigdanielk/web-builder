@@ -7157,6 +7157,7 @@ def stage_deploy(
     target_platform: str | None = "shopify",
     harvested_nav: list[dict] | None = None,
     design_style: dict | None = None,
+    tenant_context: dict | None = None,
 ):
     """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/.
     When site_manifest and section_files_by_page are set (Layer 6), deploys multi-route app
@@ -8618,6 +8619,46 @@ async function downloadOne(url) {{
 
     print("  ✓ Generated default placeholder assets (placeholder.svg, logo.svg)")
 
+    # ── CMS + email rails, for a tenant that declares them (R3) ──────────────
+    # ABSENT, not skipped, when nothing is declared. `platform_modules()` omits
+    # the `cms` key entirely for a tenant nobody has asked (see `_module_entry`),
+    # so an undeclared tenant takes no branch here, writes no artifact and prints
+    # no line — there is nothing for a status list to misread as a pass. A
+    # declared `"none"` DOES get a key, and is recorded as the answer it is.
+    _rails_modules = platform_modules(
+        adapter.name, tenant_context=tenant_context
+    ) if tenant_context else {}
+    _rails_declared_cms = (_rails_modules.get("cms") or {}).get("declared")
+    _rails_declared_email = (_rails_modules.get("email") or {}).get("declared")
+    _rails_emission = None
+    if _rails_declared_cms == "block-store":
+        from lib import rails_emit as _rails
+        print(f"  🛤  Emitting CMS rails (cms=block-store, email={_rails_declared_email})...")
+        # npm deps FIRST: the emitted files import @measured/puck and
+        # @supabase/supabase-js, and `npm install` is the next thing that runs.
+        _pkg_path = site_dir / "package.json"
+        _pkg = json.loads(_pkg_path.read_text(encoding="utf-8"))
+        _pkg_deps = _pkg.get("dependencies", {})
+        for _name, _ver in (_rails_modules.get("npm_packages") or {}).items():
+            _pkg_deps.setdefault(_name, _ver)
+        _pkg["dependencies"] = dict(sorted(_pkg_deps.items()))
+        write_file(_pkg_path, json.dumps(_pkg, indent=2) + "\n")
+        _rails_emission = _rails.emit_rails(
+            site_dir,
+            OUTPUT_DIR / project_name,
+            tenant_context=tenant_context,
+            tenant_slug=(tenant_context or {}).get("slug") or project_name,
+            declared_cms=_rails_declared_cms,
+            declared_email=_rails_declared_email or "none",
+        )
+        print(
+            f"  ✓ Rails: {len(_rails_emission['files'])} files, "
+            f"{_rails_emission['lines']} lines; puck config "
+            f"{_rails_emission['puck_config']['verdict']}"
+        )
+    elif _rails_declared_cms:
+        print(f"  · CMS declared '{_rails_declared_cms}' — no rails emitted (recorded).")
+
     # ── Install dependencies ──
     print("  Installing dependencies (npm install)...")
     result = subprocess.run(
@@ -8631,6 +8672,25 @@ async function downloadOne(url) {{
         print(f"  ⚠ npm install had issues:\n{result.stderr[-500:]}")
     else:
         print("  ✓ Dependencies installed")
+
+    # ── Rails gate (R3) ──────────────────────────────────────────────────────
+    # Only for a tenant that emitted rails. FAIL is fatal: the rails were
+    # emitted and are broken, which is a build that ships an admin surface that
+    # does not compile. NOT_MEASURED is recorded and is NOT a pass — it goes
+    # through `record_build_failure` only on FAIL, and the verdict file carries
+    # the third state so nothing has to infer it from a missing line.
+    if _rails_emission is not None:
+        from verify_rails_gate import run_gate as _run_rails_gate, write_verdict as _write_rails_verdict
+        _rails_verdict = _run_rails_gate(site_dir, OUTPUT_DIR / project_name)
+        _write_rails_verdict(OUTPUT_DIR / project_name, _rails_verdict)
+        print(f"  RAILS GATE: {_rails_verdict['verdict']}")
+        for _reason in _rails_verdict.get("reasons", []):
+            print(f"    - {_reason}")
+        if _rails_verdict["verdict"] == "FAIL":
+            record_build_failure(
+                "rails_gate",
+                "; ".join(_rails_verdict.get("reasons", [])) or "rails gate failed",
+            )
 
     # ── Deploy env, from the adapter (P2) ──
     # `adapter.deploy_env()` is the one place that says what env this target
@@ -11359,6 +11419,7 @@ def main():
                     target_platform=args.target_platform,
                     harvested_nav=_harvested_nav,
                     design_style=(site_spec or {}).get("style"),
+                    tenant_context=tenant_context,
                 )
                 run_compliance_gate(
                     OUTPUT_DIR / args.project / SITE_DIR_NAME,
@@ -11658,7 +11719,7 @@ def main():
                     "validate", "pre-flight validation blocked the requested deploy (no --force)"
                 )
         if validation['passed'] or args.force:
-            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform, harvested_nav=_harvested_nav, design_style=(site_spec or {}).get("style"))
+            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform, harvested_nav=_harvested_nav, design_style=(site_spec or {}).get("style"), tenant_context=tenant_context)
             run_compliance_gate(
                 OUTPUT_DIR / args.project / SITE_DIR_NAME,
                 getattr(args, "tenant", None),

@@ -1,0 +1,681 @@
+{
+  "provenance": {
+    "source_repo": "/Users/craigkunte/Developer/GitHub/tenants/xago",
+    "source_commit": "ff5c5cd8d294f9943b591b6d9fb853d81978537f",
+    "census": "docs/census/2026-08-17-xago-rails.md",
+    "read_only": true,
+    "copied": "2026-08-17"
+  },
+  "totals": {
+    "template_files": 43,
+    "template_lines": 5931
+  },
+  "generated_not_templated": {
+    "src/lib/cms.registry.tsx": "section_key -> component map. DERIVED from the build's own section-artifacts: the key IS the SectionArtifact's section_uid, verbatim.",
+    "src/lib/puck/pages.ts": "the declared editable-page slug list.",
+    "src/lib/puck/page-meta.ts": "labels for the picker, derived from the page ids.",
+    "src/lib/puck/config.tsx": "per-section Puck field schemas, DERIVED from scripts/lib/slot_contract.template_contract() over each artifact's tsx.",
+    "src/lib/notify.ts": "the Resend sender. Written fresh \u2014 the Xago repo has 0 lines of mail-sending code (census \u00a70.1)."
+  },
+  "cut": {
+    "why": "This is a vertical slice: block store + media + lead capture + sender + gate. Each cut file is present in the source repo and was deliberately not emitted, so a later pass can add it without re-censusing.",
+    "blog": [
+      "src/lib/blog/docx.ts",
+      "src/lib/blog/editor-adapter.ts",
+      "src/lib/blog/editor-extensions.ts",
+      "src/lib/blog/editor-schema.ts",
+      "src/lib/blog/schema.ts",
+      "src/lib/blog/normalize.ts",
+      "src/lib/blog/query.ts",
+      "src/app/admin/posts/*"
+    ],
+    "legal": [
+      "src/lib/legal/documents.ts",
+      "src/lib/legal/editor-extensions.ts",
+      "src/lib/legal/html.ts",
+      "src/lib/legal/schema.ts",
+      "src/app/admin/legal/*"
+    ],
+    "editors_admin": [
+      "src/app/admin/editors/*",
+      "src/app/admin/account/*"
+    ],
+    "consequence": "No blog or statutory-document editor is emitted, and editor accounts must be provisioned by SQL rather than through the UI. The emitted AdminHeader nav lists only emitted routes, so nothing links to a cut surface."
+  },
+  "tenant_specific_never_emitted": {
+    "src/lib/puck/page-meta.ts": "hand-authored labels \u2014 GENERATED instead",
+    "src/components/sections/contact-page/01-contact.tsx": "Xago's own copy",
+    "scripts/ops/check-resend-dns.mjs": "the xago.io zone and Xago's DKIM key"
+  },
+  "files": [
+    {
+      "path": "src/lib/cms.ts",
+      "lines": 64,
+      "classification": "parametric",
+      "tokens": [
+        "CMS_TENANT_ENV"
+      ],
+      "source_sha256": "59932b1faf25400c480961c8b7037b77fcbed10e4a9eb4c8769fb3f527c9282d",
+      "template_sha256": "4b819ac05b9b8bb510974ddf873c8ebaab457959e5e71826d40efa1f91da40dc",
+      "substitutions": [
+        {
+          "find": "// Xago CMS render layer",
+          "replace": "// CMS render layer",
+          "why": "brand out of a comment",
+          "occurrences": 1
+        },
+        {
+          "find": "process.env.XAGO_TENANT_ID",
+          "replace": "process.env.{{CMS_TENANT_ENV}}",
+          "why": "tenant id env var name",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/cms.page.tsx",
+      "lines": 68,
+      "classification": "altered",
+      "tokens": [],
+      "source_sha256": "357d4f5d384e5af3ab17b5ab80b1246e268b4f97d7947a14ea84e5cb8a4ce9fd",
+      "template_sha256": "d5daa876cc7f232ed1cb186ebfe88b6831407a715f4536954dd0e46885eb175d",
+      "substitutions": [
+        {
+          "find": "        anchor: sectionAnchorId(b.section_key),",
+          "replace": "        anchor: page.anchors[b.section_key] ?? sectionAnchorId(b.section_key),",
+          "why": "section_key is a section_uid here, not a '04-how_it_works' slug, so the anchor cannot be derived from it; the generated registry carries the map",
+          "occurrences": 1
+        },
+        {
+          "find": "        anchor: sectionAnchorId(k),",
+          "replace": "        anchor: page.anchors[k] ?? sectionAnchorId(k),",
+          "why": "same, on the no-CMS fallback branch",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/cms-attribution.ts",
+      "lines": 81,
+      "classification": "parametric",
+      "tokens": [
+        "CMS_TENANT_ENV"
+      ],
+      "source_sha256": "fe849ad7ce503aadd46138b63b370e2870e4350f6d9f8620f78999119a744c22",
+      "template_sha256": "e0f2f04603ba7eceae0156192362f51b01c769bd2e63a70feac3f50d50b053a0",
+      "substitutions": [
+        {
+          "find": "process.env.XAGO_TENANT_ID",
+          "replace": "process.env.{{CMS_TENANT_ENV}}",
+          "why": "tenant id env var name",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/admin-auth.ts",
+      "lines": 88,
+      "classification": "parametric",
+      "tokens": [
+        "COOKIE_PREFIX"
+      ],
+      "source_sha256": "fd2218742cb7e78e44acfe7b2ad15fa4868107bad7a1be48f08cd67c1160f096",
+      "template_sha256": "ec519d1910c29e613e55cf0b0de1abccaac153148325f7631b9c5a328cd8eb7d",
+      "substitutions": [
+        {
+          "find": "export const ADMIN_COOKIE = \"xago_admin\";",
+          "replace": "export const ADMIN_COOKIE = \"{{COOKIE_PREFIX}}_admin\";",
+          "why": "cookie name is per-tenant so two tenant sites on one apex do not collide",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/admin-flash.ts",
+      "lines": 32,
+      "classification": "parametric",
+      "tokens": [
+        "COOKIE_PREFIX"
+      ],
+      "source_sha256": "d264059ee618c0fdec03ff6ddd43466a823a3c1c7bf99ed47db2fd18f1d61a9c",
+      "template_sha256": "174474d6c8905c886d1fa6189f11b2c949b5c3bce2c91064962de83a5a320dd6",
+      "substitutions": [
+        {
+          "find": "export const FLASH_COOKIE = \"xago_admin_flash\";",
+          "replace": "export const FLASH_COOKIE = \"{{COOKIE_PREFIX}}_admin_flash\";",
+          "why": "same",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/editor-password.ts",
+      "lines": 108,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "cbc22e66657608a8ee9dcc1bdaa189a7e2a9b3b614461b2700311b9018608ea0",
+      "template_sha256": "cbc22e66657608a8ee9dcc1bdaa189a7e2a9b3b614461b2700311b9018608ea0",
+      "substitutions": []
+    },
+    {
+      "path": "src/lib/editor-directory.ts",
+      "lines": 570,
+      "classification": "parametric",
+      "tokens": [
+        "CMS_TENANT_ENV"
+      ],
+      "source_sha256": "a40f00a6bd645a5dfb803121424a3299465d4baf565b7654bbf3783f7786d4be",
+      "template_sha256": "2fd05821d324bc7e73ed12b06044dbf34304e3be63e6057084b1c7bd63f5f837",
+      "substitutions": [
+        {
+          "find": "process.env.XAGO_TENANT_ID",
+          "replace": "process.env.{{CMS_TENANT_ENV}}",
+          "why": "tenant id env var name",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/safe-href.ts",
+      "lines": 21,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "5542e4d16ca06f46d96ea5c0903fe81a94e26455c124ee36ab82a22788a4a513",
+      "template_sha256": "5542e4d16ca06f46d96ea5c0903fe81a94e26455c124ee36ab82a22788a4a513",
+      "substitutions": []
+    },
+    {
+      "path": "src/lib/leads.ts",
+      "lines": 259,
+      "classification": "parametric",
+      "tokens": [
+        "CMS_TENANT_ENV"
+      ],
+      "source_sha256": "b7d1d66908f0e5bb8f0c02e94e95821a5b9d7ec1092976bc8a8964c0734ff6fa",
+      "template_sha256": "fb988fbd0a5bd4d2b2df309820a95ce2532a826edd7fc9f441d2583288707d15",
+      "substitutions": [
+        {
+          "find": "process.env.XAGO_TENANT_ID",
+          "replace": "process.env.{{CMS_TENANT_ENV}}",
+          "why": "tenant id env var name",
+          "occurrences": 1
+        },
+        {
+          "append": "setLeadNotified",
+          "why": "the writer for the notified_at column 0008 shipped without one"
+        }
+      ]
+    },
+    {
+      "path": "src/lib/media/constants.ts",
+      "lines": 45,
+      "classification": "parametric",
+      "tokens": [
+        "MEDIA_BUCKET"
+      ],
+      "source_sha256": "ae1650842d363fd2cf78c5996a358fd631c25a7c58adddb4fd98748c54dd699e",
+      "template_sha256": "ce5ef3bcdd95c1bdc0cf92446dc4b517fe95cd43378f8ae9489a578e87e61298",
+      "substitutions": [
+        {
+          "find": "export const MEDIA_BUCKET = \"xago-media\";",
+          "replace": "export const MEDIA_BUCKET = \"{{MEDIA_BUCKET}}\";",
+          "why": "declared bucket name",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/media/asset.ts",
+      "lines": 71,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "c21005606d4e6293c488a9a84fffd8a0152d71b4c3a943388ae224d6a5417b40",
+      "template_sha256": "c21005606d4e6293c488a9a84fffd8a0152d71b4c3a943388ae224d6a5417b40",
+      "substitutions": []
+    },
+    {
+      "path": "src/lib/media/normalize.ts",
+      "lines": 85,
+      "classification": "altered",
+      "tokens": [],
+      "source_sha256": "39fe0478ba8b099ac3876687c226858ecb355c46a977172b421a6b875ac5ce35",
+      "template_sha256": "9b974a4dd2833e4eef779f07ec84dbd08bfda77bff7ddc7eb4863a9d6d8ab757",
+      "substitutions": [
+        {
+          "find": "// Pure image normalisation for the Xago CMS media pipeline",
+          "replace": "// Pure image normalisation for the CMS media pipeline",
+          "why": "brand out of a comment",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/media/store.ts",
+      "lines": 254,
+      "classification": "parametric",
+      "tokens": [
+        "CMS_TENANT_ENV"
+      ],
+      "source_sha256": "19507d3f38504f3b3a7a0a01c35c7c2f3d037515acd64d0e7758db594c49643a",
+      "template_sha256": "ecbd4271cb27d50d6b6d95128630d1a3dfcd8abf453d0f456e653fb1808c9181",
+      "substitutions": [
+        {
+          "find": "process.env.XAGO_TENANT_ID",
+          "replace": "process.env.{{CMS_TENANT_ENV}}",
+          "why": "tenant id env var name",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/puck/media.ts",
+      "lines": 218,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "d07614d5c2c8c4551b7b4996a51242bd66e3a5211b4d05d70a28e1b117c4d8a3",
+      "template_sha256": "d07614d5c2c8c4551b7b4996a51242bd66e3a5211b4d05d70a28e1b117c4d8a3",
+      "substitutions": []
+    },
+    {
+      "path": "src/lib/puck/media-hydrate.ts",
+      "lines": 87,
+      "classification": "parametric",
+      "tokens": [
+        "CMS_TENANT_ENV"
+      ],
+      "source_sha256": "fd6c0aa267dbd3aba00d811cabde712ee7bd107d7ee14c89b86d3ad8de92a198",
+      "template_sha256": "317e643c3224a5ad90e4abb7d2b22f76e295b805de9e00cb03d549361c1ebdc2",
+      "substitutions": [
+        {
+          "find": "process.env.XAGO_TENANT_ID",
+          "replace": "process.env.{{CMS_TENANT_ENV}}",
+          "why": "tenant id env var name",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/puck/media-validation.ts",
+      "lines": 136,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "6490cedc01a07133103212a775bb222666661dfc16414d74949e8c869caa0eb4",
+      "template_sha256": "6490cedc01a07133103212a775bb222666661dfc16414d74949e8c869caa0eb4",
+      "substitutions": []
+    },
+    {
+      "path": "src/lib/puck/fields.tsx",
+      "lines": 194,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "e6dd05389045a3050f714ee5c04f3d819cd7c69aeec52172886cac41287c9b43",
+      "template_sha256": "e6dd05389045a3050f714ee5c04f3d819cd7c69aeec52172886cac41287c9b43",
+      "substitutions": []
+    },
+    {
+      "path": "src/middleware.ts",
+      "lines": 82,
+      "classification": "parametric",
+      "tokens": [
+        "ADMIN_HOSTS_JSON"
+      ],
+      "source_sha256": "72e9f65766b54d7c0202af05ed3ca77cf764ec9a88c9179d9563a35658824bd0",
+      "template_sha256": "9c5f6101fe84d9e6ed804294f5fb1150669e2a3fcbeb1a568d3611e7fc0d102d",
+      "substitutions": [
+        {
+          "find": "    \"xago.io\",\n    \"www.xago.io\",\n",
+          "replace": "    ...{{ADMIN_HOSTS_JSON}},\n",
+          "why": "the declared host allowlist",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/components/admin/AdminHeader.tsx",
+      "lines": 51,
+      "classification": "parametric",
+      "tokens": [
+        "ADMIN_NAV_LINKS",
+        "BRAND_NAME",
+        "LOGO_SRC"
+      ],
+      "source_sha256": "6f67ad0cd4110d65ea098ffc99bb15fa46a25e8a0c8faabe0453041b72bf3b19",
+      "template_sha256": "5ee78ed164bad192907433e438b9c0b82e9f9143d0784c7c561cfc0d49cbf911",
+      "substitutions": [
+        {
+          "find": "const LINKS: { key: AdminNavKey; href: string; label: string }[] = [\n  { key: \"pages\", href: \"/admin\", label: \"Pages\" },\n  { key: \"legal\", href: \"/admin/legal\", label: \"Legal & FAQ\" },\n  { key: \"leads\", href: \"/admin/leads\", label: \"Enquiries\" },\n  { key: \"editors\", href: \"/admin/editors\", label: \"People\" },\n  { key: \"account\", href: \"/admin/account\", label: \"Your password\" },\n];",
+          "replace": "const LINKS: { key: AdminNavKey; href: string; label: string }[] = {{ADMIN_NAV_LINKS}};",
+          "why": "the nav must list the routes THIS emission actually emitted \u2014 a link to a cut route is a 404 that reads as a broken feature",
+          "occurrences": 1
+        },
+        {
+          "find": "  <img src=\"/xago-logo.png\" alt=\"Xago\" ",
+          "replace": "  <img src=\"{{LOGO_SRC}}\" alt=\"{{BRAND_NAME}}\" ",
+          "why": "tenant mark",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/components/admin/AssetGrid.tsx",
+      "lines": 146,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "6ce58d3769069e2906c8c2d3378922fc371418bcf64e045c77f5fd0536844d7f",
+      "template_sha256": "6ce58d3769069e2906c8c2d3378922fc371418bcf64e045c77f5fd0536844d7f",
+      "substitutions": []
+    },
+    {
+      "path": "src/components/admin/AssetPicker.tsx",
+      "lines": 348,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "d89c04dbdd3fda255c01797fa3216a0679c5f94c6f20c69cfc3a3f8d29879235",
+      "template_sha256": "d89c04dbdd3fda255c01797fa3216a0679c5f94c6f20c69cfc3a3f8d29879235",
+      "substitutions": []
+    },
+    {
+      "path": "src/components/admin/AssetUploadButton.tsx",
+      "lines": 108,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "d57d66325093b7c4b4988528a03212602806405207caabcb281d06ad5e354fbf",
+      "template_sha256": "d57d66325093b7c4b4988528a03212602806405207caabcb281d06ad5e354fbf",
+      "substitutions": []
+    },
+    {
+      "path": "src/components/admin/MediaLibrary.tsx",
+      "lines": 341,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "f154595c3bbd35496ccff045b1a617e8897021e330a60339ce9c48ba90014d08",
+      "template_sha256": "f154595c3bbd35496ccff045b1a617e8897021e330a60339ce9c48ba90014d08",
+      "substitutions": []
+    },
+    {
+      "path": "src/app/admin/actions.ts",
+      "lines": 240,
+      "classification": "parametric",
+      "tokens": [
+        "CMS_TENANT_ENV"
+      ],
+      "source_sha256": "b68bf4bfb59c9105bb6761a80e3fc3626b4933df7fe2dc4a5325613d2377e24e",
+      "template_sha256": "dd3c508030182e32ad83dd4d2cd639d953fe07d57b82660a8bc880ccfb63aa80",
+      "substitutions": [
+        {
+          "find": "process.env.XAGO_TENANT_ID",
+          "replace": "process.env.{{CMS_TENANT_ENV}}",
+          "why": "tenant id env var name",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/app/admin/page.tsx",
+      "lines": 113,
+      "classification": "parametric",
+      "tokens": [
+        "BRAND_NAME"
+      ],
+      "source_sha256": "88d295ac3100eca22f2438e8d639a769a3e7d4ff5e668b47138ac0cd83ad85e6",
+      "template_sha256": "61d58a76f774890876ff508213c879c17cf177a1ab5b6cfb5e16ddeb6583c6a4",
+      "substitutions": [
+        {
+          "find": "export const metadata = { title: \"Xago CMS\" };",
+          "replace": "export const metadata = { title: \"{{BRAND_NAME}} CMS\" };",
+          "why": "tenant mark",
+          "occurrences": 1
+        },
+        {
+          "find": "<li><strong>Everyone signs in as themselves.</strong> Each change is recorded against the person who made it, and you can see who edited a page last on the cards above. Manage who has access under <Link href=\"/admin/editors\" style={{ color: \"#57534e\" }}>People</Link>.</li>",
+          "replace": "<li><strong>Everyone signs in as themselves.</strong> Each change is recorded against the person who made it, and you can see who edited a page last on the cards above.</li>",
+          "why": "the /admin/editors route is CUT from this emission (see MANIFEST.cut); a link to it would 404",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/app/admin/login/page.tsx",
+      "lines": 122,
+      "classification": "parametric",
+      "tokens": [
+        "BRAND_NAME",
+        "CANONICAL_DOMAIN",
+        "LOGO_SRC"
+      ],
+      "source_sha256": "dc9c8acb611f5127369fc21796afc0aa1f9f23729fde2cc45daa7d15ca8b2e2c",
+      "template_sha256": "a60d2800a82cf886bbca358cd981331441ee7e39bb7547ef351024ffd4c2fa69",
+      "substitutions": [
+        {
+          "find": "export const metadata = { title: \"Xago CMS \u2014 Sign in\" };",
+          "replace": "export const metadata = { title: \"{{BRAND_NAME}} CMS \u2014 Sign in\" };",
+          "why": "tenant mark",
+          "occurrences": 1
+        },
+        {
+          "find": "<img src=\"/xago-logo.png\" alt=\"Xago\" ",
+          "replace": "<img src=\"{{LOGO_SRC}}\" alt=\"{{BRAND_NAME}}\" ",
+          "why": "tenant mark",
+          "occurrences": 1
+        },
+        {
+          "find": "Back to xago.io",
+          "replace": "Back to {{CANONICAL_DOMAIN}}",
+          "why": "the tenant's own domain",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/app/admin/[page]/page.tsx",
+      "lines": 61,
+      "classification": "parametric",
+      "tokens": [
+        "CMS_TENANT_ENV"
+      ],
+      "source_sha256": "8b3e1d7ce87c873e8a3d3415dd1878bc6479d4720e723acb1bb1616863c0c7d6",
+      "template_sha256": "c7ab850fd2850d18a71b1198e04afc687be8d4405bb63ebb0271fd5dd99acf58",
+      "substitutions": [
+        {
+          "find": "process.env.XAGO_TENANT_ID",
+          "replace": "process.env.{{CMS_TENANT_ENV}}",
+          "why": "tenant id env var name",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/app/admin/[page]/Editor.tsx",
+      "lines": 62,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "c288e1c718191a5621b28fb7f022459acca34c50195eb668585ba4f339576f24",
+      "template_sha256": "c288e1c718191a5621b28fb7f022459acca34c50195eb668585ba4f339576f24",
+      "substitutions": []
+    },
+    {
+      "path": "src/app/admin/media/page.tsx",
+      "lines": 84,
+      "classification": "parametric",
+      "tokens": [
+        "BRAND_NAME",
+        "LOGO_SRC"
+      ],
+      "source_sha256": "2458c40c3810afe08f72e87601f63b370b9a88574fcedf5e8161e1acc91f08e1",
+      "template_sha256": "ebc894906b68306b40e766d2d24dbdb148c55173729a2bc7ce3b0ee01e0812bb",
+      "substitutions": [
+        {
+          "find": "export const metadata = { title: \"Xago CMS \u2014 Images\" };",
+          "replace": "export const metadata = { title: \"{{BRAND_NAME}} CMS \u2014 Images\" };",
+          "why": "tenant mark",
+          "occurrences": 1
+        },
+        {
+          "find": "<img src=\"/xago-logo.png\" alt=\"Xago\" ",
+          "replace": "<img src=\"{{LOGO_SRC}}\" alt=\"{{BRAND_NAME}}\" ",
+          "why": "tenant mark",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/app/admin/media/actions.ts",
+      "lines": 148,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "6a99fba6b289cb723a80404614719c17d0975a27ff6856de924fcb35cd2d2a17",
+      "template_sha256": "6a99fba6b289cb723a80404614719c17d0975a27ff6856de924fcb35cd2d2a17",
+      "substitutions": []
+    },
+    {
+      "path": "src/app/admin/leads/page.tsx",
+      "lines": 184,
+      "classification": "parametric",
+      "tokens": [
+        "BRAND_NAME",
+        "LOGO_SRC"
+      ],
+      "source_sha256": "bccd4fd2fbb1278edd61ec07b53462fcef81c040fd03bf64d205c2ce3556fdd1",
+      "template_sha256": "a0a977645212a1c126233a2f814f4d645b2131b7180d7eb7147ee0c410de350b",
+      "substitutions": [
+        {
+          "find": "export const metadata = { title: \"Xago CMS \u2014 Enquiries\" };",
+          "replace": "export const metadata = { title: \"{{BRAND_NAME}} CMS \u2014 Enquiries\" };",
+          "why": "tenant mark",
+          "occurrences": 1
+        },
+        {
+          "find": "<img src=\"/xago-logo.png\" alt=\"Xago\" ",
+          "replace": "<img src=\"{{LOGO_SRC}}\" alt=\"{{BRAND_NAME}}\" ",
+          "why": "tenant mark",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/app/admin/leads/actions.ts",
+      "lines": 52,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "f3031ed3b4486876521dc112b3fd77070c1b88e322cf2cd49cbb5faaca7215cd",
+      "template_sha256": "f3031ed3b4486876521dc112b3fd77070c1b88e322cf2cd49cbb5faaca7215cd",
+      "substitutions": []
+    },
+    {
+      "path": "src/app/api/contact/route.ts",
+      "lines": 151,
+      "classification": "altered",
+      "tokens": [],
+      "source_sha256": "b619717e89735e18cd85a5a13cac5aa98a889edd1ef3389b617aa10e73e3037a",
+      "template_sha256": "d2c4289b2dc11e2ec395e8ed2550606c014418af530d31703bdd4576f79093e7",
+      "substitutions": [
+        {
+          "find": "    return json({ ok: true }, 200);",
+          "replace": "    // X-0156, built here for the first time: the notification the Xago repo\n    // specified and never got. It runs AFTER the row is committed and its\n    // result is DISCARDED \u2014 a mail failure must never turn a saved enquiry\n    // into a 500. What it failed to do stays visible in /admin/leads, which\n    // counts rows with a null notified_at.\n    await notifyLead(checked.value);\n\n    return json({ ok: true }, 200);",
+          "why": "the sender call \u2014 best-effort, on top of a committed row",
+          "occurrences": 1
+        },
+        {
+          "find": "} from \"@/lib/leads\";",
+          "replace": "} from \"@/lib/leads\";\nimport { notifyLead } from \"@/lib/notify\";",
+          "why": "import the sender",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "path": "src/lib/notify.ts",
+      "lines": 145,
+      "classification": "fresh",
+      "tokens": [
+        "EMAIL_SEND_DOMAIN",
+        "EMAIL_NOTIFY_TO"
+      ],
+      "source_sha256": null,
+      "template_sha256": "8403f1fd20f9ce3f7a2ce323ec8fd88dd1c84a181ec6c8ad5341210ab6992a4f",
+      "substitutions": [],
+      "note": "Not ported. The source repo contains zero lines of mail-sending code; this is the writer that db/migrations/0008 created notified_at for and never got."
+    },
+    {
+      "path": "db/migrations/0001_cms_blocks.sql",
+      "lines": 98,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "0fce245f3434840b52aae8e6cb5c0a7f64d4fa314b9d3bad2c592c7097d877e8",
+      "template_sha256": "0fce245f3434840b52aae8e6cb5c0a7f64d4fa314b9d3bad2c592c7097d877e8",
+      "substitutions": []
+    },
+    {
+      "path": "db/migrations/0002_cms_assets.sql",
+      "lines": 90,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "27c63ede97e85161baa81a9dabf97e9853d51124e4fceb035f48e20245ca9fe7",
+      "template_sha256": "27c63ede97e85161baa81a9dabf97e9853d51124e4fceb035f48e20245ca9fe7",
+      "substitutions": []
+    },
+    {
+      "path": "db/migrations/0003_cms_posts.sql",
+      "lines": 195,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "8705c071eef5d7b7aaa23a84f6fa1568fe7b0bc6696d9ff8d9371a0c0a4941d6",
+      "template_sha256": "8705c071eef5d7b7aaa23a84f6fa1568fe7b0bc6696d9ff8d9371a0c0a4941d6",
+      "substitutions": []
+    },
+    {
+      "path": "db/migrations/0004_cms_editors.sql",
+      "lines": 179,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "fcf31f93ffac5da02594789f7abcc26c2bc13963396fffdc323bfe5f84f73161",
+      "template_sha256": "fcf31f93ffac5da02594789f7abcc26c2bc13963396fffdc323bfe5f84f73161",
+      "substitutions": []
+    },
+    {
+      "path": "db/migrations/0005_cms_audit_source.sql",
+      "lines": 57,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "ad1374c36d80da2ec2fe3cb24b26eef5a31cddca2240bbaff396c18035c53a27",
+      "template_sha256": "ad1374c36d80da2ec2fe3cb24b26eef5a31cddca2240bbaff396c18035c53a27",
+      "substitutions": []
+    },
+    {
+      "path": "db/migrations/0006_cms_authors_editor.sql",
+      "lines": 119,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "bb5350db6743b2e43fca9435cc3d4440bcde8d3fe2ee1e9a167b7074f6fd101a",
+      "template_sha256": "bb5350db6743b2e43fca9435cc3d4440bcde8d3fe2ee1e9a167b7074f6fd101a",
+      "substitutions": []
+    },
+    {
+      "path": "db/migrations/0007_cms_login_attempts.sql",
+      "lines": 139,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "2ffec3707565f92e038c5ef55b012a7e189d2f5fa6d7ad2e462163091072ab84",
+      "template_sha256": "2ffec3707565f92e038c5ef55b012a7e189d2f5fa6d7ad2e462163091072ab84",
+      "substitutions": []
+    },
+    {
+      "path": "db/migrations/0008_cms_leads.sql",
+      "lines": 194,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "8b9424e8e116a1e71c2dcd25a1ba4d4360e7b8e845751c8795b1707662376f72",
+      "template_sha256": "8b9424e8e116a1e71c2dcd25a1ba4d4360e7b8e845751c8795b1707662376f72",
+      "substitutions": []
+    },
+    {
+      "path": "db/migrations/0009_cms_audit_lead.sql",
+      "lines": 41,
+      "classification": "generic",
+      "tokens": [],
+      "source_sha256": "e49c951c37ff177770043bbe0298976d917b622d840dd8479ec814e9677c1d2c",
+      "template_sha256": "e49c951c37ff177770043bbe0298976d917b622d840dd8479ec814e9677c1d2c",
+      "substitutions": []
+    }
+  ]
+}
