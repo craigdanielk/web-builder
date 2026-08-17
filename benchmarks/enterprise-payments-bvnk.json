@@ -98,7 +98,9 @@
     "max_unique": 20
   },
   "font_system": {
-    "families": ["Circular", "CircularXX"],
+    "families": ["Poppins"],
+    "measured_families": ["Circular", "CircularXX"],
+    "substitution_reason": "Circular and CircularXX cannot be served, so declaring them made dna_font_families a rule that could only ever fail — against a face no build can load. `families` now declares what the build serves and what the gate checks; `measured_families` keeps what the reference actually renders, so the substitution stays auditable. Precedence is intact: the benchmark still owns the font role. Operator decision, Craig, 2026-08-17. If the Lineto faces are licensed and hosted, restore measured_families as families and add the @font-face.",
     "_source": "Circular (556 text elements) and CircularXX (447). Both are proprietary Lineto faces and cannot be loaded. font_match.py resolves Circular to Poppins on genre geometric-sans; CircularXX returns UNMATCHED because the name signals no genre, so its role must be assigned deliberately rather than guessed. Note the reference's own declared fallback chain is 'Circular, Inter, sans-serif' — Inter is a neo-grotesque and a poorer geometric match than Poppins, so the matcher's choice is kept and this disagreement is recorded rather than silently resolved."
   },
   "density": "spacious",
