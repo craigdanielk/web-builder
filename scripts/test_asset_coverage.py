@@ -77,8 +77,16 @@ test("every remote src that ships is declared unresolved",
 #   "design demand, no source" ← a `// Art:` slot the source never had
 #                               (has no counterpart in asset-coverage.json;
 #                                it is demand, not a coverage miss)
+#
+# `image-jobs.json` has two shapes on disk. v1 was a bare list of job records;
+# `image-jobs-v2` is an envelope — brand tokens, cache counters, `refused` and
+# `unlowered` alongside `jobs`. This file was written against v1 and, because
+# nothing ever supplied it a build directory, never met v2: iterating the
+# envelope yields its KEYS, and the first `.get()` raised AttributeError on a
+# str. Accept both, and read the job list from wherever it actually is.
 _jobs_path = BUILD / "image-jobs.json"
-_jobs = json.loads(_jobs_path.read_text()) if _jobs_path.exists() else []
+_jobs_payload = json.loads(_jobs_path.read_text()) if _jobs_path.exists() else []
+_jobs = _jobs_payload if isinstance(_jobs_payload, list) else (_jobs_payload.get("jobs") or [])
 _fetch_jobs = [j for j in _jobs if j.get("reason") == "no extracted source"]
 _demand_jobs = [j for j in _jobs if j.get("reason") == "design demand, no source"]
 

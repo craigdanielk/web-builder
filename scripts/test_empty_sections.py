@@ -87,10 +87,21 @@ if reg_path.exists():
          not shipped_anyway, str(shipped_anyway[:5]))
 
 # ── 4. no empty image src survives into shipped code ─────────────────────
+#
+# Comment lines are excluded. Several generated sections carry a header
+# comment that QUOTES this very rule — `<Image src="">` THROWS in next/image
+# — and a plain substring scan flagged the documentation as the defect. The
+# first time this file ever ran (2026-08-17; it had never been given a build
+# dir) it failed the committed cape-crypto build on two comment lines. A test
+# that fails on its own rule being written down measures nothing.
+def _is_comment(stripped: str) -> bool:
+    return stripped.startswith(("*", "//", "/*"))
+
+
 bad_src = []
 for tsx in list(BUILD.glob("sections/*/*.tsx")) + list(BUILD.glob("shared/*.tsx")):
     for n, line in enumerate(tsx.read_text().splitlines(), 1):
-        if 'src=""' in line:
+        if 'src=""' in line and not _is_comment(line.strip()):
             bad_src.append(f"{tsx.parent.name}/{tsx.name}:{n}")
 test("no shipped section renders an image with an empty src",
      not bad_src, str(bad_src[:5]))

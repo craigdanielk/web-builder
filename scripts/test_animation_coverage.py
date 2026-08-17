@@ -80,14 +80,20 @@ export default function Section{n}() {{
 }}
 """
 
-# At `moderate` intensity, HOW-IT-WORKS's role fallback order (scroll ->
-# entrance -> interactive -> ...) has exactly 4 safe, unused, real
-# candidates available (fade-up-stagger, staggered-timeline, hover-glow,
-# hover-lift — aurora-background is excluded, it derives 'dramatic'). 5
-# identical-archetype sections forces the 5th to genuinely exhaust the pool,
-# giving both a real "injected" case and a real "unchanged" case without
-# needing a contrived per-section shape.
-FIXTURE_SECTION_COUNT = 5
+# Identical-archetype sections, more of them than the pool can serve, so the
+# tail genuinely exhausts it — giving a real "injected" case and a real
+# "unchanged" case without a contrived per-section shape.
+#
+# The count is deliberately well above the pool and the assertions below are
+# written against `len(injections)`, NOT a literal. An earlier version pinned
+# "exactly 4 safe real components" and named the four it expected; task E4
+# (513bdbd4) corrected nine misdescribed registry rows and relaxed the engine
+# filter, taking the pool 3 -> 7, and twelve assertions failed while the code
+# under test was behaving correctly. A test that has to be edited every time
+# the library grows is measuring the library, not the invariant. The invariant
+# is: everything decided is recorded, everything else is counted unchanged
+# with a reason.
+FIXTURE_SECTION_COUNT = 14
 
 
 def build_fixture():
@@ -120,14 +126,16 @@ if node_available:
     original_bytes = {f: f.read_bytes() for f in section_files}
 
     tally = orchestrate.stage_inject_animation(FIXTURE_PROJECT, "home", section_files, "moderate")
-    check_tally_shape(tally, f"fixture ({FIXTURE_SECTION_COUNT} sections, pool of 4 real components)")
+    check_tally_shape(tally, f"fixture ({FIXTURE_SECTION_COUNT} sections, pool exhausted)")
 
     test(f"fixture: exactly {FIXTURE_SECTION_COUNT} sections seen", tally["total"] == FIXTURE_SECTION_COUNT,
          f"got {tally['total']}")
-    test("fixture: the pool of 4 safe real components was fully decided",
-         tally["injected"] == 4, f"got injected={tally['injected']}")
-    test("fixture: the 5th section (pool exhausted) was left unchanged with a reason",
-         tally["unchanged"] == 1 and len(tally["by_reason"]) >= 1)
+    test("fixture: at least one component was decided (the pool is not empty)",
+         tally["injected"] >= 1, f"got injected={tally['injected']}")
+    test("fixture: the pool genuinely ran out — the tail sections are unchanged with a reason",
+         tally["unchanged"] >= 1 and len(tally["by_reason"]) >= 1,
+         f"injected={tally['injected']} of {FIXTURE_SECTION_COUNT} — if the pool now "
+         f"serves every section, raise FIXTURE_SECTION_COUNT above the pool size")
 
     # ── The load-bearing structural guarantee ──
     for f in section_files:
@@ -144,10 +152,15 @@ if node_available:
         test("fixture: decision carries export_name + dest_name",
              bool(injections.get("home/01-section", {}).get("export_name"))
              and bool(injections.get("home/01-section", {}).get("dest_name")))
-        test("fixture: no decision recorded for the pool-exhausted 5th section",
-             "home/05-section" not in injections)
-        test("fixture: exactly 4 decisions recorded (matches injected count)",
-             len(injections) == 4)
+        decided_stems = {k.split("/", 1)[-1] for k in injections}
+        all_stems = {f.stem for f in section_files}
+        test("fixture: no decision recorded for any pool-exhausted section",
+             len(all_stems - decided_stems) == tally["unchanged"],
+             f"undecided={sorted(all_stems - decided_stems)} unchanged={tally['unchanged']}")
+        test("fixture: one decision recorded per injected section — the tally cannot "
+             "claim an injection the decision file does not carry",
+             len(injections) == tally["injected"],
+             f"decisions={len(injections)} injected={tally['injected']}")
 
     coverage_path = FIXTURE_DIR / "animation-coverage.json"
     test("fixture: animation-coverage.json was written", coverage_path.exists())
@@ -156,8 +169,11 @@ if node_available:
         test("fixture: on-disk coverage matches the returned tally", on_disk == tally)
 
     extra_path = FIXTURE_DIR / "extra-components.json"
-    test("fixture: extra-components.json queues the real component(s) for stage_deploy",
-         extra_path.exists() and len(json.loads(extra_path.read_text(encoding="utf-8"))) == 4)
+    test("fixture: extra-components.json queues every decided component for stage_deploy",
+         extra_path.exists()
+         and len(json.loads(extra_path.read_text(encoding="utf-8"))) == tally["injected"],
+         f"queued={len(json.loads(extra_path.read_text(encoding='utf-8'))) if extra_path.exists() else 'MISSING'} "
+         f"injected={tally['injected']}")
 
     # ── Assembly: the decision becomes code, and ONLY here ──
     animation_map = orchestrate.load_animation_injections(FIXTURE_PROJECT)
@@ -174,10 +190,22 @@ if node_available:
          wname is not None and f"<{wname}>" in page_code and f"</{wname}>" in page_code)
     test("assembly: the wrapped section still renders its own component invocation inside the wrap",
          wname is not None and "<Section01SECTION />" in page_code)
-    # The pool-exhausted section must appear on its own line, not nested inside any wrapper tag.
-    bare_line = next((ln for ln in components if "Section05SECTION" in ln), "")
-    test("assembly: the unchanged section's JSX line is a bare self-closing tag (no wrapper)",
-         bare_line.strip() == "<Section05SECTION />")
+    # The pool-exhausted sections must appear on their own line, not nested
+    # inside any wrapper tag. Which sections those are depends on the pool
+    # size, so derive them from the decision file rather than naming one.
+    undecided_files = [f for f in section_files
+                       if f"home/{f.stem}" not in injections]
+    bare_ok = bool(undecided_files)
+    bare_detail = "no section was left undecided — nothing to check"
+    for f in undecided_files:
+        cname = orchestrate._component_name_for_section_file(f)
+        line = next((ln for ln in components if f"<{cname} " in ln or f"<{cname}>" in ln), "")
+        if line.strip() != f"<{cname} />":
+            bare_ok = False
+            bare_detail = f"{f.stem} -> {line.strip()!r}"
+            break
+    test("assembly: every unchanged section's JSX line is a bare self-closing tag (no wrapper)",
+         bare_ok, bare_detail)
 
     # ── Regression: two DIFFERENT components sharing one export name ──
     # entrance__fade_up_stagger and entrance__staggered_timeline both export
@@ -187,28 +215,51 @@ if node_available:
     # recorded staggered_timeline as used, but the generated page never
     # imported that file and wrapped the section in fade-up-stagger's code
     # instead. Sections 1 and 2 of this fixture are exactly that pair.
-    animation_ids_used = {k: v["animation_id"] for k, v in injections.items()}
-    export_names_used = {k: v["export_name"] for k, v in injections.items()}
-    test("fixture: sections 1 and 2 got two DIFFERENT real components",
-         animation_ids_used.get("home/01-section") != animation_ids_used.get("home/02-section"))
-    test("fixture: those two different components share an export name (the exact collision case)",
-         export_names_used.get("home/01-section") == export_names_used.get("home/02-section")
-         == "AnimatedGroup")
+    # The collision is a property of the REGISTRY, so assert it there — it is
+    # what makes the guard necessary, and if it ever stops being true this
+    # test should say so rather than quietly stop testing anything.
+    registry = json.loads(
+        (ROOT.parent / "skills" / "animation-components" / "component-registry.json")
+        .read_text(encoding="utf-8"))
+    registry_rows = list((registry.get("components") or {}).values())
+    animated_group_paths = {
+        r.get("import_statement", "") for r in registry_rows
+        if r.get("export_name") == "AnimatedGroup"}
+    test("registry: two DIFFERENT component files still export the same name "
+         "'AnimatedGroup' — the collision the alias guard exists for",
+         len(animated_group_paths) == 2, f"paths={sorted(animated_group_paths)}")
 
-    import_lines_for_animations = [ln for ln in imports if "components/animations/" in ln]
+    # Drive _build_page_imports directly with both colliding components. An
+    # earlier version of this block waited for stage_inject_animation to
+    # happen to pick that exact pair; after E4 grew the pool it picked a
+    # different pair and five assertions failed while the guard was intact.
+    # The guard is a property of _build_page_imports, so test it there.
+    collision_map = {
+        "home/01-section": {"export_name": "AnimatedGroup", "dest_name": "fade-up-stagger",
+                            "export_type": "named", "animation_id": "entrance__fade_up_stagger"},
+        "home/02-section": {"export_name": "AnimatedGroup", "dest_name": "staggered-timeline",
+                            "export_type": "named", "animation_id": "entrance__staggered_timeline"},
+    }
+    c_imports, c_components = orchestrate._build_page_imports(
+        section_files[:2], "@/components/sections/home/", collision_map, "home"
+    )
+    import_lines_for_animations = [ln for ln in c_imports if "components/animations/" in ln]
     test("regression: two distinct import paths were emitted for the two AnimatedGroup components",
-         len({ln.split("from")[-1] for ln in import_lines_for_animations
-              if "fade-up-stagger" in ln or "staggered-timeline" in ln}) == 2)
-    fade_up_import = next((ln for ln in imports if "fade-up-stagger" in ln), "")
-    staggered_import = next((ln for ln in imports if "staggered-timeline" in ln), "")
+         len({ln.split("from")[-1] for ln in import_lines_for_animations}) == 2,
+         f"got {import_lines_for_animations}")
+    fade_up_import = next((ln for ln in c_imports if "fade-up-stagger" in ln), "")
+    staggered_import = next((ln for ln in c_imports if "staggered-timeline" in ln), "")
     test("regression: fade-up-stagger's AnimatedGroup keeps its own name",
-         fade_up_import == 'import { AnimatedGroup } from "@/components/animations/fade-up-stagger";')
+         fade_up_import == 'import { AnimatedGroup } from "@/components/animations/fade-up-stagger";',
+         f"got {fade_up_import!r}")
     test("regression: staggered-timeline's AnimatedGroup is imported under an alias, not dropped",
          staggered_import.startswith('import { AnimatedGroup as ')
-         and 'staggered-timeline' in staggered_import)
-    section2_line = next((ln for ln in components if "Section02SECTION" in ln), "")
+         and 'staggered-timeline' in staggered_import,
+         f"got {staggered_import!r}")
+    section2_line = next((ln for ln in c_components if "Section02SECTION" in ln), "")
     test("regression: section 2's wrap tag uses the ALIASED local name, not the collided 'AnimatedGroup'",
-         "<AnimatedGroup>" not in section2_line and "AnimatedGroup" in section2_line)
+         "<AnimatedGroup>" not in section2_line and "AnimatedGroup" in section2_line,
+         f"got {section2_line!r}")
 
     # ── CRITICAL regression: re-running the SAME page against the SAME
     # output dir (a resumed/retried build — `--skip-to sections`, a normal
@@ -227,10 +278,10 @@ if node_available:
          coverage_first["total"] == coverage_second["total"] == FIXTURE_SECTION_COUNT,
          f"first={coverage_first['total']} second={coverage_second['total']}")
     test("idempotence: injected is identical across two runs on the same output dir",
-         coverage_first["injected"] == coverage_second["injected"] == 4,
+         coverage_first["injected"] == coverage_second["injected"] >= 1,
          f"first={coverage_first['injected']} second={coverage_second['injected']}")
     test("idempotence: unchanged is identical across two runs on the same output dir",
-         coverage_first["unchanged"] == coverage_second["unchanged"] == 1,
+         coverage_first["unchanged"] == coverage_second["unchanged"] >= 1,
          f"first={coverage_first['unchanged']} second={coverage_second['unchanged']}")
     test("idempotence: returned value matches the on-disk aggregate on the second run too",
          tally_rerun == coverage_second)
