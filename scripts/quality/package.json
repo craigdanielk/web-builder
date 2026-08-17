@@ -5,7 +5,9 @@
   "description": "Visual extraction, design-token validation, and post-processing tools for web-builder presets",
   "scripts": {
     "enrich": "node enrich-preset.js",
-    "validate": "node validate-build.js"
+    "validate": "node validate-build.js",
+    "compile-gate": "node compile-gate.js",
+    "test:compile-gate": "node --test compile-gate.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",

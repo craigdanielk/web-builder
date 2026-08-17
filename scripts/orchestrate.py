@@ -8013,6 +8013,67 @@ End with:
     print(f"\n{review}")
 
 
+def _run_compile_gate(site_dir: Path) -> dict:
+    """
+    Run scripts/quality/compile-gate.js over a generated site.
+
+    Returns the gate's own report dict, read back from the artifact on disk
+    rather than inferred from the exit code, plus one status this module adds:
+
+      'absent'  — there is no site to compile. On a first build stage_validate
+                  runs before stage_deploy has scaffolded site/, so the gate
+                  genuinely cannot apply. An inapplicable stage is absent, not
+                  skipped-with-a-warning and never a pass.
+
+    Every other status comes straight from the gate: pass · fail · not_measured.
+    """
+    gate_script = ROOT / "scripts" / "quality" / "compile-gate.js"
+
+    if not site_dir.exists():
+        print("  ⃠ Compile gate ABSENT — no site/ to compile at this point in the build.")
+        return {"status": "absent", "reason": f"no site directory at {site_dir}"}
+
+    if not gate_script.exists():
+        return {
+            "status": "not_measured",
+            "not_measured_reason": f"compile-gate.js not found at {gate_script}",
+        }
+
+    report_path = site_dir.parent / "compile-gate.json"
+    # A stale report from a previous run must not be mistaken for this one's.
+    if report_path.exists():
+        report_path.unlink()
+
+    try:
+        proc = subprocess.run(
+            ["node", str(gate_script), str(site_dir)],
+            capture_output=True, text=True, timeout=420,
+        )
+    except FileNotFoundError:
+        return {"status": "not_measured", "not_measured_reason": "node is not on PATH"}
+    except subprocess.TimeoutExpired:
+        return {"status": "not_measured", "not_measured_reason": "compile gate timed out after 420s"}
+
+    for line in (proc.stdout or "").strip().splitlines():
+        print(f"  {line}")
+
+    if not report_path.exists():
+        detail = (proc.stderr or proc.stdout or "").strip()[:300]
+        return {
+            "status": "not_measured",
+            "not_measured_reason": f"compile gate wrote no report (exit {proc.returncode}): {detail}",
+        }
+
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        return {"status": "not_measured", "not_measured_reason": f"unreadable compile-gate.json: {e}"}
+
+    if report.get("status") == "not_measured":
+        print(f"  ❓ Compile gate NOT_MEASURED — {report.get('not_measured_reason')}")
+    return report
+
+
 def stage_validate(project_name: str) -> dict:
     """Stage 5.5: Pre-flight validation — catch errors before deployment."""
     print("\n═══ STAGE 5.5: PRE-FLIGHT VALIDATION ═══\n")
@@ -8084,13 +8145,43 @@ def stage_validate(project_name: str) -> dict:
     else:
         issues.append("WARNING: page.tsx not found (will be created during assembly)")
 
+    # 7. Compile gate — the only check here that actually compiles anything.
+    #    Everything above is string matching and brace counting, which is why
+    #    a `key=` left behind by token substitution shipped: braces balance,
+    #    `export default` is present, and the file does not parse.
+    compile_gate = _run_compile_gate(project_dir / SITE_DIR_NAME)
+    if compile_gate["status"] == "fail":
+        for err in compile_gate.get("errors", [])[:20]:
+            issues.append(
+                f"CRITICAL: compile error {err.get('code')} in {err.get('file')}"
+                f":{err.get('line')} — {err.get('message')}"
+            )
+        extra = len(compile_gate.get("errors", [])) - 20
+        if extra > 0:
+            issues.append(f"CRITICAL: ... and {extra} further compile errors")
+    elif compile_gate["status"] == "not_measured":
+        # NOT_MEASURED is not a pass. It is surfaced under its own prefix so it
+        # can never be read as one, and returned so callers can act on it.
+        issues.append(
+            f"NOT_MEASURED: compile gate — {compile_gate.get('not_measured_reason')}"
+        )
+
     # Report
     if issues:
         critical = [i for i in issues if i.startswith("CRITICAL")]
         warnings = [i for i in issues if i.startswith("WARNING")]
-        print(f"  Found {len(critical)} critical issues, {len(warnings)} warnings:\n")
+        unmeasured = [i for i in issues if i.startswith("NOT_MEASURED")]
+        print(
+            f"  Found {len(critical)} critical issues, {len(warnings)} warnings"
+            f", {len(unmeasured)} not measured:\n"
+        )
         for issue in issues:
-            prefix = "  ❌" if issue.startswith("CRITICAL") else "  ⚠"
+            if issue.startswith("CRITICAL"):
+                prefix = "  ❌"
+            elif issue.startswith("NOT_MEASURED"):
+                prefix = "  ❓"
+            else:
+                prefix = "  ⚠"
             print(f"{prefix} {issue}")
 
         if critical:
@@ -8098,7 +8189,11 @@ def stage_validate(project_name: str) -> dict:
     else:
         print("  ✅ All pre-flight checks passed.")
 
-    return {'passed': len([i for i in issues if i.startswith("CRITICAL")]) == 0, 'issues': issues}
+    return {
+        'passed': len([i for i in issues if i.startswith("CRITICAL")]) == 0,
+        'issues': issues,
+        'compile_gate': compile_gate,
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
