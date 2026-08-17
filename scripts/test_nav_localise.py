@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from lib.nav_harvest import localise_hrefs
+from lib.nav_harvest import localise_hrefs, source_host_from_pages
 
 PASS = 0
 FAIL = 0
@@ -128,6 +128,86 @@ test("with no known source host, absolute URLs are left alone",
      out[0]["href"] == "https://capecrypto.com/wealth", str(out))
 test("...and counted rather than silently kept",
      len(un) == 1, str(un))
+
+# ── resolving the source host from the harvest itself ────────────────────
+# The regression this guards: `localise_hrefs` was correct and its 25 tests
+# passed, yet the built cape-crypto site shipped 8/8 nav links absolute. The
+# caller could not ANSWER which host was ours. A captures build's site-spec has
+# `source_url: ""` at the top level (build-site-spec.js has no extraction data
+# to read it from) and no --from-url, so the host had to come from the pages.
+# The page shapes below are copied from output/cape-crypto/site-spec.json.
+CAPE_PAGES = [
+    {"page_id": "homepage", "route": "/", "source_url": "https://capecrypto.com"},
+    {"page_id": "wealth", "route": "/wealth", "source_url": "https://capecrypto.com/wealth"},
+    {"page_id": "merchants", "route": "/merchants", "source_url": "https://capecrypto.com/merchants"},
+    {"page_id": "developers", "route": "/developers", "source_url": "https://capecrypto.com/developers"},
+    {"page_id": "about", "route": "/about", "source_url": "https://capecrypto.com/about"},
+]
+
+test("the source host is read off the harvested pages",
+     source_host_from_pages(CAPE_PAGES) == "capecrypto.com",
+     repr(source_host_from_pages(CAPE_PAGES)))
+
+test("a www page URL resolves to the same bare host",
+     source_host_from_pages([{"source_url": "https://www.capecrypto.com/wealth"}])
+     == "capecrypto.com")
+
+test("www and bare pages in one bundle are NOT a disagreement",
+     source_host_from_pages([{"source_url": "https://www.capecrypto.com"},
+                             {"source_url": "https://capecrypto.com/about"}])
+     == "capecrypto.com")
+
+test("two genuinely different hosts resolve to None, never a majority pick",
+     source_host_from_pages([{"source_url": "https://capecrypto.com"},
+                             {"source_url": "https://capecrypto.com/about"},
+                             {"source_url": "https://elsewhere.com/x"}]) is None)
+
+test("no pages resolves to None", source_host_from_pages([]) is None)
+test("pages with no source_url resolve to None",
+     source_host_from_pages([{"page_id": "homepage", "route": "/"}]) is None)
+test("an empty-string source_url is not a host",
+     source_host_from_pages([{"source_url": ""}]) is None)
+
+# ── the exact failing shapes, end to end ─────────────────────────────────
+# Every href below is verbatim from output/cape-crypto/link-mapping.json, where
+# all 8 were recorded `unknown_source_host` and left absolute. Note the trailing
+# slashes and the three genuinely different capecrypto SUBDOMAINS, which must
+# stay external — `support.` is not `capecrypto.com`.
+REAL_NAV = [
+    L("Wealth Management", "https://capecrypto.com/wealth/"),
+    L("Merchant Services", "https://capecrypto.com/merchants/"),
+    L("Developers", "https://capecrypto.com/developers/"),
+    L("About", "https://capecrypto.com/about/"),
+    L("Support", "https://support.capecrypto.com/hc/en-za"),
+    L("Fees", "https://support.capecrypto.com/hc/en-za/articles/360015121638-Fee-schedule"),
+    L("Sign in", "https://trade.capecrypto.com/signin"),
+    L("Sign up", "https://trade.capecrypto.com/signup"),
+]
+BUILT = ["/", "/wealth", "/merchants", "/developers", "/about"]
+
+_host = source_host_from_pages(CAPE_PAGES)
+_un: list = []
+_out = localise_hrefs(REAL_NAV, BUILT, source_host=_host, unmapped=_un)
+_local = [l["href"] for l in _out if l["href"].startswith("/")]
+
+test("the real 8-link cape-crypto nav yields 4 root-relative hrefs",
+     _local == ["/wealth", "/merchants", "/developers", "/about"], str(_local))
+test("...and the other 4 stay absolute", len(_un) == 4, str(_un))
+test("...counted as external hosts, not as an unknown source host",
+     all(u["reason"] == "external_host" for u in _un), str(_un))
+test("no emitted nav href points at the source site's own pages",
+     not any(h["href"].startswith("https://capecrypto.com/") for h in _out), str(_out))
+
+# The footer's /blog/ link: capecrypto.com, trailing slash, but /blog was NOT
+# built in this 5-route build. It must stay absolute and be counted as a missing
+# route — not fabricated into a /blog the site does not serve.
+_un2: list = []
+_out2 = localise_hrefs([L("Blog", "https://capecrypto.com/blog/")], BUILT,
+                       source_host=_host, unmapped=_un2)
+test("a source path with no built route stays absolute even once the host IS known",
+     _out2[0]["href"] == "https://capecrypto.com/blog/", str(_out2))
+test("...and is counted as a missing route",
+     _un2 and _un2[0]["reason"] == "no_matching_route", str(_un2))
 
 print(f"\n  RESULTS: {PASS} passed, {FAIL} failed\n")
 sys.exit(1 if FAIL else 0)

@@ -190,6 +190,26 @@ def localise_hrefs(
     return out
 
 
+def source_host_from_pages(pages: list) -> str | None:
+    """The single host this harvest came from, read off the pages themselves.
+
+    `localise_hrefs` rewrites nothing when it cannot assert which host is ours,
+    and that refusal is correct — but the caller has to be able to ANSWER. A
+    `--from-url` build answers from `site_spec["source_url"]` or the flag it was
+    given. A `--captures` build has neither: `build-site-spec.js` builds from
+    capture records with no extraction data, so the spec's top-level
+    `source_url` is the empty string. Every page nonetheless carries the real
+    URL its capture record came from, so the host is SOURCED here, not guessed.
+
+    Returns the one bare host every page agrees on, or `None`. Disagreement is
+    not resolved by majority: a bundle spanning two hosts has no single source
+    site, and picking one would rewrite a third party's links onto our routes.
+    `www.` and port differences are not disagreement (see `_bare_host`).
+    """
+    hosts = {h for h in (_bare_host(p.get("source_url")) for p in (pages or [])) if h}
+    return hosts.pop() if len(hosts) == 1 else None
+
+
 def _bare_host(value: str | None) -> str | None:
     """Host without `www.` or port. `www.x.com` and `x.com` are one site."""
     if not value:

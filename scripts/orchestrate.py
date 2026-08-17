@@ -60,6 +60,7 @@ from lib.nav_harvest import (
     derive_nav as _derive_harvested_nav,
     derive_footer as _derive_harvested_footer,
     localise_hrefs as _localise_hrefs,
+    source_host_from_pages as _source_host_from_pages,
 )
 
 try:
@@ -11260,9 +11261,22 @@ def main():
                                      or (site_spec or {}).get("pages") or [])
             if p.get("route")
         ]
-        _source_host = (site_spec or {}).get("source_url") or (
-            args.from_url if getattr(args, "from_url", None) else None
-        )
+        # Which host is ours must be ANSWERED, not left unknown. `localise_hrefs`
+        # rewrites nothing without it, so an unresolved host silently ships a nav
+        # that leaves the site — measured on the cape-crypto captures build:
+        # source_host null, 8/8 nav and 12/12 footer links left absolute, every
+        # one recorded `unknown_source_host`. A captures build has no top-level
+        # `source_url` (build-site-spec.js has no extraction data to read it
+        # from, so it writes "") and no --from-url, which is exactly the two
+        # sources tried here. The pages carry it; ask them.
+        _source_host = (site_spec or {}).get("source_url")
+        _source_host_origin = "site_spec.source_url" if _source_host else None
+        if not _source_host:
+            _source_host = _source_host_from_pages((site_spec or {}).get("pages") or [])
+            _source_host_origin = "site_spec.pages[].source_url" if _source_host else None
+        if not _source_host and getattr(args, "from_url", None):
+            _source_host = args.from_url
+            _source_host_origin = "--from-url"
         _nav_unmapped: list[dict] = []
         _footer_unmapped: list[dict] = []
         if _harvested_nav is not None:
@@ -11281,6 +11295,11 @@ def main():
             f"nav {_nav_total - len(_nav_unmapped)}/{_nav_total} local, "
             f"footer {_footer_total - len(_footer_unmapped)}/{_footer_total} local"
         )
+        if _source_host:
+            print(f"      source host {_source_host} (from {_source_host_origin})")
+        else:
+            print("      ⚠ source host UNRESOLVED — no absolute link can be "
+                  "claimed as ours, so nothing was localised")
         for _u in (_nav_unmapped + _footer_unmapped):
             print(f"      ↗ left absolute ({_u['reason']}): "
                   f"{_u['label']!r} -> {_u['href']}")
@@ -11290,6 +11309,10 @@ def main():
                 "schema": "aurelix.link_mapping.v1",
                 "built_routes": _built_routes,
                 "source_host": _source_host,
+                # WHICH input answered "is this host ours". A null origin means
+                # nothing could, so every absolute link below is a refusal to
+                # assert rather than a measured external host.
+                "source_host_origin": _source_host_origin,
                 "summary": {
                     "nav_links": _nav_total,
                     "nav_absolute": len(_nav_unmapped),
