@@ -406,9 +406,9 @@
     },
     "hover-glow": {
       "source_file": "interactive/hover-glow.tsx",
-      "export_name": "TubesBackground",
+      "export_name": "HoverGlow",
       "export_type": "default",
-      "import_statement": "import TubesBackground from '@/components/animations/hover-glow'",
+      "import_statement": "import HoverGlow from '@/components/animations/hover-glow'",
       "dependencies": [
         "framer-motion"
       ],
@@ -419,7 +419,7 @@
       "affinity": {},
       "description": "",
       "status": "ready",
-      "line_count": 117
+      "line_count": 126
     },
     "hover-lift": {
       "source_file": "interactive/hover-lift.tsx",

@@ -166,6 +166,30 @@ function resolveComponent(animationId) {
 
 const INLINE_ROOT_TAGS = new Set(['span', 'a', 'button', 'label', 'input', 'p']);
 
+/**
+ * Engines whose runtime the build can actually install.
+ *
+ * This filter used to be `engine !== 'framer-motion'`, which was a proxy for
+ * "we know we can install this" written when nothing populated per-component
+ * `dependencies`. It is now the wrong question: orchestrate.py resolves each
+ * injected component's npm packages from the registry row
+ * (`animation-injection-deps.json` -> package.json, orchestrate.py:7433-7459),
+ * and `registry/annotate_backed_rows.py` derives those packages by parsing the
+ * file's real imports. So the honest gate is engine-can-be-installed plus
+ * analyzeSafety(), not a single hardcoded framework name.
+ *
+ * The census measured what that one string cost: 22 of the 48 file-backed
+ * components survived it, and 15 gsap + 9 dependency-free ones were discarded
+ * without ever being asked whether they were safe. Four of them are wrappers
+ * that pass every safety check (DrawSVGReveal, FlipExpandCard, ObserverSwipe,
+ * BorderBeam).
+ *
+ * `three.js` stays out: its one file-backed row (text__text_scramble) is a
+ * misdescribed GLSL shader canvas, and a ~600KB WebGL runtime is not something
+ * to pull into a page as a section wrapper.
+ */
+const SUPPORTED_ENGINES = new Set(['framer-motion', 'gsap', 'css', 'none', '']);
+
 /** Strip // and /* *‍/ comments so they can't be mistaken for code. */
 function stripComments(src) {
   return src
@@ -398,12 +422,33 @@ function selectComponentForSection(archetype, usedAnimationIds, presetIntensity)
   const used = new Set(usedAnimationIds || []);
   const presetRank = INTENSITY_RANK[presetIntensity] || INTENSITY_RANK.moderate;
 
+  // Dedupe by FILE, not by animation_id. Two ids can point at one component:
+  // entrance__fade_up_stagger and entrance__staggered_timeline are the same
+  // byte-identical AnimatedGroup, and before this the homepage received both
+  // — reported as two distinct components in animation-coverage.json while
+  // rendering the same animation twice. `duplicate_of` is written by
+  // registry/annotate_backed_rows.py from a sha256 of the file.
+  const canonical = (row) => (row && (row.duplicate_of || row.animation_id)) || null;
+  const usedComponents = new Set();
+  for (const id of used) {
+    const row = registry.find((c) => c.animation_id === id);
+    const key = canonical(row);
+    if (key) usedComponents.add(key);
+  }
+
   for (const role of roles) {
     const candidates = registry.filter((c) => {
       if (!c.source_file || c.source_file.split('/')[0] !== role) return false;
+      // A row whose animation_id does not describe its file is never a
+      // candidate, whatever its role says. `interactive__accordion_expand`
+      // is a hardcoded FAQ section carrying placeholder body copy; injecting
+      // it would put invented content on a licensed FSP's site. Adjudicated
+      // per row in registry/annotate_backed_rows.py with the evidence.
+      if (c.id_describes_file === false) return false;
       const engine = c.framework || c.engine || '';
-      if (engine !== 'framer-motion') return false;
+      if (!SUPPORTED_ENGINES.has(engine)) return false;
       if (used.has(c.animation_id)) return false;
+      if (usedComponents.has(canonical(c))) return false;
       // Ceiling, not a target: a component's own intensity may never exceed
       // the tenant preset's explicit `animation_intensity` field. Cape
       // Crypto's is `moderate` per Craig's ruling — deliberately set, not

@@ -66,13 +66,16 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 40,
+      "line_count": 39,
       "has_default_export": true,
       "named_exports": [
         "BlurReveal"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "BlurReveal"
     },
     {
       "animation_id": "entrance__character_reveal",
@@ -133,13 +136,17 @@
       "mobile_safe": true,
       "motion_stacking_risk": "low",
       "dependencies": [
+        "@gsap/react",
         "gsap"
       ],
-      "line_count": 138,
+      "line_count": 137,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "TextRevealEffect"
     },
     {
       "animation_id": "entrance__drawsvg_reveal",
@@ -199,11 +206,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 79,
+      "line_count": 78,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "DrawSVGReveal"
     },
     {
       "animation_id": "entrance__fade_up_single",
@@ -273,7 +283,10 @@
         "FadeText"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "FadeText"
     },
     {
       "animation_id": "entrance__fade_up_stagger",
@@ -342,13 +355,16 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 170,
+      "line_count": 169,
       "has_default_export": false,
       "named_exports": [
         "AnimatedGroup"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "AnimatedGroup"
     },
     {
       "animation_id": "entrance__page_loader",
@@ -411,11 +427,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 179,
+      "line_count": 181,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "PageLoader"
     },
     {
       "animation_id": "entrance__scale_up",
@@ -476,13 +495,17 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 37,
+      "line_count": 36,
       "has_default_export": false,
       "named_exports": [
         "BlurReveal"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "BlurReveal",
+      "mismatch_note": "file is a blur+rise reveal (filter blur 10px -> 0, y 20% -> 0), the same effect as entrance/blur-fade.tsx and the same export name. There is no scale in it."
     },
     {
       "animation_id": "entrance__slide_in_left",
@@ -548,13 +571,17 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 97,
+      "line_count": 99,
       "has_default_export": false,
       "named_exports": [
         "SlideTabs"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "SlideTabs",
+      "mismatch_note": "file is an interactive tab bar with hardcoded labels Home/Pricing/Features/Docs/Blog and a sliding cursor. No slide-in entrance animation, and it takes no props."
     },
     {
       "animation_id": "entrance__slide_in_right",
@@ -620,13 +647,18 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 97,
+      "line_count": 99,
       "has_default_export": false,
       "named_exports": [
         "SlideTabs"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "SlideTabs",
+      "mismatch_note": "byte-identical to entrance/slide-in-left.tsx \u2014 same tab bar, same export name. Neither direction exists in the file.",
+      "duplicate_of": "entrance__slide_in_left"
     },
     {
       "animation_id": "entrance__staggered_grid",
@@ -689,11 +721,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 176,
+      "line_count": 175,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "StaggeredGrid"
     },
     {
       "animation_id": "entrance__staggered_timeline",
@@ -763,13 +798,17 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 170,
+      "line_count": 169,
       "has_default_export": false,
       "named_exports": [
         "AnimatedGroup"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "AnimatedGroup",
+      "duplicate_of": "entrance__fade_up_stagger"
     },
     {
       "animation_id": "entrance__word_reveal",
@@ -828,13 +867,16 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 60,
+      "line_count": 59,
       "has_default_export": true,
       "named_exports": [
         "WordReveal"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "WordReveal"
     },
     {
       "animation_id": "scroll__gsap_pinned_horizontal",
@@ -898,11 +940,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 178,
+      "line_count": 177,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "PinnedHorizontalScroll"
     },
     {
       "animation_id": "scroll__horizontal_scroll",
@@ -964,11 +1009,15 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 105,
+      "line_count": 107,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "Example",
+      "mismatch_note": "file is a self-contained demo page: a hardcoded 7-card carousel of Unsplash URLs titled 'Title 1'..'Title 7' between two 'Scroll down' / 'Scroll up' panels. Not a reusable horizontal-scroll wrapper."
     },
     {
       "animation_id": "scroll__parallax_layers",
@@ -1027,13 +1076,16 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 64,
+      "line_count": 63,
       "has_default_export": false,
       "named_exports": [
         "FloatingPathsBackground"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "FloatingPathsBackground"
     },
     {
       "animation_id": "scroll__parallax_section",
@@ -1094,13 +1146,16 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 58,
+      "line_count": 57,
       "has_default_export": false,
       "named_exports": [
         "ZoomParallax"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "ZoomParallax"
     },
     {
       "animation_id": "scroll__pin_and_reveal",
@@ -1160,13 +1215,17 @@
       "mobile_safe": true,
       "motion_stacking_risk": "low",
       "dependencies": [],
-      "line_count": 139,
+      "line_count": 141,
       "has_default_export": false,
       "named_exports": [
         "StickyFeatureSection"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "StickyFeatureSection",
+      "mismatch_note": "file is a hardcoded sticky feature section taking no props \u2014 a section, not a pin-and-reveal wrapper."
     },
     {
       "animation_id": "scroll__scroll_progress",
@@ -1226,7 +1285,8 @@
       "mobile_safe": true,
       "motion_stacking_risk": "low",
       "dependencies": [
-        "framer-motion"
+        "framer-motion",
+        "lucide-react"
       ],
       "line_count": 91,
       "has_default_export": false,
@@ -1234,7 +1294,11 @@
         "Component"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "Component",
+      "mismatch_note": "exported `Component` is a demo of five coloured panels with the copy 'Scroll down to see the progress bar'. The reusable piece in the file is the un-exported `ScrollProgress`, whose container is `overflow-y-auto h-full` \u2014 a scroll viewport, not a section wrapper."
     },
     {
       "animation_id": "interactive__accordion_expand",
@@ -1298,7 +1362,11 @@
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "FAQs",
+      "mismatch_note": "file is a complete hardcoded FAQ <section> with placeholder body copy ('Accusantium quisquam. Illo, omnis?', a 30-day refund policy). It has no accordion behaviour and takes no props. Injecting it would put invented copy on the page."
     },
     {
       "animation_id": "interactive__cursor_trail",
@@ -1359,11 +1427,14 @@
       "mobile_safe": false,
       "motion_stacking_risk": "low",
       "dependencies": [],
-      "line_count": 264,
+      "line_count": 263,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "CursorTrail"
     },
     {
       "animation_id": "interactive__draggable_carousel",
@@ -1424,11 +1495,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 71,
+      "line_count": 70,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "DraggableCarousel"
     },
     {
       "animation_id": "interactive__flip_expand_card",
@@ -1491,11 +1565,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 56,
+      "line_count": 55,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "FlipExpandCard"
     },
     {
       "animation_id": "interactive__flip_grid_filter",
@@ -1556,11 +1633,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 65,
+      "line_count": 64,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "FlipGridFilter"
     },
     {
       "animation_id": "interactive__hover_glow",
@@ -1618,16 +1698,18 @@
       "reduced_motion_fallback_present": false,
       "mobile_safe": true,
       "motion_stacking_risk": "low",
-      "dependencies": [
-        "framer-motion"
-      ],
-      "line_count": 117,
+      "dependencies": [],
+      "line_count": 126,
       "has_default_export": true,
       "named_exports": [
+        "HoverGlow",
         "TubesBackground"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "HoverGlow"
     },
     {
       "animation_id": "interactive__hover_lift",
@@ -1688,13 +1770,16 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 45,
+      "line_count": 44,
       "has_default_export": true,
       "named_exports": [
         "HoverLift"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "HoverLift"
     },
     {
       "animation_id": "interactive__magnetic_button",
@@ -1764,13 +1849,16 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 89,
+      "line_count": 88,
       "has_default_export": true,
       "named_exports": [
         "MagneticButton"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "MagneticButton"
     },
     {
       "animation_id": "interactive__morphsvg_icon",
@@ -1829,11 +1917,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 71,
+      "line_count": 70,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "MorphSVGIcon"
     },
     {
       "animation_id": "interactive__observer_swipe",
@@ -1892,11 +1983,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 52,
+      "line_count": 51,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "ObserverSwipe"
     },
     {
       "animation_id": "interactive__spotlight_follow",
@@ -1962,11 +2056,14 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 181,
+      "line_count": 180,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "SpotlightFollow"
     },
     {
       "animation_id": "interactive__tilt_card",
@@ -2034,13 +2131,16 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 55,
+      "line_count": 57,
       "has_default_export": false,
       "named_exports": [
         "InteractiveTiltCard"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "InteractiveTiltCard"
     },
     {
       "animation_id": "continuous__count_up",
@@ -2097,13 +2197,16 @@
       "mobile_safe": true,
       "motion_stacking_risk": "low",
       "dependencies": [],
-      "line_count": 70,
+      "line_count": 86,
       "has_default_export": true,
       "named_exports": [
         "CountUp"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "CountUp"
     },
     {
       "animation_id": "continuous__floating",
@@ -2166,13 +2269,18 @@
       "mobile_safe": true,
       "motion_stacking_risk": "low",
       "dependencies": [
-        "framer-motion"
+        "framer-motion",
+        "lucide-react"
       ],
-      "line_count": 67,
+      "line_count": 70,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "CircularMenu",
+      "mismatch_note": "file is a click-to-expand circular image menu with a plus button. Nothing floats continuously."
     },
     {
       "animation_id": "continuous__gradient_shift",
@@ -2231,13 +2339,16 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 74,
+      "line_count": 73,
       "has_default_export": false,
       "named_exports": [
         "GradientBackground"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "GradientBackground"
     },
     {
       "animation_id": "continuous__marquee",
@@ -2294,11 +2405,14 @@
       "mobile_safe": true,
       "motion_stacking_risk": "low",
       "dependencies": [],
-      "line_count": 102,
+      "line_count": 101,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "Marquee"
     },
     {
       "animation_id": "continuous__motionpath_orbit",
@@ -2357,11 +2471,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 66,
+      "line_count": 68,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "MotionPathOrbit"
     },
     {
       "animation_id": "text__character_flip",
@@ -2419,11 +2536,14 @@
       "mobile_safe": true,
       "motion_stacking_risk": "medium",
       "dependencies": [],
-      "line_count": 106,
+      "line_count": 105,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "CharacterFlip"
     },
     {
       "animation_id": "text__scramble_text",
@@ -2483,11 +2603,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 70,
+      "line_count": 69,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "ScrambleText"
     },
     {
       "animation_id": "text__split_text_stagger",
@@ -2547,13 +2670,16 @@
       "mobile_safe": true,
       "motion_stacking_risk": "low",
       "dependencies": [],
-      "line_count": 53,
+      "line_count": 55,
       "has_default_export": false,
       "named_exports": [
         "BubbleText"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "BubbleText"
     },
     {
       "animation_id": "text__splittext_chars",
@@ -2618,11 +2744,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 69,
+      "line_count": 68,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "SplitTextChars"
     },
     {
       "animation_id": "text__splittext_lines",
@@ -2682,11 +2811,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 70,
+      "line_count": 69,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "SplitTextLines"
     },
     {
       "animation_id": "text__splittext_words",
@@ -2746,11 +2878,14 @@
       "dependencies": [
         "gsap"
       ],
-      "line_count": 66,
+      "line_count": 65,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "SplitTextWords"
     },
     {
       "animation_id": "text__text_gradient_flow",
@@ -2815,13 +2950,16 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 91,
+      "line_count": 90,
       "has_default_export": false,
       "named_exports": [
         "TextShimmerWave"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "TextShimmerWave"
     },
     {
       "animation_id": "text__text_scramble",
@@ -2879,13 +3017,17 @@
       "mobile_safe": false,
       "motion_stacking_risk": "low",
       "dependencies": [
-        "three.js"
+        "three"
       ],
-      "line_count": 161,
+      "line_count": 162,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "ShaderCanvas",
+      "mismatch_note": "file is a three.js full-screen GLSL RGB-glitch/scanline shader canvas. No text, no scramble."
     },
     {
       "animation_id": "text__typewriter",
@@ -2950,14 +3092,17 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 189,
+      "line_count": 188,
       "has_default_export": false,
       "named_exports": [
         "TypewriterEffect",
         "TypewriterEffectSmooth"
       ],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "TypewriterEffect"
     },
     {
       "animation_id": "effect__border_beam",
@@ -3015,13 +3160,16 @@
       "mobile_safe": true,
       "motion_stacking_risk": "low",
       "dependencies": [],
-      "line_count": 75,
+      "line_count": 74,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [
         "border"
       ],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "BorderBeam"
     },
     {
       "animation_id": "effect__glow_border",
@@ -3079,11 +3227,14 @@
       "mobile_safe": true,
       "motion_stacking_risk": "low",
       "dependencies": [],
-      "line_count": 107,
+      "line_count": 106,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "GlowBorder"
     },
     {
       "animation_id": "background__aurora_background",
@@ -3142,11 +3293,14 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 129,
+      "line_count": 128,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "AuroraBackground"
     },
     {
       "animation_id": "background__perspective_grid",
@@ -3209,11 +3363,14 @@
       "mobile_safe": true,
       "motion_stacking_risk": "low",
       "dependencies": [],
-      "line_count": 84,
+      "line_count": 83,
       "has_default_export": true,
       "named_exports": [],
       "keyframe_names": [],
-      "example_usage_refs": []
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "PerspectiveGrid"
     },
     {
       "animation_id": "66hex__chrome_grid",
