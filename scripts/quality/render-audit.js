@@ -60,7 +60,11 @@ function routesFromManifest(manifestPath) {
 
 // In-page probe: runs in the browser, returns structured render facts.
 const PROBE = () => {
-  const facts = { sections: [], images: [], navLinks: [], lowContrast: [], textLen: 0 };
+  const facts = {
+    sections: [], images: [], navLinks: [], lowContrast: [],
+    contrast: [], contrastSummary: { measured: 0, passed: 0, failed: 0 },
+    page: null, textLen: 0,
+  };
 
   const lum = (rgb) => {
     const [r, g, b] = rgb.map((v) => {
@@ -119,8 +123,38 @@ const PROBE = () => {
     const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
     return (hi + 0.05) / (lo + 0.05);
   };
+  // Emit colours as #rrggbb. render-fix-contrast.js's hexToRgb (:26-30) parses
+  // ONLY #rgb/#rrggbb — reporting the native {rgb:[r,g,b],a} would leave the
+  // contrast repair loop unable to read its own input.
+  const toHex = (rgb) =>
+    "#" + rgb.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+  // Enough identity to trace a finding back to a source file.
+  const identify = (el) => {
+    const cls = (el.className || "").toString().trim().split(/\s+/).filter(Boolean).slice(0, 3);
+    return el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + cls.map((c) => "." + c).join("");
+  };
+  // Stable content fingerprint (djb2 over whitespace-normalised text). Two
+  // sections with equal text LENGTH are otherwise indistinguishable, so
+  // cross-route duplication cannot be detected from lengths alone.
+  const fingerprint = (s) => {
+    const norm = s.toLowerCase().replace(/\s+/g, " ").trim();
+    let h = 5381;
+    for (let i = 0; i < norm.length; i++) h = ((h * 33) ^ norm.charCodeAt(i)) >>> 0;
+    return h.toString(16).padStart(8, "0");
+  };
 
   facts.textLen = (document.body.innerText || "").trim().length;
+
+  // ── Page box: horizontal overflow was not measurable at all before this ──
+  const de = document.documentElement;
+  facts.page = {
+    scrollWidth: de.scrollWidth,
+    clientWidth: de.clientWidth,
+    innerWidth: window.innerWidth,
+    scrollHeight: de.scrollHeight,
+    // 1px tolerance: sub-pixel layout rounding is not an overflow defect.
+    overflowX: de.scrollWidth > de.clientWidth + 1,
+  };
 
   // ── Sections: top-level content blocks under <main> (or body) ──
   const main = document.querySelector("main") || document.body;
@@ -131,23 +165,42 @@ const PROBE = () => {
     if (seen.has(el)) continue;
     seen.add(el);
     const r = el.getBoundingClientRect();
-    if (r.height < 40) continue;                    // ignore tiny wrappers
+    // Blocks under 40px are wrapper noise for every EXISTING check — but a 0px
+    // section is precisely the zero-dimension defect, and dropping the record
+    // here made that defect unmeasurable. Record it, flag it, and let
+    // countedSections() keep it out of the counts and the defect list.
+    const below = r.height < 40;
     const cs = getComputedStyle(el);
     const op = parseFloat(cs.opacity);
     const vis = cs.visibility !== "hidden" && cs.display !== "none";
     const txt = (el.innerText || "").trim();
+    const bgOwn = cs.backgroundImage && cs.backgroundImage !== "none";
+    const bgChild = !bgOwn && Array.from(el.querySelectorAll("*")).slice(0, 300)
+      .some((c) => { const b = getComputedStyle(c).backgroundImage; return b && b !== "none"; });
     facts.sections.push({
       i: sectionIdx++,
       tag: el.tagName.toLowerCase(),
+      id: el.id || "",
       cls: (el.className || "").toString().slice(0, 60),
+      selector: identify(el),
       h: Math.round(r.height),
       w: Math.round(r.width),
       height: Math.round(r.height),   // kept for existing toDefects() readers
+      x: Math.round(r.left),
+      y: Math.round(r.top + window.scrollY),
       opacity: isNaN(op) ? 1 : op,
       visible: vis,
       textLen: txt.length,
+      textFp: fingerprint(txt),
+      // Empty-section check needs BOTH: no text and nothing painted.
+      imgCount: el.querySelectorAll("img").length,
+      hasBg: Boolean(bgOwn || bgChild),
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+      overflowX: el.scrollWidth > el.clientWidth + 1,
+      belowThreshold: below,
       // "invisible" = takes vertical space but is opacity~0 / hidden / paints nothing
-      invisible: (op < 0.05 || !vis) && r.height > 80,
+      invisible: !below && (op < 0.05 || !vis) && r.height > 80,
     });
   }
 
@@ -158,8 +211,15 @@ const PROBE = () => {
       kind: "img",
       src: img.currentSrc || img.src || "",
       alt: img.alt || "",
+      selector: identify(img),
       loaded: img.complete && img.naturalWidth > 0,
       w: img.naturalWidth, h: img.naturalHeight,
+      // Rendered box. Natural-vs-rendered is the aspect-distortion measurement;
+      // collapsing it to `onscreen` threw the numerator away.
+      rw: Math.round(r.width), rh: Math.round(r.height),
+      // An object-cover image is cropped BY INTENT — without this every cover
+      // image reads as distorted.
+      objectFit: getComputedStyle(img).objectFit || "fill",
       onscreen: r.width > 0 && r.height > 0,
     });
   }
@@ -212,10 +272,27 @@ const PROBE = () => {
     if (inOverlay(el) && lum(bg) > 0.8) continue;
     const ratio = contrast(fg.rgb, bg);
     const size = parseFloat(cs.fontSize);
-    const need = size >= 24 || (size >= 18.66 && parseInt(cs.fontWeight) >= 700) ? 3 : 4.5;
-    if (ratio < need) {
-      facts.lowContrast.push({ text: (el.innerText || "").trim().slice(0, 40), ratio: Math.round(ratio * 100) / 100, need });
-    }
+    const weight = parseInt(cs.fontWeight) || 400;
+    const need = size >= 24 || (size >= 18.66 && weight >= 700) ? 3 : 4.5;
+    const entry = {
+      text: (el.innerText || "").trim().slice(0, 40),
+      selector: identify(el),
+      tag: el.tagName.toLowerCase(),
+      cls: (el.className || "").toString().slice(0, 60),
+      fg: toHex(fg.rgb),          // hex — see toHex()
+      bg: toHex(bg),
+      fontSize: size,
+      fontWeight: weight,
+      ratio: Math.round(ratio * 100) / 100,
+      need,
+      pass: ratio >= need,
+    };
+    // Record every measurement, not only the failures: "3 failures" without a
+    // denominator cannot be read as better or worse than the last run.
+    facts.contrast.push(entry);
+    facts.contrastSummary.measured++;
+    if (entry.pass) facts.contrastSummary.passed++;
+    else { facts.contrastSummary.failed++; facts.lowContrast.push(entry); }
   }
   return facts;
 };
@@ -288,7 +365,7 @@ function toDefects(res, knownRoutes) {
   if (f.textLen < 40)
     add("render_visibility", "critical", "Page renders almost no visible text", `body innerText len=${f.textLen}`, "web_builder");
 
-  const invisible = (f.sections || []).filter((s) => s.invisible);
+  const invisible = countedSections(f).filter((s) => s.invisible);
   if (invisible.length)
     add("render_visibility", "critical",
       `${invisible.length} major section(s) render invisible (opacity~0/hidden but occupy space)`,
@@ -335,7 +412,14 @@ function toDefects(res, knownRoutes) {
   return D;
 }
 
-(async () => {
+// Sections the summary counts and the defect checks are allowed to see. Blocks
+// below the wrapper-noise threshold are RECORDED (so a zero-height section is
+// visible to a downstream check) but never counted as page sections.
+function countedSections(facts) {
+  return (facts?.sections || []).filter((s) => !s.belowThreshold);
+}
+
+async function main() {
   const args = parseArgs(process.argv);
   if (!args.base || !args.out) {
     console.error("Usage: render-audit.js --base <url> (--routes a,b,c | --manifest path) --out <dir>");
@@ -369,8 +453,8 @@ function toDefects(res, knownRoutes) {
     by_category: defects.reduce((a, d) => ((a[d.category] = (a[d.category] || 0) + 1), a), {}),
     pages: results.map((r) => ({
       route: r.route, httpStatus: r.httpStatus, screenshot: r.screenshot,
-      sections: (r.facts?.sections || []).length,
-      invisibleSections: (r.facts?.sections || []).filter((s) => s.invisible).length,
+      sections: countedSections(r.facts).length,
+      invisibleSections: countedSections(r.facts).filter((s) => s.invisible).length,
       images: (r.facts?.images || []).filter((i) => i.kind === "img").length,
       textLen: r.facts?.textLen ?? 0,
     })),
@@ -397,8 +481,11 @@ function toDefects(res, knownRoutes) {
       badRequests: r.badRequests,
       screenshot: r.screenshot,
       summary: {
-        sections: (r.facts?.sections || []).length,
-        invisibleSections: (r.facts?.sections || []).filter((s) => s.invisible).length,
+        sections: countedSections(r.facts).length,
+        invisibleSections: countedSections(r.facts).filter((s) => s.invisible).length,
+        subThresholdBlocks: (r.facts?.sections || []).filter((s) => s.belowThreshold).length,
+        contrast: r.facts?.contrastSummary || null,
+        overflowX: r.facts?.page?.overflowX ?? null,
         images: (r.facts?.images || []).filter((i) => i.kind === "img").length,
         textLen: r.facts?.textLen ?? 0,
       },
@@ -414,4 +501,10 @@ function toDefects(res, knownRoutes) {
   // stdout = machine-readable report path + summary for the Python wrapper
   console.log(JSON.stringify({ report: outFile, total_defects: defects.length, by_severity: bySeverity }));
   process.exit(0);
-})().catch((e) => { console.error("render-audit failed:", e); process.exit(1); });
+}
+
+module.exports = { PROBE, toDefects, countedSections, routesFromManifest, parseArgs };
+
+if (require.main === module) {
+  main().catch((e) => { console.error("render-audit failed:", e); process.exit(1); });
+}

@@ -7,7 +7,8 @@
     "enrich": "node enrich-preset.js",
     "validate": "node validate-build.js",
     "compile-gate": "node compile-gate.js",
-    "test:compile-gate": "node --test compile-gate.test.js"
+    "test:compile-gate": "node --test compile-gate.test.js",
+    "test:render-facts": "node --test render-audit.facts.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
