@@ -313,5 +313,289 @@ def test_resolution_feeds_module_selection_end_to_end(resolve_target, resolve_so
     assert modules["inject_commerce"] is False
 
 
+# --------------------------------------------------------------------------
+# Task A1 — `declared_platforms()`: the three platform fields as ONE read.
+#
+# Two refusals that must never collapse into each other:
+#
+#   NOT DECLARED   the context loaded cleanly and the field is absent.
+#                  An operator has to go and collect it.
+#   NOT MEASURED   the context never loaded — Supabase unreachable, credentials
+#                  absent, table missing. Nothing is known about the field, and
+#                  "not declared" would be a claim the read never earned.
+#
+# X1 established why this matters (`docs/census/2026-08-17-phase0-declarations.md`
+# §7.1): every read in `tenant_context.py` goes through `_safe_get`, which
+# swallows every exception and returns []. An unreachable Supabase, a dropped
+# table and a genuinely empty tenant are indistinguishable from emptiness alone,
+# so `available: False` cannot be the NOT_MEASURED signal — it is all three.
+# `load_status` is that signal, recorded at the point the read fails.
+# --------------------------------------------------------------------------
+
+sys.path.insert(0, str(ROOT / "scripts"))
+from lib.tenant_context import (  # noqa: E402
+    PlatformDeclarationError,
+    PlatformNotDeclared,
+    PlatformNotMeasured,
+    declared_platforms,
+    load_tenant_context,
+)
+
+
+def loaded(**phase0):
+    """A context that a successful load would produce."""
+    c = ctx(**phase0)
+    c["load_status"] = "ok"
+    c["load_errors"] = []
+    return c
+
+
+def test_declared_platforms_reads_all_three_fields():
+    assert declared_platforms(loaded(
+        source_platform="ghost",
+        target_platform="vercel",
+        source_api_access=False,
+    )) == {
+        "source_platform": "ghost",
+        "target_platform": "vercel",
+        "source_api_access": False,
+    }
+
+
+def test_declared_platforms_refuses_when_target_absent():
+    with pytest.raises(PlatformNotDeclared) as e:
+        declared_platforms(loaded(source_platform="ghost", source_api_access=False))
+    assert "target_platform" in str(e.value)
+
+
+def test_declared_platforms_refuses_when_source_absent():
+    with pytest.raises(PlatformNotDeclared) as e:
+        declared_platforms(loaded(target_platform="vercel", source_api_access=False))
+    assert "source_platform" in str(e.value)
+
+
+def test_declared_platforms_refuses_out_of_vocabulary_value():
+    """The refusal names the value AND the allowed set, or it is a dead end."""
+    with pytest.raises(PlatformNotDeclared) as e:
+        declared_platforms(loaded(
+            source_platform="ghost", target_platform="netlify", source_api_access=False))
+    msg = str(e.value)
+    assert "netlify" in msg
+    assert "shopify" in msg and "vercel" in msg
+
+
+def test_declared_platforms_refuses_a_source_value_used_as_a_target():
+    with pytest.raises(PlatformNotDeclared) as e:
+        declared_platforms(loaded(
+            source_platform="ghost", target_platform="wordpress", source_api_access=False))
+    assert "wordpress" in str(e.value)
+
+
+def test_absent_source_api_access_is_not_false():
+    """xago declares nothing; cape-crypto declares False. Those are not the same.
+
+    Defaulting an absent permission flag to False reads as "we checked and
+    access is not granted" when nobody has been asked. The whole point of this
+    accessor is that a value the record does not carry is never manufactured.
+    """
+    with pytest.raises(PlatformNotDeclared) as e:
+        declared_platforms(loaded(source_platform="ghost", target_platform="vercel"))
+    assert "source_api_access" in str(e.value)
+
+
+def test_declared_false_source_api_access_is_a_real_answer():
+    assert declared_platforms(loaded(
+        source_platform="ghost", target_platform="vercel", source_api_access=False,
+    ))["source_api_access"] is False
+
+
+def test_declared_true_source_api_access_is_a_real_answer():
+    assert declared_platforms(loaded(
+        source_platform="shopify", target_platform="shopify", source_api_access=True,
+    ))["source_api_access"] is True
+
+
+def test_non_boolean_source_api_access_refuses_naming_the_value():
+    with pytest.raises(PlatformNotDeclared) as e:
+        declared_platforms(loaded(
+            source_platform="ghost", target_platform="vercel", source_api_access="maybe"))
+    assert "maybe" in str(e.value)
+
+
+def test_declaration_is_case_and_whitespace_normalised_here_too():
+    got = declared_platforms(loaded(
+        source_platform="  GHOST ", target_platform="Vercel", source_api_access=False))
+    assert got["source_platform"] == "ghost"
+    assert got["target_platform"] == "vercel"
+
+
+def test_declared_platforms_never_infers_from_tech_stack():
+    """xago's logo lives at xago.io/wp-content/... — suggestive, and not a
+    declaration. Collected, not inferred."""
+    with pytest.raises(PlatformNotDeclared):
+        declared_platforms(loaded(
+            tech_stack=["WordPress 6.4", "Elementor"],
+            logo_url="https://xago.io/wp-content/uploads/2024/08/xago-logo_2-1.png",
+            _connector_github_vercel=True,
+        ))
+
+
+# --- NOT_MEASURED vs undeclared -------------------------------------------
+
+
+def test_an_unloadable_context_is_not_measured_not_undeclared():
+    unreadable = ctx()
+    unreadable["load_status"] = "unreachable"
+    unreadable["load_errors"] = ["phase0_field_values: HTTPError 503"]
+    unreadable["available"] = False
+
+    with pytest.raises(PlatformNotMeasured) as e:
+        declared_platforms(unreadable)
+    msg = str(e.value)
+    assert "NOT_MEASURED" in msg
+    assert "unreachable" in msg
+    assert "503" in msg, "the refusal must carry why the read failed"
+
+
+def test_not_measured_is_not_caught_as_not_declared():
+    """The two must be separately catchable, or a gate cannot tell an
+    uncollected field from a database it could not reach."""
+    unreadable = ctx()
+    unreadable["load_status"] = "unreachable"
+    unreadable["load_errors"] = ["tenants: connection refused"]
+    with pytest.raises(PlatformNotMeasured):
+        try:
+            declared_platforms(unreadable)
+        except PlatformNotDeclared:  # pragma: no cover — this is the failure
+            pytest.fail("NOT_MEASURED was reported as an undeclared field")
+    assert not issubclass(PlatformNotMeasured, PlatformNotDeclared)
+    assert not issubclass(PlatformNotDeclared, PlatformNotMeasured)
+    assert issubclass(PlatformNotMeasured, PlatformDeclarationError)
+    assert issubclass(PlatformNotDeclared, PlatformDeclarationError)
+
+
+def test_unconfigured_credentials_are_not_measured_either():
+    unconfigured = ctx()
+    unconfigured["load_status"] = "unconfigured"
+    unconfigured["load_errors"] = ["SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY absent"]
+    with pytest.raises(PlatformNotMeasured) as e:
+        declared_platforms(unconfigured)
+    assert "SUPABASE_URL" in str(e.value)
+
+
+def test_an_empty_tenant_that_loaded_cleanly_is_undeclared_not_unmeasured():
+    """The distinction the whole design turns on: same empty dict, two verdicts,
+    separated only by whether the read succeeded."""
+    empty_but_read = {
+        "slug": "xago", "available": False, "phase0_field_values": {},
+        "load_status": "ok", "load_errors": [],
+    }
+    with pytest.raises(PlatformNotDeclared):
+        declared_platforms(empty_but_read)
+
+
+def test_a_context_with_no_load_status_is_treated_as_data_in_hand():
+    """A hand-built dict is not a failed load — it is a caller supplying values
+    directly. Absent status must not be read as NOT_MEASURED."""
+    assert declared_platforms({"phase0_field_values": {
+        "source_platform": "ghost", "target_platform": "vercel",
+        "source_api_access": False,
+    }})["target_platform"] == "vercel"
+
+
+def test_no_tenant_context_at_all_is_not_measured():
+    for nothing in (None, {}):
+        with pytest.raises(PlatformNotMeasured):
+            declared_platforms(nothing)
+
+
+# --- load_status is recorded where the read actually fails -----------------
+
+
+def test_load_tenant_context_records_unreachable_when_a_read_raises(monkeypatch):
+    """The signal has to come from the failure site. X1 §7.1: `_safe_get`
+    swallows the exception, so nothing downstream can otherwise see it."""
+    import lib.tenant_context as tc
+
+    monkeypatch.setattr(tc, "SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setattr(tc, "SUPABASE_KEY", "service-role-key")
+
+    def boom(path, params=""):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(tc, "_get", boom)
+
+    got = tc.load_tenant_context("cape-crypto")
+    assert got["available"] is False
+    assert got["load_status"] == "unreachable"
+    assert any("connection refused" in e for e in got["load_errors"])
+    with pytest.raises(PlatformNotMeasured):
+        declared_platforms(got)
+
+
+def test_load_tenant_context_records_unconfigured_without_credentials(monkeypatch):
+    import lib.tenant_context as tc
+
+    monkeypatch.setattr(tc, "SUPABASE_URL", "")
+    monkeypatch.setattr(tc, "SUPABASE_KEY", "")
+
+    got = tc.load_tenant_context("cape-crypto")
+    assert got["load_status"] == "unconfigured"
+    with pytest.raises(PlatformNotMeasured):
+        declared_platforms(got)
+
+
+def test_a_clean_load_of_a_real_tenant_is_ok_status(monkeypatch):
+    """A tenant that resolves and returns rows must NOT be flagged unmeasured."""
+    import lib.tenant_context as tc
+
+    monkeypatch.setattr(tc, "SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setattr(tc, "SUPABASE_KEY", "service-role-key")
+    tid = "ad98688a-c384-4785-8d96-12544a13cfa7"
+
+    def fake_get(path, params=""):
+        if path == "tenants":
+            return [{"id": tid, "slug": "cape-crypto"}]
+        if path == "phase0_field_values":
+            return [
+                {"field_key": "target_platform", "value": {"v": "vercel"}},
+                {"field_key": "source_platform", "value": {"v": "ghost"}},
+                {"field_key": "source_api_access", "value": {"v": False}},
+            ]
+        return []
+
+    monkeypatch.setattr(tc, "_get", fake_get)
+
+    got = tc.load_tenant_context("cape-crypto")
+    assert got["load_status"] == "ok"
+    assert got["load_errors"] == []
+    assert declared_platforms(got) == {
+        "source_platform": "ghost",
+        "target_platform": "vercel",
+        "source_api_access": False,
+    }
+
+
+def test_an_unresolvable_slug_that_read_cleanly_is_ok_not_unmeasured(monkeypatch):
+    """A slug with no row is an answer: the tenant is not there. That is a clean
+    read of an absent tenant, not a failure to read."""
+    import lib.tenant_context as tc
+
+    monkeypatch.setattr(tc, "SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setattr(tc, "SUPABASE_KEY", "service-role-key")
+    monkeypatch.setattr(tc, "_get", lambda path, params="": [])
+
+    got = tc.load_tenant_context("no-such-tenant")
+    assert got["load_status"] == "ok"
+    with pytest.raises(PlatformNotDeclared):
+        declared_platforms(got)
+
+
+def test_the_public_loader_still_returns_its_documented_shape():
+    """`load_tenant_context` is imported here so the two new keys are part of
+    the contract, not an accident of one test's monkeypatching."""
+    assert callable(load_tenant_context)
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

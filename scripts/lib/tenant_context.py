@@ -55,16 +55,38 @@ _UUID_RE = re.compile(
 
 # ─── Fault-tolerant read ──────────────────────────────────────────
 
-def _safe_get(path: str, params: str = "") -> list[dict]:
-    """GET wrapper that never raises — returns [] on any error / missing config."""
+def _safe_get(
+    path: str, params: str = "", errors: list[str] | None = None
+) -> list[dict]:
+    """GET wrapper that never raises — returns [] on any error / missing config.
+
+    `errors` — an optional accumulator. Degrading to [] is what keeps
+    registry/file builds working without a tenant, but it also makes an
+    unreachable Supabase, a dropped table and a genuinely empty tenant
+    indistinguishable at the call site. Appending the reason here is the only
+    place that difference still exists; `load_tenant_context` turns the
+    accumulator into `load_status`, and `declared_platforms` refuses with
+    NOT_MEASURED rather than "undeclared" when it is non-empty.
+    """
     if not (SUPABASE_URL and SUPABASE_KEY):
+        if errors is not None:
+            errors.append(
+                f"{path}: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY absent — "
+                "no read was attempted"
+            )
         return []
     try:
         rows = _get(path, params)
-        return rows if isinstance(rows, list) else []
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
         # Missing table (404/PGRST), transport error, bad JSON — degrade to empty.
+        if errors is not None:
+            errors.append(f"{path}: {type(exc).__name__}: {exc}")
         return []
+    if not isinstance(rows, list):
+        if errors is not None:
+            errors.append(f"{path}: expected a list, got {type(rows).__name__}")
+        return []
+    return rows
 
 
 def _unwrap(value: Any) -> Any:
@@ -79,7 +101,9 @@ def _unwrap(value: Any) -> Any:
 
 # ─── Coordinate resolution ────────────────────────────────────────
 
-def resolve_tenant(coordinate: str) -> tuple[str | None, str | None]:
+def resolve_tenant(
+    coordinate: str, errors: list[str] | None = None
+) -> tuple[str | None, str | None]:
     """
     Resolve a coordinate (UUID or slug) to ``(tenant_id, slug)``.
 
@@ -87,18 +111,21 @@ def resolve_tenant(coordinate: str) -> tuple[str | None, str | None]:
     - Otherwise the coordinate is treated as a slug and resolved via the
       ``tenants`` table.
     Returns ``(None, coordinate)`` when the coordinate cannot be resolved.
+
+    `errors` — optional accumulator, passed through to ``_safe_get`` so a
+    failed lookup is distinguishable from an absent tenant.
     """
     coord = (coordinate or "").strip()
     if not coord:
         return (None, None)
 
     if _UUID_RE.match(coord):
-        rows = _safe_get("tenants", f"id=eq.{coord}&select=id,slug")
+        rows = _safe_get("tenants", f"id=eq.{coord}&select=id,slug", errors)
         slug = rows[0].get("slug") if rows else None
         return (coord, slug)
 
     enc = urllib.parse.quote(coord, safe="")
-    rows = _safe_get("tenants", f"slug=eq.{enc}&select=id,slug")
+    rows = _safe_get("tenants", f"slug=eq.{enc}&select=id,slug", errors)
     if rows:
         return (rows[0].get("id"), rows[0].get("slug"))
     return (None, coord)
@@ -139,6 +166,170 @@ def _extract_palette(phase0: dict[str, Any]) -> dict[str, Any]:
     if isinstance(raw, str) and raw.strip():
         return {"description": raw.strip()}
     return {}
+
+
+# ─── Platform declaration ─────────────────────────────────────────
+# Phase 0 collects three fields that decide what the build loads:
+#
+#   target_platform    where the built site is deployed
+#   source_platform    what the tenant's existing site runs on
+#   source_api_access  whether API access to that source has been granted
+#
+# Like the compliance block below, these are DECLARATIONS. Nothing here derives
+# `source_platform` from `tech_stack` prose, a WordPress-shaped logo URL, or a
+# `_connector_*` boolean. Those are evidence an operator uses while *collecting*
+# the field; the build reads only what was collected. A guess in this position
+# looks exactly like a decision and silently picks the wrong adapter.
+#
+# TODO(A1-followup): `TARGET_PLATFORMS`, `SOURCE_PLATFORMS` and
+# `_declared_platform` also exist in `scripts/orchestrate.py:6006-6060` (the
+# vocabularies at :6006 and :6011, the reader at :6026), which is where
+# `resolve_target_platform` / `resolve_source_platform` read them. The plan's
+# Task A1 Step 3 moves those three into this module so there is exactly one
+# vocabulary; that move is deferred because another agent owns `orchestrate.py`
+# this wave. Until it lands the two copies MUST be kept identical — a second
+# copy that drifts is how "shopify" becomes the default again.
+
+#: Where a built site is deployed.
+TARGET_PLATFORMS = ("shopify", "vercel")
+
+#: What the tenant's existing site runs on. `unknown` is a DECLARED value — an
+#: operator saying "we looked and could not tell" — which is a different state
+#: from the field being absent, and the two must not collapse.
+SOURCE_PLATFORMS = (
+    "shopify", "woocommerce", "magento", "wordpress", "ghost", "custom", "unknown",
+)
+
+#: Load statuses that mean the platform fields were never actually read.
+_UNMEASURED_STATUSES = ("unconfigured", "unreachable")
+
+
+class PlatformDeclarationError(Exception):
+    """Base for both platform refusals, so a caller can catch either.
+
+    Catch the SUBCLASS wherever the two mean different things — which is
+    everywhere a gate reports a result. Collapsing them is the defect this
+    module exists to prevent, one level up from the original one.
+    """
+
+
+class PlatformNotDeclared(PlatformDeclarationError):
+    """The context was read successfully and the field is absent or invalid.
+
+    Actionable: an operator collects the field at phase 0.
+    """
+
+
+class PlatformNotMeasured(PlatformDeclarationError):
+    """The context never loaded, so nothing is known about the field.
+
+    NOT the same as "not declared". Every read in this module goes through
+    ``_safe_get``, which degrades to [] — so an unreachable Supabase, a dropped
+    table and a genuinely empty tenant all produce the same empty dict and the
+    same ``available: False``. A refusal built on emptiness alone would report
+    a database outage as an operator's failure to fill in a form. `load_status`
+    carries the difference from the point of failure to here.
+    """
+
+
+def _unmeasured(tenant_context: dict | None, what: str) -> PlatformNotMeasured | None:
+    """The NOT_MEASURED refusal for this context, or None if it was read.
+
+    A context with no `load_status` key is a caller supplying values directly
+    (a literal dict, a fixture, a CLI override). That is data in hand, not a
+    failed load, so it is treated as read. Only `load_tenant_context` sets the
+    key, and only it can know a read failed.
+    """
+    if not tenant_context:
+        return PlatformNotMeasured(
+            f"NOT_MEASURED: no tenant context was loaded, so {what} was never "
+            "read. This is not 'undeclared' — nothing was asked. Pass "
+            "--tenant <slug>, or state the platform explicitly."
+        )
+    status = tenant_context.get("load_status")
+    if status not in _UNMEASURED_STATUSES:
+        return None
+    slug = tenant_context.get("slug") or tenant_context.get("coordinate") or "<unknown tenant>"
+    reasons = tenant_context.get("load_errors") or []
+    return PlatformNotMeasured(
+        f"NOT_MEASURED: tenant '{slug}' context load_status={status!r}, so "
+        f"{what} was never read. Absence here says nothing about what the "
+        "tenant declares — do not record it as undeclared.\n"
+        + ("\n".join(f"  {r}" for r in reasons) if reasons else "  (no reason recorded)")
+    )
+
+
+def _platform_field(values: dict, field: str, allowed: tuple, slug: str) -> str:
+    raw = values.get(field)
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raise PlatformNotDeclared(
+            f"tenant '{slug}' does not declare {field}. "
+            f"Collect it at phase 0 as one of: {', '.join(allowed)}. "
+            f"It is not inferred from tech_stack, a logo URL, or connector flags."
+        )
+    value = str(raw).strip().lower()
+    if value not in allowed:
+        raise PlatformNotDeclared(
+            f"tenant '{slug}' declares {field}={value!r}, which is not a "
+            f"supported value. Supported: {', '.join(allowed)}."
+        )
+    return value
+
+
+def _api_access_field(values: dict, slug: str) -> bool:
+    """`source_api_access`, declared — never defaulted.
+
+    Absent is NOT False. cape-crypto declares `False`, which means an operator
+    checked and no access has been granted; xago declares nothing, which means
+    nobody has been asked. Defaulting the second to the first would turn an
+    open question into a recorded finding.
+    """
+    raw = values.get("source_api_access")
+    if isinstance(raw, bool):
+        return raw
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raise PlatformNotDeclared(
+            f"tenant '{slug}' does not declare source_api_access. Collect it at "
+            "phase 0 as a boolean. An absent permission flag is not False — "
+            "'nobody asked' and 'we checked and access is not granted' are "
+            "different answers and the build must not confuse them."
+        )
+    text = str(raw).strip().lower()
+    if text in ("true", "yes", "1"):
+        return True
+    if text in ("false", "no", "0"):
+        return False
+    raise PlatformNotDeclared(
+        f"tenant '{slug}' declares source_api_access={raw!r}, which is not a "
+        "boolean. Supported: true, false."
+    )
+
+
+def declared_platforms(tenant_context: dict | None) -> dict[str, Any]:
+    """The three declared platform fields, or refuse — naming which and why.
+
+    Returns ``{"source_platform", "target_platform", "source_api_access"}``.
+
+    Raises
+    ------
+    PlatformNotMeasured
+        The context never loaded (see ``load_status``). Nothing is known.
+    PlatformNotDeclared
+        The context loaded and a field is absent or out of vocabulary. The
+        message names the field, the offending value, and the allowed set.
+    """
+    unmeasured = _unmeasured(tenant_context, "the platform declaration")
+    if unmeasured is not None:
+        raise unmeasured
+
+    ctx = tenant_context or {}
+    slug = ctx.get("slug") or ctx.get("coordinate") or "<unknown tenant>"
+    values = ctx.get("phase0_field_values") or {}
+    return {
+        "source_platform": _platform_field(values, "source_platform", SOURCE_PLATFORMS, slug),
+        "target_platform": _platform_field(values, "target_platform", TARGET_PLATFORMS, slug),
+        "source_api_access": _api_access_field(values, slug),
+    }
 
 
 # ─── Compliance declaration ───────────────────────────────────────
@@ -387,7 +578,18 @@ def load_tenant_context(coordinate: str) -> dict[str, Any]:
         compliance           : normalised regulatory declaration — see
                                ``compliance_declaration``
         available            : True if any tenant capture data was found
+        load_status          : "ok" | "unconfigured" | "unreachable" — whether
+                               the reads themselves succeeded, independent of
+                               whether they returned rows
+        load_errors          : list[str] reasons, empty when load_status is "ok"
+
+    ``available`` alone cannot carry this: it is False for an unreachable
+    Supabase, a dropped table AND a genuinely empty tenant. ``load_status``
+    separates "we read and found nothing" from "we never read", which is what
+    ``declared_platforms`` needs to refuse with NOT_MEASURED instead of
+    reporting an outage as an undeclared field.
     """
+    errors: list[str] = []
     ctx: dict[str, Any] = {
         "coordinate": coordinate,
         "tenant_id": None,
@@ -399,18 +601,30 @@ def load_tenant_context(coordinate: str) -> dict[str, Any]:
         "palette": {},
         "compliance": compliance_declaration(None),
         "available": False,
+        "load_status": "ok",
+        "load_errors": errors,
     }
 
-    tenant_id, slug = resolve_tenant(coordinate)
+    def _finish() -> dict[str, Any]:
+        if not (SUPABASE_URL and SUPABASE_KEY):
+            ctx["load_status"] = "unconfigured"
+        elif errors:
+            ctx["load_status"] = "unreachable"
+        else:
+            ctx["load_status"] = "ok"
+        return ctx
+
+    tenant_id, slug = resolve_tenant(coordinate, errors)
     ctx["tenant_id"] = tenant_id
     ctx["slug"] = slug
     if not tenant_id:
-        return ctx
+        return _finish()
 
     # phase0_field_values — key/value capture rows for this tenant.
     p0_rows = _safe_get(
         "phase0_field_values",
         f"tenant_id=eq.{tenant_id}&select=field_key,value,fill_status,source",
+        errors,
     )
     phase0: dict[str, Any] = {}
     for r in p0_rows:
@@ -421,12 +635,12 @@ def load_tenant_context(coordinate: str) -> dict[str, Any]:
 
     # creative_assets — tenant media.
     ctx["creative_assets"] = _safe_get(
-        "creative_assets", f"tenant_id=eq.{tenant_id}&select=*"
+        "creative_assets", f"tenant_id=eq.{tenant_id}&select=*", errors
     )
 
     # competitor_profiles — benchmark data.
     ctx["competitor_profiles"] = _safe_get(
-        "competitor_profiles", f"tenant_id=eq.{tenant_id}&select=*"
+        "competitor_profiles", f"tenant_id=eq.{tenant_id}&select=*", errors
     )
 
     ctx["brand"] = _extract_brand(phase0)
@@ -435,4 +649,4 @@ def load_tenant_context(coordinate: str) -> dict[str, Any]:
     ctx["available"] = bool(
         phase0 or ctx["creative_assets"] or ctx["competitor_profiles"]
     )
-    return ctx
+    return _finish()
