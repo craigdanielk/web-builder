@@ -109,6 +109,10 @@ except ImportError:
 # copy here is the exact defect the single-definition rule exists to prevent.
 from lib import tenant_context as _tenant_vocab
 
+# The render probe's facts reader. report.json had no Python consumer; this is
+# it. See scripts/lib/render_facts.py.
+from lib.render_facts import format_render_facts, read_render_facts
+
 # Layer 6: Site manifest for multi-page generation
 try:
     from lib import site_manifest as site_manifest_lib
@@ -8846,6 +8850,25 @@ def stage_render_audit(project_name: str, site_manifest: dict | None = None) -> 
                         print(f"    ... and {len(report['defects']) - 3} more")
             except (json.JSONDecodeError, OSError):
                 pass
+
+        # ── report.json: the facts the probe measured ──────────────
+        # render-audit.json above is the DEFECT SUMMARY and discards `facts`.
+        # report.json carries the page box, per-section geometry/paint/
+        # fingerprint census, rendered image boxes and the contrast denominator
+        # — and had no Python consumer at all until this call. The reading is
+        # recorded and printed; it does not decide the audit status, because
+        # the aspect-distortion and duplication thresholds are not ratified and
+        # an unratified threshold that stops a build stops being believed.
+        _facts_result = read_render_facts(audit_out / "report.json")
+        for _line in format_render_facts(_facts_result):
+            print(_line)
+        try:
+            (audit_out / "render-facts.json").write_text(
+                json.dumps(_facts_result, indent=2), encoding="utf-8"
+            )
+            print(f"  → Wrote: {audit_out.name}/render-facts.json")
+        except OSError as _e:
+            print(f"  ⚠ Could not write render-facts.json: {_e}")
 
     except subprocess.TimeoutExpired:
         print(f"  ⚠ render-audit.js timed out after 180s")
