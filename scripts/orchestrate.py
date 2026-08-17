@@ -125,6 +125,23 @@ except ImportError:  # pragma: no cover - exercised by the NOT_MEASURED branch
 
         result: dict = {}
 
+# One industry source with declared precedence (A3). Optional: a tree without
+# it resolves NOT_MEASURED, never a guess.
+try:
+    from lib.industry import (
+        IndustryContextUnmeasured,
+        IndustryUndeclared,
+        resolve_industry,
+    )
+except ImportError:  # pragma: no cover - exercised by the NOT_MEASURED branch
+    resolve_industry = None  # type: ignore
+
+    class IndustryUndeclared(Exception):  # type: ignore
+        """Placeholder so `except IndustryUndeclared` stays valid."""
+
+    class IndustryContextUnmeasured(IndustryUndeclared):  # type: ignore
+        """Placeholder so `except IndustryContextUnmeasured` stays valid."""
+
 # Layer 6: Site manifest for multi-page generation
 try:
     from lib import site_manifest as site_manifest_lib
@@ -8727,6 +8744,122 @@ def stage_validate(project_name: str) -> dict:
 # Bill of Sale Orchestration (BoS → build_trace → re-audit loop)
 # ═════════════════════════════════════════════════════════════════════════════
 
+def resolve_build_industry(
+    args, tenant_context: dict | None, url: str | None = None, captures=None
+) -> dict:
+    """The ONE industry this build uses, and which source it came from.
+
+    Industry was declared in three places with no precedence, so preset
+    selection and benchmark selection could silently disagree about what the
+    tenant is — and when nothing declared one, orchestrate.py assigned
+    `"electronics-tech"`, a guess with no declaration behind it that then fed
+    the preset lookup, the section sequence, the benchmark filename and the
+    build record.
+
+    Precedence (lib.industry.resolve_industry, A3), with the CLI flag above it
+    as an explicit per-run override that is RECORDED as one:
+
+        --industry  >  phase0.industry / verticals[0]  >  tenants.industry
+                    >  the audit's keyword resolver
+
+    Returns the A3 resolution dict plus:
+
+      source           adds "cli", "undeclared" and "not_measured" to A3's
+                       "phase0" | "tenants" | "resolver".
+      registry_handle  the handle IFF it exists in the preset registry, else
+                       None. cape-crypto declares "Crypto exchange (retail)";
+                       `industry_styles` has 29 handles and that is not one of
+                       them. Mapping it onto `fintech` would be invention;
+                       issuing the lookup anyway would return an empty preset
+                       that reads as "this tenant has no style". So the handle
+                       is carried, the gap is visible, and no lookup is faked.
+
+    Never raises: an undeclared or unmeasurable industry is a recorded state,
+    because a build can legitimately proceed on a benchmark and a harvest.
+    """
+    flag = getattr(args, "industry", None)
+    if flag:
+        return {
+            "handle": flag,
+            "source": "cli",
+            "confidence": None,
+            "disagreement": None,
+            "field": "--industry",
+            "handle_in_registry": None,
+            "registry_handle": flag,
+        }
+
+    if resolve_industry is None:
+        return {
+            "handle": None, "source": "not_measured", "confidence": None,
+            "disagreement": None, "field": None, "handle_in_registry": None,
+            "registry_handle": None,
+            "reason": "lib.industry could not be imported",
+        }
+
+    try:
+        resolution = dict(resolve_industry(tenant_context, url=url, captures=captures))
+    except IndustryContextUnmeasured as exc:
+        return {
+            "handle": None, "source": "not_measured", "confidence": None,
+            "disagreement": None, "field": None, "handle_in_registry": None,
+            "registry_handle": None, "reason": str(exc),
+        }
+    except IndustryUndeclared as exc:
+        return {
+            "handle": None, "source": "undeclared", "confidence": None,
+            "disagreement": None, "field": None, "handle_in_registry": None,
+            "registry_handle": None, "reason": str(exc),
+        }
+
+    resolution["registry_handle"] = (
+        resolution.get("handle") if resolution.get("handle_in_registry") is True else None
+    )
+    return resolution
+
+
+def record_industry_resolution(site_spec: dict, resolution: dict) -> dict:
+    """Stamp the resolution into site-spec.json.
+
+    The build record must state which source won, including when the answer was
+    "nothing declared one" — an omitted key reads as a question nobody asked.
+    """
+    site_spec["industry_resolution"] = {
+        "handle": resolution.get("handle"),
+        "source": resolution.get("source"),
+        "field": resolution.get("field"),
+        "confidence": resolution.get("confidence"),
+        "disagreement": resolution.get("disagreement"),
+        "handle_in_registry": resolution.get("handle_in_registry"),
+        "registry_handle": resolution.get("registry_handle"),
+        "reason": resolution.get("reason"),
+    }
+    return site_spec
+
+
+def print_industry_resolution(resolution: dict) -> None:
+    source = resolution.get("source")
+    if source in ("undeclared", "not_measured"):
+        print(f"  ⊘ Industry {source.upper()}: {resolution.get('reason', 'no reason recorded')}")
+        return
+    conf = resolution.get("confidence")
+    print(
+        f"  🏭 Industry '{resolution.get('handle')}' from {source}"
+        + (f" ({resolution.get('field')})" if resolution.get("field") else "")
+        + (f", confidence {conf}" if conf is not None else "")
+    )
+    if resolution.get("disagreement"):
+        # Recorded, never reconciled. Two sources disagreeing is a fact about
+        # the tenant record, not something this build gets to settle.
+        print(f"     ⚠ disagreement, NOT reconciled: {resolution['disagreement']}")
+    if resolution.get("handle_in_registry") is False:
+        print(
+            f"     ⚠ '{resolution.get('handle')}' is not a preset-registry handle — "
+            "no registry lookup is issued for it. Design authority comes from "
+            "the benchmark and the harvest."
+        )
+
+
 def run_conformance_gate(
     site_dir,
     benchmark: str | None = None,
@@ -9821,8 +9954,24 @@ def main():
         except (OSError, json.JSONDecodeError) as _e:
             print(f"  ⚠ Could not load --copy-findings ({_e}); proceeding verbatim")
             copy_findings = None
-    if getattr(args, "compiled_dir", None) and not args.industry:
-        args.industry = "electronics-tech"
+    # ── Industry Resolution Node ──────────────────────────────────
+    # One source, declared precedence: --industry > phase0 > tenants > the
+    # audit's keyword resolver. This replaces `args.industry =
+    # "electronics-tech"` — a hardcoded guess, with no declaration behind it,
+    # that fed the preset lookup, the section sequence, the benchmark filename
+    # and the build record whenever --compiled-dir was passed without
+    # --industry.
+    _industry_resolution = resolve_build_industry(
+        args, tenant_context, url=getattr(args, "from_url", None)
+    )
+    print_industry_resolution(_industry_resolution)
+    # Only a handle the preset registry actually holds is used as one. A
+    # declared handle the registry does not know (cape-crypto's "Crypto
+    # exchange (retail)") leaves args.industry as it was: the registry path
+    # stays off, rather than issuing a lookup that returns an empty preset and
+    # reads as "this tenant has no style".
+    if not args.industry and _industry_resolution.get("registry_handle"):
+        args.industry = _industry_resolution["registry_handle"]
 
     output_dir = OUTPUT_DIR / args.project
     if args.clean and output_dir.exists():
@@ -10201,8 +10350,25 @@ def main():
     # and says so in conformance.json.
     _benchmark_path_for_gate = None
     if site_spec is not None:
+        # The industry resolution is consulted here too, so preset selection
+        # and benchmark selection can no longer disagree about what the tenant
+        # is. --benchmark stays the explicit per-run override.
+        record_industry_resolution(site_spec, _industry_resolution)
+        # Persist immediately and unconditionally. The compiled-style persist
+        # below only runs when a benchmark resolved, and a build record that
+        # states which industry source won only when a benchmark existed is a
+        # record with a hole in exactly the case that needs it.
+        try:
+            _ir_path = OUTPUT_DIR / args.project / "site-spec.json"
+            if _ir_path.exists():
+                _ir_spec = json.loads(_ir_path.read_text(encoding="utf-8"))
+                _ir_spec["industry_resolution"] = site_spec["industry_resolution"]
+                _ir_path.write_text(json.dumps(_ir_spec, indent=2), encoding="utf-8")
+        except (OSError, json.JSONDecodeError) as _ir_err:
+            print(f"  ⚠ industry resolution not persisted to site-spec.json: {_ir_err}")
         _bm_market = getattr(args, "benchmark", None) or (
-            (site_manifest or {}).get("industry") or args.industry or ""
+            (site_manifest or {}).get("industry") or args.industry
+            or _industry_resolution.get("handle") or ""
         )
         _bm_path = ROOT / "benchmarks" / f"{_bm_market}.json" if _bm_market else None
         if _bm_path and _bm_path.exists():
