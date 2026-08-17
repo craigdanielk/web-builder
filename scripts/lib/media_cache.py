@@ -30,6 +30,21 @@ from pathlib import Path
 #: the hash does not encode it.
 CACHE_EXTENSIONS = ("png", "jpg", "jpeg", "webp", "avif")
 
+#: Motion containers, kept in a SEPARATE tuple rather than appended to the one
+#: above. A single mixed list would let an image slot resolve to an `.mp4` — the
+#: hash does not encode the medium, so nothing else would catch it, and an
+#: `<Image src="....mp4">` is a broken page rather than a missing picture.
+#: `png-sequence` is deliberately absent: a directory of frames is not a
+#: shippable artefact and the cache holds one file per hash.
+MOTION_EXTENSIONS = ("mp4", "webm")
+
+#: Extensions by media type, so `resolve_cached` takes the defaulting
+#: discriminator (`image_jobs.media_type_of`) and never a guess.
+EXTENSIONS_BY_MEDIA_TYPE = {
+    "image": CACHE_EXTENSIONS,
+    "video": MOTION_EXTENSIONS,
+}
+
 _HASH_RE = re.compile(r"^[0-9a-f]{6,64}$")
 
 #: Where a generated file is served from inside the built site. Deliberately
@@ -37,6 +52,12 @@ _HASH_RE = re.compile(r"^[0-9a-f]{6,64}$")
 #: rendered page's network tab tells you which pictures this system commissioned
 #: and which it fetched.
 PUBLIC_PREFIX = "/images/generated"
+
+#: The same reasoning one level further: a glance at a rendered page's network
+#: tab should say not only which media this system commissioned but which medium
+#: it is. Motion is out-of-band and cached identically; only the served path and
+#: the container differ.
+MOTION_PUBLIC_PREFIX = "/media/generated"
 
 
 def cache_root(web_builder_root: Path, tenant: str) -> Path:
@@ -58,39 +79,52 @@ def cache_path(cache_dir: Path, job_hash: str, ext: str = "png") -> Path:
     return Path(cache_dir) / ("%s.%s" % (job_hash, ext))
 
 
-def resolve_cached(cache_dir: Path, job_hash: str):
+def resolve_cached(cache_dir: Path, job_hash: str, media_type: str = "image"):
     """The cached file for this hash, or None.
 
     None is a first-class answer, not an error: it is what an un-commissioned
     slot looks like, and the caller's job is to record it as an empty slot with
     a name. A zero-byte file counts as a miss — a truncated download from an
     interrupted commission must not be adopted as art.
+
+    `media_type` defaults to `"image"`, which is both the schema's default and
+    the signature every existing caller already passes. A motion job asks for
+    `"video"` and is answered only by a motion container: the hash does not
+    encode the medium, so the caller's declared medium is the only thing that
+    can, and a wrong-medium hit is worse than a miss.
     """
     cache_dir = Path(cache_dir)
     if not cache_dir.is_dir() or not _HASH_RE.match(str(job_hash)):
         return None
-    for ext in CACHE_EXTENSIONS:
+    extensions = EXTENSIONS_BY_MEDIA_TYPE.get(media_type)
+    if extensions is None:
+        raise ValueError("unknown media_type %r; the cache holds %s"
+                         % (media_type, sorted(EXTENSIONS_BY_MEDIA_TYPE)))
+    for ext in extensions:
         p = cache_dir / ("%s.%s" % (job_hash, ext))
         if p.is_file() and p.stat().st_size > 0:
             return p
     return None
 
 
-def publish_to_site(cached: Path, public_dir: Path) -> tuple:
+def publish_to_site(cached: Path, public_dir: Path, prefix: str = None) -> tuple:
     """Copy a cached file into the site's public tree; return (src, bytes).
 
     `src` is the site-absolute URL the .tsx will carry. Copying rather than
     symlinking because the deploy step tars/copies `site/public` and a symlink
     out of the repo would not survive it. Idempotent: same hash, same
     destination, and an identical existing file is left alone.
+
+    `prefix` defaults to `PUBLIC_PREFIX`; motion passes `MOTION_PUBLIC_PREFIX`.
     """
     cached = Path(cached)
-    dest_dir = Path(public_dir) / PUBLIC_PREFIX.strip("/")
+    dest_dir = Path(public_dir) / (prefix or PUBLIC_PREFIX).strip("/")
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / cached.name
     if not dest.exists() or dest.stat().st_size != cached.stat().st_size:
         shutil.copyfile(cached, dest)
-    return "%s/%s" % (PUBLIC_PREFIX, cached.name), dest.stat().st_size
+    return "%s/%s" % ((prefix or PUBLIC_PREFIX).rstrip("/"),
+                      cached.name), dest.stat().st_size
 
 
 # ── Placing a generated file into the section that asked for it ────────────

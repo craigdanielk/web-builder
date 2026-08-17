@@ -29,6 +29,41 @@ import re
 
 SCHEMA_VERSION = "job-v1"
 
+#: The version a job carrying motion declares. `job-v1` is still accepted by the
+#: schema verbatim — v2 only ADDS `media_type` and the `motion`/`remotion`
+#: objects — so an image job is left at v1 rather than bumped. Nothing is gained
+#: by rewriting artefacts that are already valid, and a rewritten artefact is a
+#: changed hash.
+SCHEMA_VERSION_MOTION = "job-v2"
+
+MEDIA_TYPE_IMAGE = "image"
+MEDIA_TYPE_VIDEO = "video"
+MEDIA_TYPES = (MEDIA_TYPE_IMAGE, MEDIA_TYPE_VIDEO)
+
+#: The two motion engines, and the policy between them, from
+#: `docs/census/2026-08-17-motion-engine.md` §2: Remotion is canonical for the
+#: deterministic UI/product class (77% of the reference's distinct pieces);
+#: generation serves atmospheric backdrops only.
+ENGINE_REMOTION = "remotion"
+ENGINE_GENERATIVE = "generative"
+
+#: What an atmospheric backdrop is, expressed in the vocabulary this repo
+#: already has (`asset_resolver.VALID_ART_INTENTS` / `VALID_ART_ROLES`) rather
+#: than in a new taxonomy. All four atmospheric pieces in the reference are
+#: unbroken gradient fields sitting behind an overlay — decorative, and either
+#: `texture` or `abstract`. A `scene`, a `diagram` or a load-bearing slot is a
+#: piece a viewer reads for information, and a non-deterministic generator must
+#: not be the thing that renders it.
+_ATMOSPHERIC_INTENTS = ("abstract", "texture")
+_ATMOSPHERIC_ROLE = "decorative"
+
+#: The provenance sources a rendered frame may carry. `default` is absent
+#: deliberately — the same rule `SectionArtifact.validate()` enforces for copy.
+#: A string burned into a video frame is no less of a claim for being pixels.
+VALID_PROPS_SOURCES = ("harvested", "phase0")
+
+MOTION_CONTAINERS = ("mp4", "webm", "png-sequence")
+
 #: Text-to-image by default. `nano_banana_2` is image-conditioned and is what a
 #: job with a look anchor wants; `recraft_v4_1` is the text-to-image model and
 #: is the only one of the two the adapter will pass `--colors` to meaningfully.
@@ -148,6 +183,29 @@ class ClaimBearingJob(Exception):
     `asset_resolver` already refuses these before they become gaps. This is the
     second gate on the same rule, on the theory that the boundary should hold
     even if a future caller builds a gap by hand.
+    """
+
+
+class EnginePolicyViolation(Exception):
+    """Raised when a motion demand asks the wrong engine for its class.
+
+    The engine choice is not a preference; it is the finding of the motion
+    census, and 77% of the reference's distinct pieces are text-bearing product
+    demonstrations. A generative model cannot be relied on to render a specified
+    string, and for an FSCA-licensed FSP a misrendered product name in a video is
+    a compliance defect. So the boundary lives in code: generation is reachable
+    for an atmospheric backdrop and unreachable for anything a viewer reads.
+    """
+
+
+class PropsNotMeasured(Exception):
+    """Raised when compiled props are absent, unsourced, or carry no tokens.
+
+    Motion must not claim to read the page's design system when the page has not
+    been compiled, and must not render a string whose provenance is unknown. The
+    refusal mirrors `motion/tools/build_props.py`, which raises rather than
+    defaulting for exactly the same three cases — an unreachable declaration, no
+    usable declared content, and absent tokens.
     """
 
 
@@ -304,6 +362,313 @@ def to_job_v1(gap: dict, brand: dict) -> dict:
     if not reference:
         job["engine"]["model_type"] = "standard"
     return job
+
+
+# ── Motion: the same contract with a media_type ────────────────────────────
+#
+# `services/image-pipeline/core/job.schema.json` is extended in place to
+# `job-v2` rather than forked (motion census §5). Forking is how the
+# capture-bundle mistake repeats: two contracts for one thing, two loaders, and
+# a cache that silently stops hitting because two implementations of one digest
+# drifted apart.
+#
+# The extension is three additions and no removals:
+#
+#   * `media_type` — a DEFAULTING discriminator. Absent means image, so every
+#     `job-v1` file on disk is already a valid v2 image job. Nothing migrates.
+#   * `motion` — duration, dimensions, container, loop, and which engine.
+#   * `remotion` — the composition, its entry, its props, their provenance and
+#     the local font files.
+#
+# `job_hash` is untouched and needs to be: it digests the canonical JSON of the
+# whole job minus `id`, so it already covers `remotion.props` — which carries the
+# compiled token subset. Move the accent and the hash moves, so the cached render
+# is invalidated, because the video should change. That property is what licenses
+# a hash as a cache key, and the determinism run in the census (frames AND the
+# muxed mp4 byte-identical across renders) is what licenses it for motion.
+
+
+def media_type_of(job: dict) -> str:
+    """The job's media type, DEFAULTED — never `job["media_type"]` directly.
+
+    A v1 job has no such key and is an image job. Every consumer must read it
+    through here, or the first `job["media_type"]` in a dispatch table turns
+    every existing artefact into a KeyError and the back-compat guarantee into a
+    docstring.
+    """
+    value = (job or {}).get("media_type")
+    if value is None:
+        return MEDIA_TYPE_IMAGE
+    if value not in MEDIA_TYPES:
+        raise ValueError(
+            "unknown media_type %r — the discriminator is %s"
+            % (value, list(MEDIA_TYPES)))
+    return value
+
+
+def is_motion(job: dict) -> bool:
+    """True iff this job renders a moving image."""
+    return media_type_of(job) == MEDIA_TYPE_VIDEO
+
+
+def _props_provenance(props: dict) -> list:
+    """`[{slot, field_key, source}]` for every rendered item in the props.
+
+    Raises `PropsNotMeasured` on an item with no `field_key`, no `source`, or a
+    `source` outside `VALID_PROPS_SOURCES`. The alternative — stamping
+    `source: "default"`, or omitting the row — would put an unattributable string
+    on a rendered frame, which is the content rule's failure mode in a medium
+    where it is harder to see than in a `.tsx`.
+    """
+    items = props.get("items")
+    if not isinstance(items, list) or not items:
+        raise PropsNotMeasured(
+            "props carry no items — a composition with nothing declared to "
+            "render is not a job")
+    out = []
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise PropsNotMeasured("props item %d is not an object" % i)
+        field_key = item.get("field_key")
+        source = item.get("source")
+        if not field_key:
+            raise PropsNotMeasured(
+                "props item %d (%r) names no field_key — it cannot be traced "
+                "to a declaration" % (i, item.get("value")))
+        if source not in VALID_PROPS_SOURCES:
+            raise PropsNotMeasured(
+                "props item %d has source %r; permitted sources are %s "
+                "('default' is not one of them)"
+                % (i, source, list(VALID_PROPS_SOURCES)))
+        out.append({"slot": "items[%d].value" % i,
+                    "field_key": str(field_key),
+                    "source": source})
+    return out
+
+
+def _duration_frames(demand: dict, props: dict) -> int:
+    """Frames in the render.
+
+    Declared on the demand when the caller knows it; otherwise derived exactly
+    the way `motion/src/Root.tsx` derives it — `introFrames + items *
+    framesPerItem`. Derived rather than guessed, and by the same arithmetic as
+    the composition, because a job that claims a different length than the
+    composition renders produces a truncated or padded artefact under a hash
+    that says it is correct.
+    """
+    declared = demand.get("duration_frames")
+    if isinstance(declared, int) and declared >= 1:
+        return declared
+    intro = props.get("introFrames")
+    per_item = props.get("framesPerItem")
+    items = props.get("items")
+    if all(isinstance(v, int) for v in (intro, per_item)) and isinstance(items, list):
+        total = intro + len(items) * per_item
+        if total >= 1:
+            return total
+    raise PropsNotMeasured(
+        "duration is not measured: the demand declares no duration_frames and "
+        "the props carry no introFrames/framesPerItem to derive it from")
+
+
+def to_motion_job(demand: dict, props: dict) -> dict:
+    """A motion demand + compiled props → one `job-v2` Remotion job.
+
+    `demand` is the motion analogue of an `asset_resolver.art_demand()` row:
+    `{section_uid, archetype, variant, slot, composition_id, entry,
+      width, height, fps, container, loop}`.
+
+    `props` is what `motion/tools/build_props.py` compiles — declared content
+    with `field_key`/`source` on every item, plus the token subset read out of
+    the build's own `globals.css`. It is passed in rather than compiled here:
+    this module lowers, it does not read Supabase, and `build_props.py` already
+    refuses (rather than defaults) when the declaration or the compiled tokens
+    are unreachable.
+
+    Raises `PropsNotMeasured` when the props carry no tokens, no traceable items
+    or no derivable duration. There is no defaulting branch: an unmeasured
+    design system must read as unmeasured.
+    """
+    demand = demand or {}
+    props = dict(props or {})
+
+    composition_id = str(demand.get("composition_id") or "").strip()
+    entry = str(demand.get("entry") or "").strip()
+    if not composition_id:
+        raise ValueError("motion demand names no composition_id")
+    if not entry:
+        raise ValueError("motion demand names no entry (the registered root)")
+
+    tokens = props.get("tokens")
+    if not isinstance(tokens, dict) or not tokens:
+        raise PropsNotMeasured(
+            "props carry no tokens — motion cannot claim to read the page's "
+            "design system when the page has not been compiled")
+
+    provenance = _props_provenance(props)
+
+    # The dimensions and frame rate live in exactly one place. A per-breakpoint
+    # cut is a second job with the same composition_id and different width — so
+    # the resolved values are written BACK into the props, which is what makes
+    # the two cuts two hashes instead of two names for one cached file.
+    width = int(demand.get("width") or props.get("width") or 0)
+    height = int(demand.get("height") or props.get("height") or 0)
+    fps = int(demand.get("fps") or props.get("fps") or 30)
+    if width < 1 or height < 1:
+        raise ValueError("motion demand/props carry no usable width/height")
+    props["width"], props["height"], props["fps"] = width, height, fps
+
+    duration_frames = _duration_frames(demand, props)
+
+    container = str(demand.get("container") or "mp4")
+    if container not in MOTION_CONTAINERS:
+        raise ValueError("unknown container %r; the schema permits %s"
+                         % (container, list(MOTION_CONTAINERS)))
+
+    job = {
+        "schema_version": SCHEMA_VERSION_MOTION,
+        "media_type": MEDIA_TYPE_VIDEO,
+        "id": _slug(composition_id, demand.get("slot"), demand.get("section_uid")),
+        "motion": {
+            "engine": ENGINE_REMOTION,
+            "duration_frames": duration_frames,
+            "fps": fps,
+            "width": width,
+            "height": height,
+            "container": container,
+            "loop": bool(demand.get("loop", False)),
+        },
+        "remotion": {
+            "entry": entry,
+            "composition_id": composition_id,
+            "props": props,
+            "props_provenance": provenance,
+        },
+    }
+    fonts = [f for f in (demand.get("font_files") or props.get("font_files") or [])
+             if isinstance(f, str) and f.strip()]
+    if fonts:
+        # Local paths only. A font fetched over the network is what breaks
+        # portable determinism, which is the property the cache key rests on.
+        remote = [f for f in fonts if f.strip().lower().startswith(("http://", "https://"))]
+        if remote:
+            raise ValueError(
+                "font_files must be local paths; %s is a network dependency and "
+                "breaks portable determinism" % remote[0])
+        job["remotion"]["font_files"] = fonts
+    return job
+
+
+def to_generative_motion_job(gap: dict, brand: dict, duration_frames: int,
+                             width: int, height: int, fps: int = 30,
+                             container: str = "mp4", loop: bool = True) -> dict:
+    """An atmospheric backdrop demand → one `job-v2` generative video job.
+
+    This is the payoff of extending rather than forking: a generated backdrop is
+    the existing image contract — same prompt, same negative prompt, same
+    palette hint, same engine block — with `media_type: "video"` and a `motion`
+    object. The generative path needed almost no new surface.
+
+    Raises `EnginePolicyViolation` for anything that is not atmospheric. The
+    reference's four atmospheric pieces are unbroken gradient fields behind an
+    overlay, re-used twelve times; every other piece it ships is a named product
+    demonstration with legible text, and those belong to Remotion.
+    """
+    intent = (gap.get("intent") or "").strip().lower()
+    role = (gap.get("role") or "").strip().lower()
+    if role != _ATMOSPHERIC_ROLE or intent not in _ATMOSPHERIC_INTENTS:
+        raise EnginePolicyViolation(
+            "engine 'generative' is atmospheric-backdrop only "
+            "(role=%s intent in %s); this demand is role=%r intent=%r, which "
+            "Remotion renders" % (_ATMOSPHERIC_ROLE,
+                                  list(_ATMOSPHERIC_INTENTS), role, intent))
+    if not isinstance(duration_frames, int) or duration_frames < 1:
+        raise ValueError("duration_frames must be a positive integer")
+    if int(width) < 1 or int(height) < 1:
+        raise ValueError("width/height must be positive")
+    if container not in MOTION_CONTAINERS:
+        raise ValueError("unknown container %r" % container)
+
+    job = to_job_v1(gap, brand)
+    job["schema_version"] = SCHEMA_VERSION_MOTION
+    job["media_type"] = MEDIA_TYPE_VIDEO
+    job["motion"] = {
+        "engine": ENGINE_GENERATIVE,
+        "duration_frames": int(duration_frames),
+        "fps": int(fps),
+        "width": int(width),
+        "height": int(height),
+        "container": container,
+        # True by default and recorded, not asserted: no catalogued model
+        # advertises seamless looping, so a looping generative backdrop still
+        # owes a loop-point pass. The flag is where that debt is visible.
+        "loop": bool(loop),
+    }
+    return job
+
+
+def lower_motion_demand(demand_rows, props_by_composition=None,
+                        brand: dict = None) -> dict:
+    """Every motion demand row → the distinct set of renders it asks for.
+
+    Returns `{"jobs": [{job_hash, job, demands: [...]}], "refused": [...],
+    "unlowered": [...]}` — the same three recorded outcomes, in the same shape,
+    as `lower_gaps`. A caller that already consumes the image lowering consumes
+    this one unchanged.
+
+    Deduplicated by `job_hash`, so two sections asking for the same render share
+    one file and one 5-second compute; a mobile cut of the same composition has
+    different dimensions, therefore different props, therefore a different hash,
+    therefore its own render — which is the desktop/mobile pattern the reference
+    ships on every tab video.
+    """
+    props_by_composition = props_by_composition or {}
+    jobs, index, refused, unlowered = [], {}, [], []
+    for demand in demand_rows or []:
+        engine = (demand.get("engine") or ENGINE_REMOTION).strip().lower()
+        try:
+            if engine == ENGINE_REMOTION:
+                props = props_by_composition.get(demand.get("composition_id"))
+                if props is None:
+                    unlowered.append({
+                        "demand": demand,
+                        "reason": "no compiled props for composition %r — "
+                                  "props are compiled out of band and a render "
+                                  "is not invented from a name"
+                                  % demand.get("composition_id"),
+                    })
+                    continue
+                job = to_motion_job(demand, props)
+            elif engine == ENGINE_GENERATIVE:
+                job = to_generative_motion_job(
+                    demand, brand or {},
+                    duration_frames=demand.get("duration_frames") or 0,
+                    width=demand.get("width") or 0,
+                    height=demand.get("height") or 0,
+                    fps=demand.get("fps") or 30,
+                    container=demand.get("container") or "mp4",
+                    loop=bool(demand.get("loop", True)))
+            else:
+                unlowered.append({"demand": demand,
+                                  "reason": "unknown motion engine %r; the "
+                                            "policy names %s"
+                                            % (engine, [ENGINE_REMOTION,
+                                                        ENGINE_GENERATIVE])})
+                continue
+        except (EnginePolicyViolation, ClaimBearingJob) as e:
+            refused.append({"demand": demand, "reason": str(e)})
+            continue
+        except (PropsNotMeasured, UncompiledStyle, ValueError) as e:
+            unlowered.append({"demand": demand, "reason": str(e)})
+            continue
+        h = job_hash(job)
+        if h in index:
+            index[h]["demands"].append(demand)
+            continue
+        entry = {"job_hash": h, "job": job, "demands": [demand]}
+        index[h] = entry
+        jobs.append(entry)
+    return {"jobs": jobs, "refused": refused, "unlowered": unlowered}
 
 
 def canonical_json(job: dict) -> str:

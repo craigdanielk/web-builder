@@ -47,7 +47,10 @@ HERE = Path(__file__).resolve().parent
 WEB_BUILDER = HERE.parent.parent
 sys.path.insert(0, str(WEB_BUILDER / "scripts"))
 
-from lib.image_jobs import job_hash                      # noqa: E402
+from lib.image_jobs import (                             # noqa: E402
+    job_hash, media_type_of, ENGINE_REMOTION, ENGINE_GENERATIVE,
+    MEDIA_TYPE_VIDEO,
+)
 from lib.media_cache import cache_path, resolve_cached   # noqa: E402
 
 #: The deterministic runner. A sibling service repo, not a submodule — resolved
@@ -115,6 +118,139 @@ def _run_pipeline(job: dict, out_dir: Path, dry_run: bool) -> dict:
         return {"ok": True, "log": out}
 
 
+# ── Motion: the second out-of-band renderer ────────────────────────────────
+#
+# A `media_type: "video"` job with `motion.engine == "remotion"` is rendered by
+# the contained Remotion project (`web-builder/motion/`), NOT by the
+# image-pipeline runner — there is no prompt and no provider, only a composition
+# and its props. Everything else is identical: the cache is checked first, the
+# hash names the file, and the build never calls this.
+#
+# `--dry-run` reports a cost of "compute only". That is the measured fact
+# (census §6: 5.0 s for 390 frames warm, no per-render billing), not an
+# optimistic default — and it is why the Remotion path can be re-rendered freely
+# while a generative one cannot.
+
+
+def _remotion_project(entry: Path) -> Path:
+    """The nearest ancestor of the entry that holds a `package.json`.
+
+    Derived rather than hardcoded to `motion/`: the job declares its entry, and
+    a second composition project would otherwise need a code change here.
+    """
+    for parent in [entry.parent, *entry.parents]:
+        if (parent / "package.json").is_file():
+            return parent
+    raise FileNotFoundError(
+        "no package.json above %s — the Remotion entry names no project" % entry)
+
+
+def _run_remotion(job: dict, out_dir: Path, dry_run: bool) -> dict:
+    """Render one Remotion job. Returns `{ok, log}` — and `ok: False` with a
+    named reason when the project's dependencies are not installed.
+
+    An uninstalled `motion/node_modules` is an UNRENDERED JOB WITH A REASON, not
+    a failure of the contract: the schema, the lowering and the cache are all
+    correct and the artefact is simply absent, which is exactly what an
+    un-commissioned slot already looks like everywhere else in this system.
+    """
+    motion = job.get("motion") or {}
+    remo = job.get("remotion") or {}
+    entry = WEB_BUILDER / str(remo.get("entry") or "")
+    if not entry.is_file():
+        return {"ok": False, "log": "UNRENDERED: entry %s does not exist" % entry}
+    try:
+        project = _remotion_project(entry)
+    except FileNotFoundError as e:
+        return {"ok": False, "log": "UNRENDERED: %s" % e}
+    if not (project / "node_modules").is_dir():
+        return {"ok": False, "log":
+                "UNRENDERED: %s/node_modules is not installed — run `npm "
+                "install` in %s. The job spec is valid and uncached; nothing "
+                "was spent." % (project.name, project)}
+
+    frames = int(motion.get("duration_frames") or 0)
+    if dry_run:
+        return {"ok": True, "log":
+                "DRY RUN cost estimate: %s" % json.dumps({
+                    "engine": ENGINE_REMOTION,
+                    "composition": remo.get("composition_id"),
+                    "frames": frames,
+                    "billing": "compute only — no per-render charge",
+                })}
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    container = motion.get("container") or "mp4"
+    out_file = out_dir / ("%s.%s" % (job["id"], container))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # Props go to a file, not to an inline --props string: they carry the
+        # full token set and the provenance rows, and an argv-length limit is a
+        # silently truncated render.
+        props_file = Path(tmp) / "props.json"
+        props_file.write_text(json.dumps(remo.get("props") or {}, indent=2),
+                              encoding="utf-8")
+        cmd = [
+            "npx", "remotion", "render",
+            str(entry.relative_to(project)),
+            str(remo.get("composition_id")),
+            str(out_file),
+            "--props=%s" % props_file,
+            "--log=error",
+        ]
+        # Dimensions and frame rate are AUTHORITATIVE ON THE JOB, so they are
+        # passed as overrides rather than left to the composition's defaults.
+        # This is what makes a mobile cut a second job rather than a second file
+        # name for the same render.
+        for flag, key in (("--width", "width"), ("--height", "height"),
+                          ("--fps", "fps")):
+            if motion.get(key):
+                cmd.append("%s=%d" % (flag, int(motion[key])))
+        if frames >= 1:
+            cmd.append("--frames=0-%d" % (frames - 1))
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              cwd=str(project))
+        out = (proc.stdout or "") + (proc.stderr or "")
+        if proc.returncode != 0 or not out_file.is_file():
+            return {"ok": False, "log": out[-2000:] or "remotion produced no file"}
+        return {"ok": True, "log": out}
+
+
+def _run_generative_motion(job: dict, out_dir: Path, dry_run: bool) -> dict:
+    """The generative motion path, which is NOT MEASURED and says so.
+
+    The engine policy reserves generation for atmospheric backdrops, and the
+    census could not obtain a cost for it (`hf auth` expired; no generation was
+    performed and nothing was spent). Rendering into that gap would be spending
+    against an unmeasured price, so the job is recorded as unrendered with the
+    reason and the command that closes it.
+    """
+    return {"ok": False, "log":
+            "UNRENDERED (NOT_MEASURED): generative motion has no cost-measured "
+            "adapter path. docs/census/2026-08-17-motion-engine.md §6 — run "
+            "`hf auth login` then `higgsfield generate cost <model> --duration "
+            "<s> --json` and report the figure BEFORE any generate. Nothing "
+            "was spent."}
+
+
+def _dispatch(job: dict):
+    """Which renderer this job belongs to, by the DEFAULTING discriminator.
+
+    `media_type_of` is the only reader of `media_type` — a bare
+    `job["media_type"]` here would turn every existing `job-v1` artefact into a
+    KeyError.
+    """
+    if media_type_of(job) != MEDIA_TYPE_VIDEO:
+        return _run_pipeline
+    engine = ((job.get("motion") or {}).get("engine") or "").lower()
+    if engine == ENGINE_REMOTION:
+        return _run_remotion
+    if engine == ENGINE_GENERATIVE:
+        return _run_generative_motion
+    raise SystemExit("job %s declares motion.engine %r, which no renderer "
+                     "claims" % (job.get("id"), engine))
+
+
 def _fake_provider(job: dict, out_dir: Path, dry_run: bool) -> dict:
     """Test double, enabled only by `MEDIA_COMMISSION_FAKE_PROVIDER=1`.
 
@@ -126,8 +262,16 @@ def _fake_provider(job: dict, out_dir: Path, dry_run: bool) -> dict:
     if dry_run:
         return {"ok": True, "log": "FAKE dry run"}
     out_dir.mkdir(parents=True, exist_ok=True)
-    p = out_dir / ("%s__fake__v1.png" % job["id"])
-    p.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 128)
+    if media_type_of(job) == MEDIA_TYPE_VIDEO:
+        # The container comes from the job, so the fake exercises the same
+        # extension the real renderer would cache — a fake that always wrote
+        # .png would leave the motion cache path untested.
+        container = (job.get("motion") or {}).get("container") or "mp4"
+        p = out_dir / ("%s__fake__v1.%s" % (job["id"], container))
+        p.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"0" * 128)
+    else:
+        p = out_dir / ("%s__fake__v1.png" % job["id"])
+        p.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 128)
     return {"ok": True, "log": "FAKE generated %s" % p}
 
 
@@ -165,19 +309,26 @@ def main(argv=None):
     cache = Path(a.cache)
     only = {h.strip() for h in a.only.split(",")} if a.only else None
     fake = os.environ.get("MEDIA_COMMISSION_FAKE_PROVIDER") == "1"
-    provider = _fake_provider if fake else _run_pipeline
 
     summary = {"total": len(jobs), "cached": 0, "would_generate": 0,
-               "generated": 0, "failed": 0, "skipped": 0,
-               "estimates": [], "cache_dir": str(cache), "dry_run": a.dry_run}
+               "generated": 0, "failed": 0, "unrendered": 0, "skipped": 0,
+               "estimates": [], "cache_dir": str(cache), "dry_run": a.dry_run,
+               "by_media_type": {}}
 
     for entry in jobs:
         h, job = entry["job_hash"], entry["job"]
         demands = len(entry.get("demands") or [])
-        label = "%s  %s  (%d section%s)" % (
-            h, job.get("id", "?"), demands, "" if demands == 1 else "s")
+        media_type = media_type_of(job)
+        summary["by_media_type"][media_type] = \
+            summary["by_media_type"].get(media_type, 0) + 1
+        # Per job, not once for the whole set: one `image-jobs.json` may carry
+        # stills and motion, and each goes to its own renderer.
+        provider = _fake_provider if fake else _dispatch(job)
+        label = "%s  %s  [%s]  (%d section%s)" % (
+            h, job.get("id", "?"), media_type, demands,
+            "" if demands == 1 else "s")
 
-        if resolve_cached(cache, h) is not None:
+        if resolve_cached(cache, h, media_type) is not None:
             summary["cached"] += 1
             print("  = cached   %s" % label)
             continue
@@ -207,6 +358,15 @@ def main(argv=None):
             staging = Path(tmp)
             res = provider(job, staging, dry_run=False)
             produced = sorted(p for p in staging.rglob("*") if p.is_file())
+            if not res["ok"] and res.get("log", "").startswith("UNRENDERED"):
+                # A named, non-fatal absence: the spec is valid, the cache is
+                # empty, nothing was spent. Distinguished from FAILED because a
+                # missing toolchain and a broken composition are different facts
+                # and a status list that conflates them reads as a pass.
+                summary["unrendered"] += 1
+                print("  ○ UNRENDERED %s" % label)
+                print("      %s" % res["log"])
+                continue
             if not res["ok"] or not produced:
                 summary["failed"] += 1
                 print("  ✗ FAILED   %s" % label)
@@ -220,13 +380,23 @@ def main(argv=None):
             print("  + generated %s -> %s (%d bytes)"
                   % (label, dest, dest.stat().st_size))
 
-    print("\n  %d job(s): %d cached, %d generated, %d would-generate, "
-          "%d failed, %d skipped"
-          % (summary["total"], summary["cached"], summary["generated"],
-             summary["would_generate"], summary["failed"], summary["skipped"]))
+    print("\n  %d job(s) %s: %d cached, %d generated, %d would-generate, "
+          "%d failed, %d unrendered, %d skipped"
+          % (summary["total"], json.dumps(summary["by_media_type"]),
+             summary["cached"], summary["generated"],
+             summary["would_generate"], summary["failed"],
+             summary["unrendered"], summary["skipped"]))
     if a.json:
         print(json.dumps(summary))
-    return 0 if summary["failed"] == 0 else 1
+    # Three states, the same three the rest of this repo uses: 1 is a real
+    # failure, 3 is NOT_MEASURED (a job that could not be attempted, with its
+    # reason printed), 0 is done. Folding 3 into 0 would make a missing
+    # toolchain read as a completed commission.
+    if summary["failed"]:
+        return 1
+    if summary["unrendered"]:
+        return 3
+    return 0
 
 
 if __name__ == "__main__":
