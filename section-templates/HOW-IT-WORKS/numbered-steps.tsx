@@ -73,7 +73,7 @@ export default function HowItWorksNumberedSteps({
           <div className="max-w-2xl" style={{ marginBottom: "var(--block-gap, 48px)" }}>
             {sectionTitle && (
               <h2
-                className="text-3xl md:text-[2.75rem] leading-[1.1] tracking-tight"
+                className="text-[2rem] md:text-[3rem] leading-[1.1] tracking-tight"
                 style={{
                   fontFamily: "var(--font-heading, inherit)",
                   fontWeight: "var(--heading-weight, 400)" as unknown as number,
@@ -117,7 +117,7 @@ export default function HowItWorksNumberedSteps({
 
               <div className="relative flex items-baseline gap-4">
                 <span
-                  className="text-[2.5rem] leading-none tabular-nums"
+                  className="text-[2rem] leading-none tabular-nums"
                   style={{
                     color: ACCENT,
                     fontFamily: "var(--font-heading, inherit)",

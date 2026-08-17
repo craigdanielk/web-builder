@@ -155,12 +155,17 @@ export default function HeroCentered({
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          className="text-balance"
+          // 48 → 64 → 96px in DISCRETE steps. This was a clamp() across the
+          // same endpoints, which reads as the same intent but is not: clamp
+          // interpolates, so every viewport between ~750px and 1500px rendered
+          // a size that is on no step of the declared scale — at the 1440px
+          // audit viewport, 92px. A type scale is a closed set, not a
+          // continuum, so the ramp is breakpoints and every rung is a
+          // scale_px value.
+          className="text-balance text-[3rem] md:text-[4rem] lg:text-[6rem]"
           style={{
             fontFamily: "var(--font-heading, inherit)",
             fontWeight: "var(--heading-weight, 500)" as unknown as number,
-            // 48px → 96px: the display sizes the reference actually renders.
-            fontSize: "clamp(3rem, 6.4vw, 6rem)",
             lineHeight: 1.05,
             letterSpacing: "-0.025em",
           }}

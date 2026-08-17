@@ -114,7 +114,7 @@ export default function TrustBadgesIconStrip({
           <div className="max-w-3xl" style={{ marginBottom: "var(--block-gap, 24px)" }}>
             {sectionTitle && (
               <h2
-                className="text-3xl md:text-[2.75rem] leading-[1.1] tracking-tight"
+                className="text-[2rem] md:text-[3rem] leading-[1.1] tracking-tight"
                 style={{
                   fontFamily: "var(--font-heading, inherit)",
                   fontWeight: "var(--heading-weight, 500)" as unknown as number,

@@ -80,7 +80,7 @@ export default function FaqAccordion({
         <div>
           {sectionTitle && (
             <h2
-              className="text-3xl md:text-[2.5rem] leading-[1.12] tracking-tight"
+              className="text-[2rem] md:text-[3rem] leading-[1.12] tracking-tight"
               style={{
                 fontFamily: "var(--font-heading, inherit)",
                 fontWeight: "var(--heading-weight, 400)" as unknown as number,

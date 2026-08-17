@@ -115,7 +115,7 @@ export default function SectionDarkBandCTA({
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-60px" }}
             transition={{ duration: 0.6, ease: "easeOut" }}
-            className="text-3xl md:text-[3rem] leading-[1.1] tracking-tight"
+            className="text-[2rem] md:text-[3rem] leading-[1.1] tracking-tight"
             style={{
               fontFamily: "var(--font-heading, inherit)",
               fontWeight: "var(--heading-weight, 500)" as unknown as number,

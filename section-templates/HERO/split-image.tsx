@@ -129,7 +129,7 @@ export default function HeroSplitImage({
           )}
 
           <h1
-            className="text-[2.75rem] leading-[1.05] tracking-[-0.025em] md:text-[3.5rem]"
+            className="text-[3rem] leading-[1.05] tracking-[-0.025em] md:text-[4rem]"
             style={{
               fontFamily: "var(--font-heading, inherit)",
               fontWeight: "var(--heading-weight, 400)" as unknown as number,

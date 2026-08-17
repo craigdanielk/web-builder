@@ -203,12 +203,13 @@ export default function HeroFullBleedOverlay({
         )}
 
         <h1
-          className="text-balance"
+          // 48 → 64 → 96px in DISCRETE steps — see HERO | centered. clamp()
+          // across the same endpoints interpolates, and every intermediate
+          // viewport lands off the declared scale (92px at 1440px).
+          className="text-balance text-[3rem] md:text-[4rem] lg:text-[6rem]"
           style={{
             fontFamily: "var(--font-heading, inherit)",
             fontWeight: "var(--heading-weight, 500)" as unknown as number,
-            // 48px → 96px: the display sizes the reference actually renders.
-            fontSize: "clamp(3rem, 6.4vw, 6rem)",
             lineHeight: 1.05,
             letterSpacing: "-0.025em",
           }}

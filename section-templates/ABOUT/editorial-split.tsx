@@ -177,7 +177,7 @@ export default function AboutEditorialSplit({
                 style={{ background: ACCENT, borderRadius: "var(--radius-button, 4px)" }}
               />
               <h2
-                className="text-3xl leading-[1.1] tracking-tight md:text-[2.75rem]"
+                className="text-[2rem] leading-[1.1] tracking-tight md:text-[3rem]"
                 style={{
                   fontFamily: "var(--font-heading, inherit)",
                   fontWeight: "var(--heading-weight, 400)" as unknown as number,
