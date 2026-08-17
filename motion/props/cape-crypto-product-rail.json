@@ -1,0 +1,67 @@
+{
+  "brandName": "Cape Crypto",
+  "dropped_claim_bearing": [
+    {
+      "reason": "contains a numeral",
+      "value": "Developer REST API v2 (accounts, funding, trading, market data, withdrawals, webhooks)"
+    }
+  ],
+  "eyebrow": "What we build",
+  "fps": 30,
+  "framesPerItem": 55,
+  "height": 720,
+  "introFrames": 60,
+  "items": [
+    {
+      "field_key": "product_list",
+      "source": "phase0",
+      "value": "Spot exchange (order book)"
+    },
+    {
+      "field_key": "product_list",
+      "source": "phase0",
+      "value": "Quick Buy / Quick Sell"
+    },
+    {
+      "field_key": "product_list",
+      "source": "phase0",
+      "value": "Bitcoin Lightning send/receive"
+    },
+    {
+      "field_key": "product_list",
+      "source": "phase0",
+      "value": "Cape Crypto Wealth"
+    },
+    {
+      "field_key": "product_list",
+      "source": "phase0",
+      "value": "Merchant Services"
+    },
+    {
+      "field_key": "product_list",
+      "source": "phase0",
+      "value": "iOS and Android apps"
+    }
+  ],
+  "tenant": "cape-crypto",
+  "tokens": {
+    "accent": "#004e89",
+    "background": "#ffffff",
+    "block-gap": "24px",
+    "body-weight": "400",
+    "border": "#dee3e8",
+    "card-pad": "40px",
+    "font-body": "\"Poppins\", sans-serif",
+    "font-heading": "\"Poppins\", sans-serif",
+    "foreground": "#242d35",
+    "heading-weight": "500",
+    "muted": "#465869",
+    "on-accent": "#ffffff",
+    "radius-button": "100px",
+    "radius-card": "32px",
+    "surface": "#f1f7ff",
+    "surface-inverse": "#242d35"
+  },
+  "tokens_missing": [],
+  "width": 1280
+}
