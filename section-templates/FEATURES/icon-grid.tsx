@@ -45,6 +45,11 @@ import { motion } from "framer-motion";
 // permissive brace sweep and substitutes this file's own JS identifiers away.
 // Tokens: {section_title} {section_subtitle} {features[].title} {features[].description}
 
+// No art demand, declared rather than omitted so a reader can tell
+// "nothing wanted" from "nobody considered it":
+// the visual vocabulary is Lucide icons, selected semantically. A generated picture per feature would depict capabilities that may not exist.
+// Art: none
+
 interface Feature {
   title: string;
   description: string;

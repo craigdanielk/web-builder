@@ -67,6 +67,11 @@ import { motion } from "framer-motion";
 // sweep and substitutes this file's own JS identifiers away.
 // Tokens: {section_title} {section_subtitle} {badges[].label} {badges[].detail}
 
+// No art demand, declared rather than omitted so a reader can tell
+// "nothing wanted" from "nobody considered it":
+// every badge names a real credential (FSP No. 53746). Generated imagery beside a credential reads as evidence of it. Harvested or empty, never commissioned.
+// Art: none
+
 interface Badge {
   label: string;
   detail: string;

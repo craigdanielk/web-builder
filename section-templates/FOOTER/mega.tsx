@@ -37,6 +37,11 @@
 
 // Tokens: {brand_name} {legal_line} {columns[].heading} {columns[].links[].text} {columns[].links[].href}
 
+// No art demand, declared rather than omitted so a reader can tell
+// "nothing wanted" from "nobody considered it":
+// navigation furniture. Nothing to depict.
+// Art: none
+
 interface FooterLink {
   text: string;
   href: string;

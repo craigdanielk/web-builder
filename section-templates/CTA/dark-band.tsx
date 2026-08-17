@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { motion } from "framer-motion";
 
 /**
@@ -49,7 +50,15 @@ import { motion } from "framer-motion";
 // `// Tokens:` line or a `Slot placeholders` block — a prose "Slots:" list is
 // neither, and without this line the contract falls back to a permissive brace
 // sweep and substitutes this file's own JS identifiers away.
-// Tokens: {headline} {subheadline} {disclaimer} {actions[].cta} {actions[].href}
+// Tokens: {headline} {subheadline} {disclaimer} {actions[].cta} {actions[].href} {backdrop_url}
+
+// The DEMAND declaration, read by `asset_resolver.art_declarations()`. The band
+// is the one deliberately dark surface on a light page — the place a texture
+// does the most and risks the least, because the copy sits on BAND_BG which
+// stays opaque beneath it. `texture` and decorative for the same reason as
+// HERO | centered: no subject, no detail that must survive dimming, and the
+// band reads exactly as well with nothing here.
+// Art: slot=backdrop_url intent=texture aspect=21:9 role=decorative
 
 interface CtaAction {
   cta: string;
@@ -61,6 +70,7 @@ interface CtaDarkBandProps {
   ctaSubheadline?: string;
   ctaDisclaimer?: string;
   ctaActions?: CtaAction[];
+  backdropUrl?: string;
 }
 
 const harvestedActions: CtaAction[] = [
@@ -86,13 +96,17 @@ export default function SectionDarkBandCTA({
   ctaSubheadline = "{subheadline}",
   ctaDisclaimer = "{disclaimer}",
   ctaActions = harvestedActions,
+  backdropUrl = "{backdrop_url}",
 }: CtaDarkBandProps) {
   // A disclaimer under nothing is not a call to action.
   if (!ctaHeadline && !ctaSubheadline && !ctaActions.length) return null;
 
+  // `<Image src="">` THROWS in next/image — an unresolved slot never renders.
+  const backdrop = backdropUrl && backdropUrl.trim() ? backdropUrl : null;
+
   return (
     <section
-      className="w-full"
+      className="relative w-full overflow-hidden"
       style={{
         background: BAND_BG,
         color: BAND_INK,
@@ -100,7 +114,21 @@ export default function SectionDarkBandCTA({
         paddingBottom: "var(--section-py, 120px)",
       }}
     >
-      <div className="mx-auto w-full max-w-4xl px-6 text-center">
+      {/* Commissioned texture, when one exists. BAND_BG stays opaque beneath
+          it and the copy stays on that measured ground; 0.18 is high enough to
+          read as material and low enough that a bright return cannot lift the
+          band toward the ink it carries. */}
+      {backdrop && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{ opacity: 0.18 }}
+        >
+          <Image src={backdrop} alt="" fill sizes="100vw" className="object-cover" />
+        </div>
+      )}
+
+      <div className="relative mx-auto w-full max-w-4xl px-6 text-center">
         {/* Decorative accent rule — content-free, and the one place the brand
             accent carries no legibility duty on a dark ground (see note 3). */}
         <span

@@ -86,6 +86,15 @@ import { motion } from "framer-motion";
 // and only the nine names below are ever substituted.
 // Tokens: {eyebrow} {headline} {subheadline} {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url} {bg_image_url} {bg_image_alt}
 
+// The DEMAND declaration, read by `asset_resolver.art_declarations()`. It says
+// what this section's design needs a picture OF, so a slot the source never
+// filled becomes a commission instead of silence. `scene`, not `product`: a
+// full-bleed hero behind an opaque copy plane is atmosphere. Nothing here may
+// depict the trading app, a balance or a person — see note 1 and the FSP
+// standing of this tenant. Decorative because note 4 is absolute: no image
+// means no image, and the section still reads without one.
+// Art: slot=bg_image_url intent=scene aspect=16:9 role=decorative
+
 interface HeroFullBleedOverlayProps {
   eyebrow?: string;
   headline?: string;

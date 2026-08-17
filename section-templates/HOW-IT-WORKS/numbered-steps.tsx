@@ -29,6 +29,11 @@ import { motion } from "framer-motion";
 
 // Tokens: {section_title} {section_subtitle} {steps[].title} {steps[].description}
 
+// No art demand, declared rather than omitted so a reader can tell
+// "nothing wanted" from "nobody considered it":
+// the steps are numbered type; illustrating a step means depicting the product doing it, which is a claim, not decoration.
+// Art: none
+
 interface Step {
   title: string;
   description: string;

@@ -59,6 +59,11 @@ import { motion, AnimatePresence } from "framer-motion";
 // permissive brace sweep and substitutes this file's own JS identifiers away.
 // Tokens: {headline} {subheadline} {disclaimer}
 
+// No art demand, declared rather than omitted so a reader can tell
+// "nothing wanted" from "nobody considered it":
+// the map IS the artwork — it is drawn from data and tokens, and a commissioned picture behind it would compete with the one thing this section exists to show.
+// Art: none
+
 interface CurrencyNode {
   label: string;
   code: string;

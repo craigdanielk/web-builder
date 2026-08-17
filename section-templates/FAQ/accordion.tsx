@@ -35,6 +35,11 @@ import { motion, AnimatePresence } from "framer-motion";
 // permissive brace sweep and substitutes this file's own JS identifiers away.
 // Tokens: {section_title} {section_subtitle} {faqs[].question} {faqs[].answer}
 
+// No art demand, declared rather than omitted so a reader can tell
+// "nothing wanted" from "nobody considered it":
+// a question list is type and rule lines; art here is noise behind reading.
+// Art: none
+
 interface Faq {
   question: string;
   answer: string;

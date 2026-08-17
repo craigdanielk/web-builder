@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { motion } from "framer-motion";
 
 /**
@@ -67,7 +68,22 @@ import { motion } from "framer-motion";
 // line beginning `// Tokens:` (or a bracketed placeholder block) — the prose
 // list above is neither, so without this line the contract falls back to a
 // permissive brace sweep and substitutes this file's own JS identifiers away.
-// Tokens: {eyebrow} {headline} {subheadline} {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url}
+// Tokens: {eyebrow} {headline} {subheadline} {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url} {backdrop_url}
+
+// The DEMAND declaration, read by `asset_resolver.art_declarations()`.
+//
+// `centered` means the words are the subject, and note 1 composes a ground out
+// of the palette so the section never depends on an asset. That stays true —
+// but "never depends on" became "never has": this variant opened all five
+// routes of the last build and the whole site carried five images. The backdrop
+// is the design ASKING, which is the one thing that was missing.
+//
+// `texture`, not `scene`: it sits behind display type at low alpha under the
+// radial wash, so it must carry no subject of its own to compete with the
+// headline and no detail that survives being dimmed. Decorative in the strict
+// sense — the section renders identically well with nothing here, which is why
+// an empty slot is not a defect and a missing generation is not a blocked build.
+// Art: slot=backdrop_url intent=texture aspect=16:9 role=decorative
 
 interface HeroCenteredProps {
   eyebrow?: string;
@@ -77,6 +93,7 @@ interface HeroCenteredProps {
   primaryCtaUrl?: string;
   secondaryCtaText?: string;
   secondaryCtaUrl?: string;
+  backdropUrl?: string;
 }
 
 const MUTED = "var(--muted, color-mix(in srgb, var(--foreground) 62%, var(--background)))";
@@ -96,8 +113,13 @@ export default function HeroCentered({
   primaryCtaUrl = "{primary_cta_url}",
   secondaryCtaText = "{secondary_cta_text}",
   secondaryCtaUrl = "{secondary_cta_url}",
+  backdropUrl = "{backdrop_url}",
 }: HeroCenteredProps) {
   if (!headline && !subheadline) return null;
+
+  // `<Image src="">` THROWS in next/image, so an unresolved slot must never
+  // reach the DOM — the guard is the value being falsy, never a fallback path.
+  const backdrop = backdropUrl && backdropUrl.trim() ? backdropUrl : null;
 
   return (
     <section
@@ -111,6 +133,23 @@ export default function HeroCentered({
         paddingBottom: "var(--section-py, 120px)",
       }}
     >
+      {/* Commissioned texture, when one exists. It sits BENEATH the radial
+          wash and at low alpha deliberately: the contrast pair this section is
+          measured on is --foreground on --background, and an image at full
+          strength behind display type would put the headline over an unmeasured
+          ground. At 0.14 over the opaque gradient the composited ground stays
+          within a few percent of --background, so the measured ratio holds for
+          any picture — including one that comes back brighter than intended. */}
+      {backdrop && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{ opacity: 0.14 }}
+        >
+          <Image src={backdrop} alt="" fill sizes="100vw" className="object-cover" />
+        </div>
+      )}
+
       {/* Composed ground — derived from the accent token, no asset. */}
       <div
         aria-hidden="true"

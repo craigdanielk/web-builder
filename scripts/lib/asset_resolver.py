@@ -304,6 +304,64 @@ def _images_for_section(extraction_data: dict, section_index) -> list:
     ]
 
 
+# ── section_uid → DOM ──────────────────────────────────────────────────────
+
+_EXPORT_DEFAULT_RE = re.compile(r'export\s+default\s')
+_RETURN_RE = re.compile(r'\breturn\b')
+_TAG_NAME_RE = re.compile(r'<([A-Za-z][\w.:-]*)')
+_UID_ATTR_RE = re.compile(r'\s+data-section-uid="[^"]*"')
+
+
+def stamp_section_uid(artifact):
+    """Emit the artifact's `section_uid` as `data-section-uid` on the section's
+    outer element.
+
+    The audit findings census (`docs/census/2026-08-17-audit-findings.md` §3)
+    measured the missing join: an axe violation names a DOM node and the build
+    record names a section artifact, and nothing connects the two, so every
+    finding has to be re-located by hand before it can be fixed. One attribute
+    closes it — a finding resolves back to the artifact that produced it, and
+    from there to the template and the slot.
+
+    The uid is per-BUILD, not per-template, so it cannot live in the template
+    source; it is stamped onto the filled tsx. Idempotent: a second stamp
+    replaces the attribute rather than appending a second one.
+
+    `return null;` guards are skipped (a template returns null rather than
+    render a heading over nothing), as is a file with no default export or no
+    JSX — both leave the tsx untouched rather than corrupt it.
+    """
+    uid = getattr(artifact, "section_uid", None)
+    tsx = getattr(artifact, "tsx", "") or ""
+    if not uid or not tsx:
+        return artifact
+
+    scan = _mask_comments(tsx)
+    exp = _EXPORT_DEFAULT_RE.search(scan)
+    if not exp:
+        return artifact
+
+    for m in _RETURN_RE.finditer(scan, exp.end()):
+        j = m.end()
+        while j < len(scan) and (scan[j].isspace() or scan[j] == "("):
+            j += 1
+        if j >= len(scan) or scan[j] != "<":
+            continue  # `return null;`, `return items.map(...)`, …
+        tag = _TAG_NAME_RE.match(scan, j)
+        if not tag:
+            continue
+        insert_at = tag.end()
+        head, tail = tsx[:insert_at], tsx[insert_at:]
+        # Drop any prior stamp inside this opening tag before writing a new one.
+        close = tail.find(">")
+        if close != -1:
+            tail = _UID_ATTR_RE.sub("", tail[:close], count=1) + tail[close:]
+        artifact.tsx = head + ' data-section-uid="%s"' % uid + tail
+        return artifact
+
+    return artifact
+
+
 def resolve_assets(artifact, extraction_data: dict, public_dir: Path,
                     section_index=None, download_fn=_download):
     """Rewrite image srcs to local paths, recording each outcome.
@@ -316,6 +374,13 @@ def resolve_assets(artifact, extraction_data: dict, public_dir: Path,
     never with generated/fabricated content. Without a matching extracted
     image the slot is recorded unresolved, not silently placeheld.
     """
+    # Stamped here rather than at emit time because this is the one place
+    # already wired to rewrite a section's tsx AND its sibling .tsx on disk in
+    # lockstep (stage_resolve_assets). The natural home is `_emit_section_
+    # artifact` in orchestrate.py, which another agent owns — reported, not
+    # reached into. Stamping is idempotent, so moving it later is safe.
+    stamp_section_uid(artifact)
+
     lookup = _build_lookup(extraction_data)
     known_hosts = _known_hosts(extraction_data)
     section_pool = _images_for_section(extraction_data, section_index)
@@ -412,9 +477,270 @@ def resolve_assets(artifact, extraction_data: dict, public_dir: Path,
     return artifact
 
 
+# ── Demand-side art declarations ───────────────────────────────────────────
+#
+# `gaps()` used to fire on ONE condition: `origin == "unresolved"` — a slot the
+# source HAD and we failed to fetch. A slot the DESIGN calls for and the source
+# never had produced silence, which is why `image-jobs.json` was `[]` on every
+# build while the site carried five images across twenty-one sections. The
+# wiring was never missing; nothing ever asked.
+#
+# A template asks with an `// Art:` line, read exactly the way `// Tokens:` is
+# read — one machine-readable declaration line, sibling to the prose:
+#
+#     // Art: slot=backdrop_url intent=texture aspect=16:9 role=decorative
+#
+# One line per art slot. `// Art: none` (optionally followed by a reason)
+# declares that this template deliberately has no art demand — HERO | centered
+# means the words are the subject — and is how a reader tells "no art wanted"
+# from "nobody thought about it". THE INTENT IS DECLARED, NEVER INFERRED FROM
+# THE ARCHETYPE: two HERO variants in this library disagree about what their
+# imagery should depict, and an archetype name cannot settle that.
+
+ART_DECL_RE = re.compile(r'^[ \t]*//[ \t]*Art:[ \t]*(?P<body>.+?)[ \t]*$', re.MULTILINE)
+_ART_FIELD_RE = re.compile(r'([a-z_]+)=([^\s]+)')
+
+#: What a piece of commissioned art may depict. Not a taxonomy of pictures — a
+#: taxonomy of RISK. Every value here is something a generator can invent
+#: without asserting a fact about the tenant.
+VALID_ART_INTENTS = {"abstract", "product", "scene", "texture", "diagram"}
+
+VALID_ART_ROLES = {"decorative", "load-bearing"}
+
+#: The boundary, enforced HERE rather than left to a reviewer's judgement.
+#:
+#: Cape Crypto is an FSCA-licensed FSP (No. 53746). A generated image that a
+#: viewer reads as a screenshot of the real trading app, as a portfolio value,
+#: as a certification, or as a photograph of staff is not decoration — it is a
+#: claim, and a fabricated one. The content rule ("sourced or empty, never
+#: invented") applies to claims whatever medium carries them; media is exempt
+#: only for as long as it asserts nothing.
+#:
+#: Matched against the declared slot name AND the declared intent, so neither an
+#: innocuous intent on a `team_headshot` slot nor an innocuous slot name on a
+#: `screenshot` intent slips through. A refusal is RECORDED (`art_refusals`),
+#: never silent — the whole failure mode this system keeps having is silence.
+_CLAIM_BEARING_PATTERNS = (
+    # People presented as staff, customers or testimonial subjects.
+    (re.compile(r'headshot|portrait|\bteam\b|staff|founder|employee|customer|'
+                r'testimonial|avatar|person|people'),
+     "depicts people presented as staff or customers"),
+    # Screenshots / UI of a real product.
+    (re.compile(r'screenshot|screen_shot|\bui\b|app_ui|interface|dashboard|'
+                r'product_shot|device_screen'),
+     "depicts a real product's interface — a fabricated screenshot"),
+    # Credentials and accreditations.
+    (re.compile(r'badge|certificat|licen[cs]e|accredit|award|seal|compliance|'
+                r'regulat|audit'),
+     "depicts a credential or accreditation"),
+    # Performance data. The specific regulatory trap for an FSP.
+    (re.compile(r'chart|graph|\bstat\b|metric|return|yield|\bapy\b|performance|'
+                r'portfolio|balance|price|profit'),
+     "depicts performance or financial data"),
+    # Third-party marks.
+    (re.compile(r'\blogo\b|wordmark|partner|brandmark'),
+     "depicts a third party's mark"),
+)
+
+#: `intent=product` is declarable — an e-commerce tenant photographing its own
+#: catalogue is a legitimate future case — but it is never GENERATED. A
+#: generated product image is a claim about a thing that exists.
+_REFUSED_INTENTS = {
+    "product": "a generated product depiction is a claim about a real product",
+}
+
+
+def art_declarations(tsx: str) -> list:
+    """Every `// Art:` declaration in a template/section body, in file order.
+
+    Returns `[{slot, intent, aspect, role}]`. Malformed declarations (missing
+    `slot` or `intent`, unknown intent/role) are DROPPED rather than guessed —
+    a half-read declaration would commission the wrong picture — and are
+    visible via `art_declaration_errors()`.
+    """
+    decls, _ = _parse_art(tsx)
+    return decls
+
+
+def art_declaration_errors(tsx: str) -> list:
+    """Declarations that could not be read, and why. Never silently empty."""
+    _, errors = _parse_art(tsx)
+    return errors
+
+
+def _parse_art(tsx: str):
+    decls, errors = [], []
+    for m in ART_DECL_RE.finditer(tsx or ""):
+        body = m.group("body").strip()
+        if body.split()[0].lower().rstrip(":,.") == "none":
+            continue  # an explicit, documented absence of demand
+        fields = dict(_ART_FIELD_RE.findall(body))
+        slot = fields.get("slot")
+        intent = (fields.get("intent") or "").lower()
+        role = (fields.get("role") or "").lower()
+        if not slot:
+            errors.append({"declaration": body, "error": "no slot= field"})
+            continue
+        if intent not in VALID_ART_INTENTS:
+            errors.append({"declaration": body,
+                           "error": "intent %r is not one of %s"
+                                    % (intent, sorted(VALID_ART_INTENTS))})
+            continue
+        if role not in VALID_ART_ROLES:
+            errors.append({"declaration": body,
+                           "error": "role %r is not one of %s"
+                                    % (role, sorted(VALID_ART_ROLES))})
+            continue
+        decls.append({
+            "slot": slot,
+            "intent": intent,
+            "aspect": fields.get("aspect") or "16:9",
+            "role": role,
+        })
+    return decls, errors
+
+
+def claim_bearing_reason(decl: dict, context: str = "") -> str | None:
+    """Why this declaration must never become a generation job — or None.
+
+    Deterministic and total: the same declaration always yields the same
+    verdict, and the verdict lives in code where it can be tested, not in a
+    reviewer's attention.
+
+    `context` is the archetype/variant. Note the asymmetry, which is the whole
+    design: what a picture SHOULD depict is declared and never inferred from the
+    archetype — two HERO variants disagree — but what must be REFUSED takes
+    every signal available, because more evidence can only refuse more. TEAM's
+    `members[].image_url` is a photograph of a named person whatever intent its
+    author typed.
+    """
+    intent = (decl.get("intent") or "").lower()
+    if intent in _REFUSED_INTENTS:
+        return _REFUSED_INTENTS[intent]
+    haystack = "%s %s %s" % (decl.get("slot") or "", intent, context or "")
+    haystack = haystack.lower().replace("-", " ")
+    for pattern, reason in _CLAIM_BEARING_PATTERNS:
+        if pattern.search(haystack):
+            return reason
+    return None
+
+
+def _declared_art(artifact) -> list:
+    """Art declarations for this artifact.
+
+    Production path: read them out of the artifact's own tsx, which is the
+    filled template and keeps its comments (`resolve_assets` only ever masks
+    comments for SCANNING, never strips them). An explicit `art_slots`
+    attribute, when a caller sets one, wins — that is the seam a future
+    non-template origin (an LLM section, a Supabase row) would use.
+    """
+    explicit = getattr(artifact, "art_slots", None)
+    if explicit:
+        out = []
+        for d in explicit:
+            out.append({
+                "slot": d.get("slot"),
+                "intent": (d.get("intent") or "").lower(),
+                "aspect": d.get("aspect") or "16:9",
+                "role": (d.get("role") or "decorative").lower(),
+            })
+        return out
+    return art_declarations(getattr(artifact, "tsx", "") or "")
+
+
+def _art_context(artifact) -> str:
+    return "%s %s" % (getattr(artifact, "archetype", "") or "",
+                      getattr(artifact, "variant", "") or "")
+
+
+def _slot_is_sourced(artifact, slot: str) -> bool:
+    """Did anything real fill this art slot?
+
+    The authority is the artifact's own provenance — the per-slot record the
+    fill already writes (`{slot, value, source}`) — not a re-parse of the tsx.
+    A repeater slot is declared `logos[].src` and recorded `logos[1].src`, so
+    the repeater form matches any index.
+
+    A slot with no provenance row at all is NOT treated as sourced. Absence of
+    evidence has to read as absence, or the demand collapses back to silence.
+    """
+    prefix = slot.split("[]", 1)[0] if "[]" in slot else None
+    suffix = slot.split("].", 1)[1] if "[]" in slot else None
+    for row in (getattr(artifact, "provenance", None) or []):
+        if not isinstance(row, dict):
+            continue
+        row_slot = row.get("slot") or ""
+        if prefix is not None:
+            ok = row_slot.startswith(prefix + "[") and row_slot.endswith("." + suffix)
+        else:
+            ok = row_slot == slot
+        if ok and str(row.get("value") or "").strip():
+            return True
+    return False
+
+
+def art_refusals(artifact) -> list:
+    """Declared art slots this build REFUSES to commission, with the reason.
+
+    Written out alongside the jobs so a refusal is a visible line in the build
+    record. A boundary that produces no artifact is indistinguishable from a
+    boundary nobody implemented.
+    """
+    out = []
+    context = _art_context(artifact)
+    for decl in _declared_art(artifact):
+        reason = claim_bearing_reason(decl, context)
+        if reason is None:
+            continue
+        out.append({
+            "section_uid": getattr(artifact, "section_uid", None),
+            "archetype": getattr(artifact, "archetype", None),
+            "variant": getattr(artifact, "variant", None),
+            "slot": decl["slot"],
+            "intent": decl["intent"],
+            "refused": True,
+            "reason": "claim-bearing: " + reason,
+        })
+    return out
+
+
+def art_demand(artifact) -> list:
+    """Declared art slots with no source — the jobs the DESIGN asks for.
+
+    Distinct from an unresolved slot in both cause and reason string: an
+    unresolved slot is a fetch that failed and could be retried; a demand is
+    imagery the source never had and only a generator can supply.
+    """
+    jobs = []
+    context = _art_context(artifact)
+    for decl in _declared_art(artifact):
+        if claim_bearing_reason(decl, context) is not None:
+            continue  # recorded by art_refusals, never commissioned
+        if _slot_is_sourced(artifact, decl["slot"]):
+            continue
+        jobs.append({
+            "section_uid": getattr(artifact, "section_uid", None),
+            "archetype": getattr(artifact, "archetype", None),
+            "variant": getattr(artifact, "variant", None),
+            "slot": decl["slot"],
+            "intent": decl["intent"],
+            "aspect": decl["aspect"],
+            "role": decl["role"],
+            "reason": "design demand, no source",
+        })
+    return jobs
+
+
 def gaps(artifact) -> list:
-    """Unresolved image slots, shaped as image-pipeline job inputs."""
-    return [
+    """Image jobs this section needs — from both directions.
+
+    1. `origin == "unresolved"` — the source had it and the fetch failed.
+    2. a declared `// Art:` slot with no source — the design wants it and the
+       source never had it.
+
+    Claim-bearing declarations appear in neither; see `art_refusals`.
+    """
+    jobs = [
         {
             "section_uid": artifact.section_uid,
             "archetype": artifact.archetype,
@@ -422,6 +748,8 @@ def gaps(artifact) -> list:
             "slot": a["slot"],
             "reason": "no extracted source",
         }
-        for a in artifact.assets
+        for a in (artifact.assets or [])
         if a["origin"] == "unresolved"
     ]
+    jobs.extend(art_demand(artifact))
+    return jobs

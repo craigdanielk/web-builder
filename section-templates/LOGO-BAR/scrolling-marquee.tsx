@@ -41,6 +41,11 @@ import type { CSSProperties } from "react";
 
 // Tokens: {section_title} {logos[].src} {logos[].alt}
 
+// Declared so it can be REFUSED. A partner logo is a third party's mark and an
+// assertion that the relationship exists; generating one invents both. Harvested
+// or absent.
+// Art: slot=logos[].src intent=abstract aspect=1:1 role=load-bearing
+
 interface Logo {
   src: string;
   alt: string;

@@ -49,6 +49,15 @@ import { motion } from "framer-motion";
 // never runs and only the nine names below are ever substituted.
 // Tokens: {eyebrow} {headline} {subheadline} {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url} {image_url} {image_alt}
 
+// The DEMAND declaration, read by `asset_resolver.art_declarations()`. A split
+// hero is a two-column composition: with an empty media column it collapses to
+// a worse HERO | centered, so this slot is load-bearing in a way the full-bleed
+// backdrop is not — same archetype, different demand, which is exactly why the
+// intent is declared here rather than inferred from the word HERO.
+// `abstract`: form and colour carrying the brand, never a depiction of the
+// product, a chart or a person.
+// Art: slot=image_url intent=abstract aspect=4:3 role=load-bearing
+
 interface HeroSplitImageProps {
   eyebrow?: string;
   headline?: string;

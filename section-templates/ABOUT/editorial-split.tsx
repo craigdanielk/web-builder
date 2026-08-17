@@ -60,6 +60,13 @@ import { motion } from "framer-motion";
 // them into the declaration. Hence the paraphrase.
 // Tokens: {section_title} {section_body} {paragraphs[].body} {image_url} {image_alt} {cta_text} {cta_url}
 
+// The DEMAND declaration, read by `asset_resolver.art_declarations()`. An
+// editorial split is prose beside a picture; note 4 keeps it honest when there
+// is none, but "honest and half-empty" is what the last five builds shipped.
+// `scene`: place and atmosphere — this tenant is Cape Town-founded and says so
+// in the copy. Never staff, never a customer, never the app.
+// Art: slot=image_url intent=scene aspect=4:5 role=load-bearing
+
 interface AboutEditorialSplitProps {
   sectionTitle?: string;
   sectionBody?: string;

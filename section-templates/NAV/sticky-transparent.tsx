@@ -36,6 +36,11 @@ import { useEffect, useState } from "react";
 
 // Tokens: {brand_name} {cta_text} {cta_href} {links[].text} {links[].href}
 
+// No art demand, declared rather than omitted so a reader can tell
+// "nothing wanted" from "nobody considered it":
+// chrome. The only image a nav wants is the tenant's own logo, which is harvested or absent — never generated.
+// Art: none
+
 interface NavLink {
   text: string;
   href: string;

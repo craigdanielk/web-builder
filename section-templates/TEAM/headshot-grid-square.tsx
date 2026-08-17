@@ -56,6 +56,14 @@ import Image from "next/image";
 // `Expected '</', got 'ident'`.
 // Tokens: {section_title} {section_subtitle} {members[].name} {members[].role} {members[].bio} {members[].image_url} {members[].image_alt}
 
+// The DEMAND declaration — and it is declared precisely so it can be REFUSED.
+// `asset_resolver.claim_bearing_reason()` reads the TEAM context and emits no
+// job, recording the refusal in the build record instead. A generated face
+// beside a real name and a real job title is not decoration; it is a
+// fabricated person on the site of a licensed FSP. This slot is filled from the
+// harvest or it stays empty — never commissioned.
+// Art: slot=members[].image_url intent=scene aspect=1:1 role=load-bearing
+
 interface Member {
   name: string;
   role: string;

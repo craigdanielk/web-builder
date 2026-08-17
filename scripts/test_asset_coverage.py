@@ -65,19 +65,43 @@ test("every remote src that ships is declared unresolved",
 # the two files must agree. This is a cross-file consistency assertion, and it
 # fails if either side drifts — a job list that silently empties while the
 # counter still says 1, or a counter reset while gaps remain.
+#
+# `image-jobs.json` now carries jobs from TWO directions, so the old identity
+# `len(jobs) == unresolved` is no longer the invariant — it was, back when
+# `gaps()` fired only on `origin == "unresolved"`, and it read as a pass on
+# every build because both sides were 0. The two populations are distinguished
+# by `reason`, and each is asserted against its own counter:
+#
+#   "no extracted source"     ← the source HAD it and the fetch failed
+#                               (one per unresolved asset — the old identity)
+#   "design demand, no source" ← a `// Art:` slot the source never had
+#                               (has no counterpart in asset-coverage.json;
+#                                it is demand, not a coverage miss)
 _jobs_path = BUILD / "image-jobs.json"
 _jobs = json.loads(_jobs_path.read_text()) if _jobs_path.exists() else []
+_fetch_jobs = [j for j in _jobs if j.get("reason") == "no extracted source"]
+_demand_jobs = [j for j in _jobs if j.get("reason") == "design demand, no source"]
+
 test("every unresolved asset has a named record in image-jobs.json",
-     len(_jobs) == _unresolved,
-     f"{_unresolved} unresolved counted, {len(_jobs)} job(s) recorded")
-test("each unresolved record names its section and a reason",
+     len(_fetch_jobs) == _unresolved,
+     f"{_unresolved} unresolved counted, {len(_fetch_jobs)} failed-fetch job(s) "
+     f"recorded (of {len(_jobs)} total)")
+test("each record names its section and a reason",
      all(j.get("section_uid") and j.get("reason") for j in _jobs),
      str(_jobs[:2]))
 test("unresolved slots are declared, not hidden",
      (BUILD / "image-jobs.json").exists())
-test("every unresolved slot has a generation job",
-     len(json.loads((BUILD / "image-jobs.json").read_text())) == cov["unresolved"],
-     f"jobs vs unresolved={cov['unresolved']}")
+test("every job carries one of the two known reasons — no unlabelled third kind",
+     len(_fetch_jobs) + len(_demand_jobs) == len(_jobs),
+     str(sorted({j.get("reason") for j in _jobs})))
+# Demand is declaration-driven, so it is checkable against the declarations
+# rather than against a coverage counter: every demand job must name an intent
+# and an aspect, or it cannot be lowered to a job spec at all.
+test("every design-demand job is complete enough to lower to a job spec",
+     all(j.get("intent") and j.get("aspect") and j.get("slot")
+         for j in _demand_jobs),
+     str([j for j in _demand_jobs
+          if not (j.get("intent") and j.get("aspect") and j.get("slot"))][:2]))
 
 # ── Idempotency: a second stage_resolve_assets run over this SAME output
 # dir must not change asset-coverage.json at all. Run it via the real
