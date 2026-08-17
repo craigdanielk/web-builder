@@ -1,0 +1,78 @@
+{
+  "$comment": [
+    "Fields that are permitted to differ between two builds of identical inputs.",
+    "One entry per field, each with a reason. An unexplained entry is how",
+    "determinism quietly stops being checked, so a reason is mandatory and an",
+    "entry that exists because the difference could NOT be fixed must say so in",
+    "those words.",
+    "",
+    "This is NOT the place for build-root paths or loopback ports — those are",
+    "normalised by scripts/lib/determinism_diff.py before comparison, which",
+    "keeps the rest of the value under test. See that module's docstring.",
+    "",
+    "'file' is a glob over the path relative to the output root; 'path' is a",
+    "glob over the JSON path with list indices collapsed to [*]."
+  ],
+  "version": 1,
+
+  "ignore": [
+    {
+      "path": "*/node_modules*",
+      "reason": "npm install output. Third-party code, not build output; contents depend on registry state and install order, and it is gitignored."
+    },
+    {
+      "path": "*/.next*",
+      "reason": "Next.js compiler cache and build manifests. A derived artifact of the source tree, which IS compared; webpack embeds its own build id and mtimes."
+    },
+    {
+      "path": "*/.git*",
+      "reason": "The deploy stage runs 'git init' + an initial commit inside site/. A commit SHA is a hash over the commit timestamp, so it differs by construction. VCS metadata is not build output."
+    },
+    {
+      "path": "*.log",
+      "reason": "Build logs carry wall-clock times and durations by design."
+    },
+    {
+      "path": "*/render-audit-results/*.png",
+      "reason": "COULD NOT FIX. Browser screenshots are not byte-reproducible: font rasterisation, GPU/AA path and the exact animation frame captured all vary between runs. All five route screenshots differed in a measured pair while every generated source file was byte-identical. Perceptual comparison would be the real fix; that is Task C2/C6 territory, not this gate."
+    }
+  ],
+
+  "fields": [
+    {
+      "file": "*/checkpoint.json",
+      "path": "/timestamp",
+      "reason": "Wall-clock time the stage checkpoint was written. A timestamp is legitimately per-run."
+    },
+    {
+      "file": "*/site-spec.json",
+      "path": "/extracted_at",
+      "reason": "Wall-clock time build-site-spec.js ran. A timestamp is legitimately per-run."
+    },
+    {
+      "file": "*/bill-of-sale.json",
+      "path": "/generated_at",
+      "reason": "Wall-clock time the Bill of Sale was created. A timestamp is legitimately per-run."
+    },
+    {
+      "file": "*/bill-of-sale.json",
+      "path": "/line_items[*]/build_trace/completed_at",
+      "reason": "Wall-clock completion time per line item. A timestamp is legitimately per-run."
+    },
+    {
+      "file": "*/bill-of-sale.json",
+      "path": "/bill_of_sale_id",
+      "reason": "uuid4 minted per run in bill_of_sale.py:106. NOT a timestamp, and allowlisted deliberately rather than fixed: its purpose is to identify one build RUN, the same class of field as BUILD_ID, and it sits beside generated_at. Making it content-derived would change its meaning and risk collisions in any store keyed by it. If BoS content-addressing is ever wanted for caching, deriving it from the line-item digest is the change to make, and this entry should then be deleted."
+    },
+    {
+      "file": "*/conformance.json",
+      "path": "/generated_at",
+      "reason": "Wall-clock time the design-conformance gate ran. A timestamp is legitimately per-run."
+    },
+    {
+      "file": "*/render-audit-results/report.json",
+      "path": "/generated",
+      "reason": "Wall-clock time the render audit ran. A timestamp is legitimately per-run."
+    }
+  ]
+}
