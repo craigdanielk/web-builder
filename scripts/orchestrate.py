@@ -1777,7 +1777,7 @@ def omission_cause_for(section: dict, coverage: dict) -> tuple[str, str] | None:
       * `no_sourced_content` — a real harvested section that filled no slot.
     """
     filled = coverage.get("filled", 0)
-    if filled == 0 and (coverage.get("empty", 0) or coverage.get("filled_slots") is not None):
+    if filled == 0 and coverage.get("empty", 0) > 0:
         if section.get("_registry_gap_fill"):
             return ("registry gap-fill: the registry demanded this archetype and "
                     "the source page has no such block", "registry_gap_fill_no_source")
@@ -3329,6 +3329,10 @@ def build_template_fill(
         "filled": filled,
         "empty": len(values) - filled,
         "empty_slots": empty_slots,
+        # Which slots carried something. Needed to tell "a section" from "a
+        # heading with nothing under it": a template that declares rows, got
+        # none, and filled only its title imports and renders `null`.
+        "filled_slots": [s for s, v in values.items() if v],
         "arity": arity,
         # prefix -> the rows to emit. Empty list = the block renders zero times.
         "repeat_rows": repeat_rows,
@@ -3952,6 +3956,26 @@ def stage_sections(
             tpl = check_template_exists(
                 section["archetype"], section["variant"], _tpl_cache
             )
+            # Resolution is exact on archetype+variant, so a request for
+            # STATS/metric-row misses STATS/counter and PORTFOLIO/filtered-grid
+            # misses PORTFOLIO/masonry — both present, both reviewed. A sibling
+            # of the SAME archetype keeps the section's semantics and its
+            # sourced content; only the layout differs. Recorded on the section
+            # so the artifact says which template actually rendered it.
+            if tpl is None:
+                _sibling = nearest_variant_in_library(
+                    section["archetype"], section.get("variant", "")
+                )
+                if _sibling:
+                    _alt = check_template_exists(section["archetype"], _sibling, _tpl_cache)
+                    if _alt is not None:
+                        print(f"      ↳ variant fallback: {section['archetype']}/"
+                              f"{section.get('variant', '')} not in library — "
+                              f"using sibling variant '{_sibling}'")
+                        section["variant_requested"] = section.get("variant", "")
+                        section["variant"] = _sibling
+                        section["variant_fallback"] = True
+                        tpl = _alt
             if tpl is not None:
                 if isinstance(tpl, Path):
                     print(f"      ↳ TEMPLATE FOUND: {tpl.name} (local) — skipping LLM generation")
@@ -4057,10 +4081,16 @@ def stage_sections(
                     print(f"        {_pfx}[]: {len(_rows)} rows (sized by harvest)")
                 if _fill_cov["empty_slots"]:
                     print(f"        unfilled: {', '.join(_fill_cov['empty_slots'][:8])}")
-                if _fill_cov["omit_section"]:
-                    # Nothing harvested for any slot. Writing this file ships a
-                    # section of blanks; skipping it ships the page without it.
-                    print("        ⚠ omitted: harvest filled no slot in this section")
+                # Nothing to show. Writing the file ships a section of blanks
+                # (or, for an empty repeater, a component that renders `null`);
+                # skipping it ships the page without it. The CAUSE separates a
+                # registry gap-fill — an archetype the industry sequence
+                # demanded and the source page does not contain, unfillable
+                # from the moment it was appended — from a real harvest miss.
+                _omission = omission_cause_for(section, _fill_cov)
+                if _omission:
+                    _omit_reason, _omit_cause = _omission
+                    print(f"        ⚠ omitted: {_omit_reason}")
                     _omitted_sections.append({
                         "file": filename,
                         "section_uid": section.get("section_uid"),
@@ -4072,8 +4102,8 @@ def stage_sections(
                         # produced each row. A row without a reason is a tally,
                         # not a record.
                         "origin": _origin_for(tpl),
-                        "reason": "template resolved but the harvest filled no slot",
-                        "cause": "no_sourced_content",
+                        "reason": _omit_reason,
+                        "cause": _omit_cause,
                     })
                     continue
 
@@ -4656,6 +4686,15 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
             "by_reason": {
                 r: sum(1 for o in _register if o.get("reason") == r)
                 for r in sorted({o.get("reason", "") for o in _register})
+            },
+            # `by_reason` reads as one undifferentiated defect bucket. Splitting
+            # by cause is what makes the register usable as a backlog: on
+            # cape-crypto 13 of 17 "harvest filled no slot" rows were registry
+            # gap-fills, i.e. the content rule working, and the two genuine
+            # library gaps were invisible behind them.
+            "by_cause": {
+                c: sum(1 for o in _register if o.get("cause") == c)
+                for c in sorted({o.get("cause", "") for o in _register})
             },
             "llm_variant_gaps": sorted({
                 f"{o['archetype']}/{o.get('variant_requested', '')}"
@@ -10340,6 +10379,14 @@ def main():
                     f"{_reconciliation_meta['gap_filled_count']} gaps)"
                 )
             print(f"  📊 Build logged to Supabase (multipage, {len(site_manifest.get('pages', []))} pages — {_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str})")
+        # Classification loss — see the identical call on the single-page path.
+        # The multi-page path exits here, so a single call at the end of main()
+        # would never run for the only mode this pipeline actually builds in.
+        try:
+            run_classification_loss_gate(args.project)
+        except Exception as _cl_err:
+            print(f"  ⚠ classification-loss report skipped: {_cl_err}")
+
         print(f"\n{'═' * 60}")
         if _exit_code == EXIT_OK:
             print(f"  ✅ Layer 6 multi-page complete")
@@ -10584,6 +10631,16 @@ def main():
         if _harvested_copy_ratio is not None:
             _ratio_str = f", copy_ratio: {_harvested_copy_ratio}"
         print(f"  📊 Build logged to Supabase ({_local_count} local / {_db_count} db / {_llm_count} LLM, BoS items: {_bos_line_items or 0}{_recon_str}{_ratio_str})")
+
+    # ── Classification loss ────────────────────────────────────────────────
+    # Runs last, over what is on disk, because that is the only place the
+    # question can be answered: which harvested source blocks left no trace in
+    # any emitted section. Every other register is fed by the classifier, so
+    # none of them can see a block sent to the wrong archetype.
+    try:
+        run_classification_loss_gate(args.project)
+    except Exception as _cl_err:
+        print(f"  ⚠ classification-loss report skipped: {_cl_err}")
 
     mode_label = "URL Clone" if args.from_url else ("Database" if args.industry else "Pipeline")
     print(f"\n{'═' * 60}")

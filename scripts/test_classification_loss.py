@@ -316,6 +316,12 @@ def test_an_archetype_the_library_does_not_carry_has_no_nearest_variant():
     assert nearest_variant_in_library("CODE-BLOCK", "api-reference") is None
 
 
+def test_the_two_genuine_library_gaps_both_have_a_sibling():
+    """X6: these two variants are the whole genuine library gap in the build."""
+    assert nearest_variant_in_library("STATS", "metric-row") == "counter"
+    assert nearest_variant_in_library("PORTFOLIO", "filtered-grid") == "masonry"
+
+
 # ---------------------------------------------------------------------------
 # 6. The live build — real data, no rebuild required
 # ---------------------------------------------------------------------------
