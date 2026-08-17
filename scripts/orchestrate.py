@@ -242,6 +242,24 @@ EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_REVIEW_NEEDED = 2
 EXIT_NOT_MEASURED = 3
+# argparse's own default for a usage error is 2, which is EXIT_REVIEW_NEEDED —
+# a mistyped flag was indistinguishable from "the build completed, a human
+# should look at it". 64 is EX_USAGE from sysexits.h, outside the build's
+# outcome range, so a caller can tell "you called me wrong" from any verdict
+# about a build.
+EXIT_USAGE = 64
+
+
+class UsageErrorParser(argparse.ArgumentParser):
+    """An ArgumentParser whose usage errors exit EXIT_USAGE, not 2.
+
+    `--help` and `--version` still exit 0 — `exit()` is left alone and only
+    `error()` is redirected, so the change is confined to "you called me wrong".
+    """
+
+    def error(self, message: str):  # noqa: D102 - argparse contract
+        self.print_usage(sys.stderr)
+        self.exit(EXIT_USAGE, f"{self.prog}: error: {message}\n")
 
 
 def resolve_build_outcome(
@@ -9442,7 +9460,7 @@ def deploy_to_vercel(output_dir: Path, project_name: str) -> str | None:
 # --- Main ---
 
 def main():
-    parser = argparse.ArgumentParser(description="Website Builder Pipeline")
+    parser = UsageErrorParser(description="Website Builder Pipeline")
     parser.add_argument("project", help="Project name (must match a brief in briefs/)")
     parser.add_argument("--preset", help="Override preset selection", default=None)
     parser.add_argument("--no-pause", action="store_true", help="Skip scaffold review checkpoint")
@@ -9628,7 +9646,9 @@ def main():
                 f"    artifacts. Build without --clean to write into a repo, or\n"
                 f"    point --output-root at a scratch directory."
             )
-            return 2
+            # A refusal is a failure, not EXIT_REVIEW_NEEDED. Nothing was
+            # built and nothing was cleaned; there is no artifact to review.
+            return EXIT_FAILED
         shutil.rmtree(output_dir)
         print(f"  🗑 Removed existing output: {output_dir}")
 
@@ -10665,4 +10685,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # `main()` bare discarded every value main() returned, so the one early
+    # return in it — the guard refusing to rmtree a git checkout — printed a
+    # refusal and then exited 0. A chain reading that code proceeded as though
+    # the directory had been cleaned.
+    _main_rc = main()
+    sys.exit(EXIT_OK if _main_rc is None else _main_rc)
