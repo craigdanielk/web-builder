@@ -10506,6 +10506,12 @@ def main():
                              "(benchmarks/<market>.json). Defaults to the "
                              "manifest industry.",
                         default=None, metavar="MARKET")
+    # The ratification gate's flags (B3): --reference-url, the capture and
+    # ratification dates, and one --ratify-* flag per load-required field a
+    # commissioned benchmark cannot measure. Declared in lib/benchmark_gate.py
+    # so the flag set and the loader contract it satisfies live in one file.
+    from lib.benchmark_gate import add_arguments as _add_benchmark_gate_args
+    _add_benchmark_gate_args(parser)
     parser.add_argument("--site-manifest", help="Path to site-manifest.json for multi-page build (Layer 6)",
                         default=None, metavar="PATH")
     parser.add_argument("--compiled-dir", help="Path to Calculator compiled dir (architecture.json); enables multi-route generation",
@@ -11116,72 +11122,121 @@ def main():
                 _ir_path.write_text(json.dumps(_ir_spec, indent=2), encoding="utf-8")
         except (OSError, json.JSONDecodeError) as _ir_err:
             print(f"  ⚠ industry resolution not persisted to site-spec.json: {_ir_err}")
-        _bm_market = getattr(args, "benchmark", None) or (
-            (site_manifest or {}).get("industry") or args.industry
-            or _industry_resolution.get("handle") or ""
+        # ── THE BENCHMARK RATIFICATION GATE (Task B3) ─────────────────────
+        # Was: `benchmarks/<industry>.json` if it happened to exist, else the
+        # crawl with a warning printed over it — a silent default that exited 0.
+        # Now: four branches, three outcomes, and a resolution record on every
+        # one of them, refusals included. lib/benchmark_gate.py holds the
+        # branches and the measured facts each one exists for.
+        from lib.benchmark_gate import (
+            EXIT_NOT_MEASURED as _EXIT_BM_NOT_MEASURED,
+            BenchmarkNotMeasured, BenchmarkUsage, collect_ratify_values,
+            print_benchmark_resolution, record_benchmark_resolution,
+            resolve_benchmark,
         )
-        _bm_path = ROOT / "benchmarks" / f"{_bm_market}.json" if _bm_market else None
-        if _bm_path and _bm_path.exists():
-            _benchmark_path_for_gate = _bm_path
+
+        def _persist_spec_key(key, value):
+            """Write one key into site-spec.json on disk. Never silent."""
             try:
-                from lib.design_system import load_benchmark, compile_style
-                _bm = load_benchmark(_bm_path)
-                _crawled = (site_spec.get("style") or {}).get("palette") or {}
-                site_spec["style"] = compile_style(_bm)
-                _p = site_spec["style"]["palette"]
-                # Persist. The compiled style lived only in memory, so
-                # site-spec.json on disk kept `design_source: null` and the
-                # crawled palette — the artifact contradicted the build that
-                # produced it, and any later stage reading the file (or
-                # `--skip-to deploy`) silently got the crawl back.
-                try:
-                    _spec_path = OUTPUT_DIR / args.project / "site-spec.json"
-                    if _spec_path.exists():
-                        _spec_on_disk = json.loads(_spec_path.read_text(encoding="utf-8"))
-                        _spec_on_disk["style"] = site_spec["style"]
-                        _spec_path.write_text(
-                            json.dumps(_spec_on_disk, indent=2), encoding="utf-8")
-                except (OSError, json.JSONDecodeError) as _persist_err:
-                    # Never silent: a spec that disagrees with the build is the
-                    # failure this wire exists to remove.
-                    print(f"  ⚠ compiled style not persisted to site-spec.json: "
-                          f"{_persist_err}")
-                print(f"  🎨 Design authority: benchmark '{_bm_market}' "
-                      f"(captured {_bm['_meta'].get('captured_at')} from "
-                      f"{', '.join(_bm['_meta']['captured_from'])})")
-                print(f"      accent {_crawled.get('accent', '?')} (crawled) "
-                      f"-> {_p['accent']} (benchmark)")
-                print(f"      text {_crawled.get('text_primary', '?')} -> "
-                      f"{_p['text_primary']}, heading weight "
-                      f"{site_spec['style']['type_scale']['heading_weight']}, "
-                      f"rhythm {site_spec['style']['rhythm']['section_py_px']}px")
-                for _adj in site_spec["style"]["adjustments"]:
-                    # Adjustments are not all one shape. A contrast swap carries
-                    # both ratios; a font substitution carries a confidence
-                    # instead. Reading either unconditionally turns a RECORDED
-                    # adjustment into a KeyError that reads as "benchmark
-                    # unusable" — blaming the benchmark for the reporter.
-                    if "from_ratio" in _adj:
-                        _detail = (f"{_adj['from_ratio']}:1 -> "
-                                   f"{_adj['to_ratio']}:1")
-                    else:
-                        _detail = f"confidence {_adj.get('confidence', '?')}"
-                    print(f"      ⚖ {_adj['role']}: {_adj['from']} -> "
-                          f"{_adj['to']} ({_detail}, "
-                          f"{_adj.get('drawn_from', 'unrecorded')})")
-            except Exception as _bm_err:
-                # A benchmark that exists but cannot be used is a HARD stop. It
-                # means the design authority is broken, and continuing would
-                # silently fall back to the crawl — the exact substitution this
-                # wire removes.
-                print(f"\n  ✖ Benchmark '{_bm_market}' is unusable: {_bm_err}")
-                sys.exit(1)
-        else:
-            site_spec.setdefault("style", {})["design_source"] = "source_extraction"
-            print(f"  ⚠ No benchmark for market '{_bm_market or 'unknown'}' — "
-                  f"design tokens come from the CRAWL. Stamped "
-                  f"design_source=source_extraction; this can never pass a "
-                  f"design gate.")
+                _p = OUTPUT_DIR / args.project / "site-spec.json"
+                if _p.exists():
+                    _d = json.loads(_p.read_text(encoding="utf-8"))
+                    _d[key] = value
+                    _p.write_text(json.dumps(_d, indent=2), encoding="utf-8")
+            except (OSError, json.JSONDecodeError) as _err:
+                print(f"  ⚠ {key} not persisted to site-spec.json: {_err}")
+
+        # Candidate market keys in declared precedence. The gate matches each
+        # against a benchmark's filename slug AND its `_meta.market` — those
+        # disagree in the library today, so matching one alone misses the
+        # ratified file.
+        _bm_keys = []
+        for _k in ((site_manifest or {}).get("industry"), args.industry,
+                   _industry_resolution.get("registry_handle"),
+                   _industry_resolution.get("handle")):
+            if _k and _k not in _bm_keys:
+                _bm_keys.append(_k)
+        try:
+            _bm_res = resolve_benchmark(
+                root=ROOT,
+                benchmark_flag=getattr(args, "benchmark", None),
+                reference_url=getattr(args, "reference_url", None),
+                captured_at=getattr(args, "benchmark_captured_at", None),
+                do_ratify=bool(getattr(args, "ratify", False)),
+                ratified_at=getattr(args, "ratified_at", None),
+                ratify_values=collect_ratify_values(args),
+                market_keys=_bm_keys,
+            )
+        except BenchmarkUsage as _bm_usage:
+            print(f"\n  ✖ {_bm_usage}")
+            sys.exit(EXIT_USAGE)
+        except BenchmarkNotMeasured as _bm_nm:
+            # A refusal is recorded as deliberately as a pass, then exits 3 —
+            # neither a pass nor a build failure.
+            record_benchmark_resolution(site_spec, _bm_nm.record)
+            _persist_spec_key("benchmark_resolution",
+                              site_spec["benchmark_resolution"])
+            print(f"\n  ⊘ Benchmark NOT_MEASURED: {_bm_nm.message}")
+            sys.exit(_EXIT_BM_NOT_MEASURED)
+        record_benchmark_resolution(site_spec, _bm_res)
+        _persist_spec_key("benchmark_resolution",
+                          site_spec["benchmark_resolution"])
+        print_benchmark_resolution(_bm_res, lambda _s: sys.stdout.write(_s))
+        _bm_market = _bm_res["benchmark"]
+        _bm_path = Path(_bm_res["path"])
+        _benchmark_path_for_gate = _bm_path
+        try:
+            from lib.design_system import load_benchmark, compile_style
+            _bm = load_benchmark(_bm_path)
+            _crawled = (site_spec.get("style") or {}).get("palette") or {}
+            site_spec["style"] = compile_style(_bm)
+            _p = site_spec["style"]["palette"]
+            # Persist. The compiled style lived only in memory, so
+            # site-spec.json on disk kept `design_source: null` and the
+            # crawled palette — the artifact contradicted the build that
+            # produced it, and any later stage reading the file (or
+            # `--skip-to deploy`) silently got the crawl back.
+            try:
+                _spec_path = OUTPUT_DIR / args.project / "site-spec.json"
+                if _spec_path.exists():
+                    _spec_on_disk = json.loads(_spec_path.read_text(encoding="utf-8"))
+                    _spec_on_disk["style"] = site_spec["style"]
+                    _spec_path.write_text(
+                        json.dumps(_spec_on_disk, indent=2), encoding="utf-8")
+            except (OSError, json.JSONDecodeError) as _persist_err:
+                # Never silent: a spec that disagrees with the build is the
+                # failure this wire exists to remove.
+                print(f"  ⚠ compiled style not persisted to site-spec.json: "
+                      f"{_persist_err}")
+            print(f"  🎨 Design authority: benchmark '{_bm_market}' "
+                  f"(captured {_bm['_meta'].get('captured_at')} from "
+                  f"{', '.join(_bm['_meta']['captured_from'])})")
+            print(f"      accent {_crawled.get('accent', '?')} (crawled) "
+                  f"-> {_p['accent']} (benchmark)")
+            print(f"      text {_crawled.get('text_primary', '?')} -> "
+                  f"{_p['text_primary']}, heading weight "
+                  f"{site_spec['style']['type_scale']['heading_weight']}, "
+                  f"rhythm {site_spec['style']['rhythm']['section_py_px']}px")
+            for _adj in site_spec["style"]["adjustments"]:
+                # Adjustments are not all one shape. A contrast swap carries
+                # both ratios; a font substitution carries a confidence
+                # instead. Reading either unconditionally turns a RECORDED
+                # adjustment into a KeyError that reads as "benchmark
+                # unusable" — blaming the benchmark for the reporter.
+                if "from_ratio" in _adj:
+                    _detail = (f"{_adj['from_ratio']}:1 -> "
+                               f"{_adj['to_ratio']}:1")
+                else:
+                    _detail = f"confidence {_adj.get('confidence', '?')}"
+                print(f"      ⚖ {_adj['role']}: {_adj['from']} -> "
+                      f"{_adj['to']} ({_detail}, "
+                      f"{_adj.get('drawn_from', 'unrecorded')})")
+        except Exception as _bm_err:
+            # A benchmark the gate accepted but compile_style cannot use is a
+            # HARD stop: the design authority is broken, and continuing would
+            # fall back to the crawl — the substitution this wire removes.
+            print(f"\n  ✖ Benchmark '{_bm_market}' is unusable: {_bm_err}")
+            sys.exit(1)
 
     # Nav/footer, sourced from the harvest or empty — never a canned table.
     # `_harvested_nav is not None` marks this as a harvested (--from-url)

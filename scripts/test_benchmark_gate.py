@@ -595,19 +595,53 @@ try:
 
     # ── 10. the call site honours the exit contract ────────────────────────
     print("\n10. the orchestrate.py call site")
-    orch = (HERE / "orchestrate.py").read_text(encoding="utf-8")
-    wired = "benchmark_gate" in orch
-    if wired:
-        test("the call site exits EXIT_NOT_MEASURED on a refusal",
-             "BenchmarkNotMeasured" in orch
-             and "EXIT_NOT_MEASURED" in orch.split("BenchmarkNotMeasured")[-1][:900],
-             "the gate is imported but its refusal does not reach exit 3")
+    import ast as _ast
+    orch_src = (HERE / "orchestrate.py").read_text(encoding="utf-8")
+    if "benchmark_gate" not in orch_src:
+        print("  --   orchestrate.py not yet wired (lock held); patch pending")
+    else:
+        tree = _ast.parse(orch_src)
+        # The alias the call site bound the gate's NOT_MEASURED code to. Read
+        # from the import rather than assumed, so renaming it cannot make this
+        # test pass vacuously.
+        alias = None
+        for node in _ast.walk(tree):
+            if isinstance(node, _ast.ImportFrom) and node.module and \
+                    node.module.endswith("benchmark_gate"):
+                for a in node.names:
+                    if a.name == "EXIT_NOT_MEASURED":
+                        alias = a.asname or a.name
+        test("the call site imports the gate's NOT_MEASURED code",
+             alias is not None)
+
+        # Find the `except BenchmarkNotMeasured` handler and read what it exits
+        # with. A grep would pass on a nearby mention; this reads the handler.
+        exits: list[str] = []
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.ExceptHandler):
+                continue
+            names = {n.id for n in _ast.walk(node.type or _ast.Pass())
+                     if isinstance(n, _ast.Name)}
+            if "BenchmarkNotMeasured" not in names:
+                continue
+            for call in _ast.walk(node):
+                if isinstance(call, _ast.Call) and \
+                        getattr(call.func, "attr", None) == "exit" and call.args:
+                    exits.append(_ast.dump(call.args[0]))
+        test("a refusal handler exists and exits with the gate's code, not 0/1",
+             bool(exits) and all(alias in e for e in exits),
+             f"handlers exit with {exits}")
+        test("the refusal is recorded before it exits",
+             any("record_benchmark_resolution" in _ast.dump(h)
+                 for h in _ast.walk(tree)
+                 if isinstance(h, _ast.ExceptHandler)
+                 and "BenchmarkNotMeasured" in {
+                     n.id for n in _ast.walk(h.type or _ast.Pass())
+                     if isinstance(n, _ast.Name)}))
         test("the silent source_extraction fallback is gone from the "
              "benchmark wire",
-             orch.count('design_source"] = "source_extraction"') == 0
-             or "benchmark_resolution" in orch)
-    else:
-        print("  --   orchestrate.py not yet wired (lock held); patch pending")
+             'design_source"] = "source_extraction"' not in orch_src,
+             "the crawl fallback the gate replaces is still reachable")
 
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
