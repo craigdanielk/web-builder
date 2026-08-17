@@ -112,6 +112,88 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import lib.supabase_client as sc
 test("log_build signature accepts target_platform", "target_platform" in sc.log_build.__code__.co_varnames)
 
+# ── Test 7: deploy_env() — the adapter is the env authority (P2) ──
+#
+# Measured before the change: layer9_go_live.py populated env_vars ONLY from
+# shopify_config.json (lines 45-53) and `if not env_vars: return 1` (63-65), so
+# a correct Vercel build for a tenant with no storefront failed Layer 9 on the
+# absence of a file that target never produces. stage_deploy's .env.local
+# writer read the same file directly. Both now go through adapter.deploy_env().
+print("\n── deploy_env() ──")
+
+CFG = {"store_domain": "demo.myshopify.com", "storefront_access_token": "tok_abc"}
+
+# Shopify: source and filters unchanged.
+sh_env = shopify.deploy_env(shopify_config=CFG)
+test("Shopify deploy_env source is shopify_config.json", sh_env["source"] == "shopify_config.json")
+test("Shopify deploy_env reads the config", sh_env["reads_shopify_config"] is True)
+test("Shopify values carry the store domain",
+     sh_env["values"].get("SHOPIFY_STORE_DOMAIN") == "demo.myshopify.com")
+test("Shopify values carry the storefront token",
+     sh_env["values"].get("SHOPIFY_STOREFRONT_ACCESS_TOKEN") == "tok_abc")
+test("Shopify declares the revalidation secret without valuing it",
+     "SHOPIFY_REVALIDATION_SECRET" in sh_env["declared"]
+     and "SHOPIFY_REVALIDATION_SECRET" in sh_env["unvalued"])
+
+# The placeholder filter is carried over verbatim: Layer 4 writes a literal
+# bracketed placeholder, and shipping it produced a site that 401s.
+sh_ph = shopify.deploy_env(shopify_config={"store_domain": "d.myshopify.com",
+                                           "storefront_access_token": "[REDACTED]"})
+test("Shopify rejects a bracketed placeholder token",
+     "SHOPIFY_STOREFRONT_ACCESS_TOKEN" not in sh_ph["values"])
+
+# Shopify with no config at all: declared, unvalued, and it does not crash.
+sh_none = shopify.deploy_env(shopify_config=None)
+test("Shopify with no config values nothing", sh_none["values"] == {})
+test("Shopify with no config still declares 3 names", len(sh_none["declared"]) == 3)
+
+# Vercel: reaches env population with NO shopify_config.json in existence.
+vc_env = vercel.deploy_env()
+test("Vercel deploy_env returns a manifest with no config present",
+     isinstance(vc_env, dict) and "values" in vc_env and "declared" in vc_env)
+test("Vercel deploy_env never reads shopify_config.json",
+     vc_env["reads_shopify_config"] is False)
+test("Vercel deploy_env source is the platform declaration",
+     vc_env["source"] == "platform_declaration")
+test("Vercel declares no Shopify env name",
+     not any(n.startswith("SHOPIFY_") for n in vc_env["declared"]))
+
+# Handed a config anyway, the Vercel path must not leak it onto this target.
+vc_leak = vercel.deploy_env(shopify_config=CFG)
+test("Vercel ignores a shopify_config handed to it",
+     vc_leak["values"] == {} and not any(
+         "myshopify" in str(v) for v in vc_leak["values"].values()))
+test("Vercel declares no Shopify name even when handed a config",
+     not any(n.startswith("SHOPIFY_") for n in vc_leak["declared"]))
+
+# The whole point: an empty Vercel manifest is not an error.
+test("Vercel has no unvalued env to fail on", vc_leak["unvalued"] == [])
+
+# Base adapter declares nothing and reads nothing.
+base_env = DeployAdapter().deploy_env()
+test("Base adapter declares no env", base_env["declared"] == [])
+test("Base adapter reads no shopify_config", base_env["reads_shopify_config"] is False)
+
+# declared_env_names is data-driven off DECLARED_ENV, so a module adds env in
+# one place rather than a second reader growing somewhere else.
+test("declared_env_names reads DECLARED_ENV",
+     shopify.declared_env_names() == list(ShopifyAdapter.DECLARED_ENV["*"]))
+
+# ── Test 8: layer9 no longer fails a Vercel target for a missing Shopify file ──
+layer9 = (ROOT / "scripts" / "layer9_go_live.py").read_text()
+test("layer9 gets its env from the adapter", "_deploy_env_manifest(" in layer9)
+test("layer9 accepts --target-platform", "--target-platform" in layer9)
+test("layer9 no longer reads store_domain directly",
+     "config.get(\"store_domain\")" not in layer9)
+test("layer9's empty-env return 1 is gated on declared env",
+     'if manifest["declared"]:' in layer9)
+
+# ── Test 9: stage_deploy's .env.local writer goes through the adapter ──
+orch_src = orch.read_text()
+test("stage_deploy calls adapter.deploy_env", "adapter.deploy_env(" in orch_src)
+test("stage_deploy no longer builds SHOPIFY_STORE_DOMAIN by hand",
+     'f\'SHOPIFY_STORE_DOMAIN={shopify_cfg.get("store_domain", "")}\'' not in orch_src)
+
 print(f"\n{'═' * 60}")
 print(f"  RESULTS: {PASS} passed, {FAIL} failed")
 print(f"{'═' * 60}\n")

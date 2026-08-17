@@ -6720,6 +6720,54 @@ class DeployAdapter:
         """Extra npm dependencies for this platform."""
         return {}
 
+    #: Env names this platform's modules require, keyed by module. `"*"` is
+    #: always-on; other keys are npm package names, matched against
+    #: `platform_modules()["npm_packages"]`. Data, so a module declares its env
+    #: in one place instead of a second reader growing somewhere else.
+    DECLARED_ENV: dict = {}
+
+    def declared_env_names(self, modules: "dict | None" = None) -> list:
+        """The env names this platform declares, in declaration order."""
+        keys = ["*"]
+        if modules:
+            keys += sorted((modules.get("npm_packages") or {}).keys())
+        names: list = []
+        for key in keys:
+            for name in self.DECLARED_ENV.get(key, ()):
+                if name not in names:
+                    names.append(name)
+        return names
+
+    def deploy_env(self, shopify_config: "dict | None" = None, modules: "dict | None" = None) -> dict:
+        """The env manifest for this deploy target (P2).
+
+        Env population was not adapter-shaped: both the `.env.local` writer in
+        `stage_deploy` and `layer9_go_live.py` read `shopify_config.json`
+        directly, and Layer 9 additionally `return 1`s when that read yields
+        nothing — so a correct Vercel build with no storefront failed the deploy
+        stage on the absence of a Shopify artifact. This method is the seam.
+
+        Returns:
+            platform              adapter name.
+            source                where the VALUES came from.
+            declared              env names this platform declares.
+            values                {name: value} actually resolved. May be empty.
+            unvalued              declared names with no value here. **Not an
+                                  error** — a name declared and not valued is a
+                                  statement that the operator supplies it, which
+                                  is the whole Vercel case.
+            reads_shopify_config  whether this path touches that file at all.
+        """
+        declared = self.declared_env_names(modules)
+        return {
+            "platform": self.name,
+            "source": "platform_declaration",
+            "declared": declared,
+            "values": {},
+            "unvalued": list(declared),
+            "reads_shopify_config": False,
+        }
+
 
 class ShopifyAdapter(DeployAdapter):
     """Shopify deploy adapter — current behavior unchanged."""
@@ -6762,6 +6810,39 @@ class ShopifyAdapter(DeployAdapter):
     def should_generate_l7_pages(self) -> bool:
         return True
 
+    #: The three the deployed Shopify site needs (CLAUDE.md §11).
+    DECLARED_ENV: dict = {
+        "*": (
+            "SHOPIFY_STORE_DOMAIN",
+            "SHOPIFY_STOREFRONT_ACCESS_TOKEN",
+            "SHOPIFY_REVALIDATION_SECRET",
+        )
+    }
+
+    def deploy_env(self, shopify_config: "dict | None" = None, modules: "dict | None" = None) -> dict:
+        """Unchanged source: `shopify_config.json`, with its existing filters.
+
+        The `token.startswith("[")` guard is carried over verbatim — Layer 4
+        writes a literal `[REDACTED]`-style placeholder into that field, and
+        shipping it as a Storefront token produced a site that 401s.
+        `SHOPIFY_REVALIDATION_SECRET` is generated per write by the caller, so
+        it is declared here and left unvalued.
+        """
+        manifest = super().deploy_env(shopify_config=shopify_config, modules=modules)
+        manifest["source"] = "shopify_config.json"
+        manifest["reads_shopify_config"] = True
+        config = shopify_config or {}
+        values: dict = {}
+        domain = (config.get("store_domain") or "").strip()
+        token = (config.get("storefront_access_token") or "").strip()
+        if domain:
+            values["SHOPIFY_STORE_DOMAIN"] = domain
+        if token and not token.startswith("["):
+            values["SHOPIFY_STOREFRONT_ACCESS_TOKEN"] = token
+        manifest["values"] = values
+        manifest["unvalued"] = [n for n in manifest["declared"] if n not in values]
+        return manifest
+
 
 class VercelAdapter(DeployAdapter):
     """Vercel deploy adapter — clean Next.js app with no Shopify injection."""
@@ -6769,6 +6850,24 @@ class VercelAdapter(DeployAdapter):
     @property
     def name(self) -> str:
         return "vercel"
+
+    #: Measured 2026-08-17: the last real Vercel-target build
+    #: (`output/cape-crypto/site/`) reads `process.env` nowhere, and
+    #: `platform_modules()` pulls no Shopify packages on this path, so the
+    #: always-on set is genuinely empty. A module that needs env — a CMS token,
+    #: a mail key — adds its package key here and it appears in the manifest as
+    #: declared-not-valued. It is NEVER valued from `shopify_config.json`:
+    #: reading a storefront artifact on a target with no storefront is what made
+    #: Layer 9 fail a correct build.
+    DECLARED_ENV: dict = {}
+
+    def deploy_env(self, shopify_config: "dict | None" = None, modules: "dict | None" = None) -> dict:
+        """Declared names only, never valued from a Shopify artifact.
+
+        `shopify_config` is accepted so the interface is uniform and IGNORED, so
+        a caller that has one lying around cannot leak it onto this target.
+        """
+        return super().deploy_env(shopify_config=None, modules=modules)
 
     def get_nav_default_links(self) -> list[tuple[str, str]]:
         return [
@@ -8404,10 +8503,18 @@ async function downloadOne(url) {{
     else:
         print("  ✓ Dependencies installed")
 
-    # ── Layer 7: Generate .env.local with Shopify credentials when commerce routes present ──
-    if has_commerce_routes:
-        resolved_cfg = None
-        # Look for shopify_config.json: function param, output dir, extraction dir, root
+    # ── Deploy env, from the adapter (P2) ──
+    # `adapter.deploy_env()` is the one place that says what env this target
+    # needs and where the values come from. Shopify's source is unchanged
+    # (shopify_config.json, same lookup order, same placeholder filter); the
+    # Vercel path never opens that file, so a target with no storefront is not
+    # measured against a storefront artifact.
+    # Shopify keeps its own precondition: no commerce routes in the manifest
+    # means no Storefront fetches, so no credentials are needed and none are
+    # looked for. The Vercel path has no such precondition — that is the fix.
+    _env_applies = has_commerce_routes if adapter.should_write_env else True
+    _env_shopify_cfg = None
+    if adapter.should_write_env and _env_applies:
         for candidate in [
             Path(shopify_config_path) if shopify_config_path else None,
             OUTPUT_DIR / project_name / "shopify_config.json",
@@ -8415,22 +8522,44 @@ async function downloadOne(url) {{
             ROOT / "shopify_config.json",
         ]:
             if candidate and candidate.exists():
-                resolved_cfg = candidate
+                try:
+                    _env_shopify_cfg = json.loads(candidate.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as _e:
+                    print(f"  ⚠ {candidate} unreadable ({_e})")
                 break
-        if resolved_cfg:
-            import uuid as _uuid
-            shopify_cfg = json.loads(resolved_cfg.read_text(encoding="utf-8"))
-            revalidation_secret = str(_uuid.uuid4())
-            env_lines = [
-                f'SHOPIFY_STORE_DOMAIN={shopify_cfg.get("store_domain", "")}',
-                f'SHOPIFY_STOREFRONT_ACCESS_TOKEN={shopify_cfg.get("storefront_access_token", "")}',
-                f'SHOPIFY_REVALIDATION_SECRET={revalidation_secret}',
-            ]
-            write_file(site_dir / ".env.local", "\n".join(env_lines) + "\n")
-            print("  ✓ Layer 7: Generated .env.local with Shopify credentials")
-        else:
-            print("  ⚠ Layer 7: shopify_config.json not found — .env.local not generated")
-            print("    Create .env.local manually with: SHOPIFY_STORE_DOMAIN, SHOPIFY_STOREFRONT_ACCESS_TOKEN, SHOPIFY_REVALIDATION_SECRET")
+
+    _env_manifest = (
+        adapter.deploy_env(
+            shopify_config=_env_shopify_cfg,
+            modules=platform_modules(adapter.name),
+        )
+        if _env_applies
+        else {"platform": adapter.name, "declared": [], "values": {}, "unvalued": [],
+              "source": "not applicable — no commerce routes", "reads_shopify_config": False}
+    )
+    if _env_manifest["values"]:
+        import uuid as _uuid
+        _env_values = dict(_env_manifest["values"])
+        # Per-write, never persisted in shopify_config.json.
+        if "SHOPIFY_REVALIDATION_SECRET" in _env_manifest["declared"]:
+            _env_values.setdefault("SHOPIFY_REVALIDATION_SECRET", str(_uuid.uuid4()))
+        write_file(
+            site_dir / ".env.local",
+            "\n".join(f"{k}={v}" for k, v in _env_values.items()) + "\n",
+        )
+        print(
+            f"  ✓ Deploy env: .env.local written, {len(_env_values)} var(s) from "
+            f"{_env_manifest['source']}"
+        )
+    elif _env_manifest["declared"]:
+        print(
+            f"  ⚠ Deploy env ({_env_manifest['platform']}): "
+            f"{len(_env_manifest['unvalued'])} declared var(s) unvalued — "
+            + ", ".join(_env_manifest["unvalued"])
+        )
+        print(f"    source is {_env_manifest['source']}; set these before the site can fetch data")
+    else:
+        print(f"  ✓ Deploy env ({_env_manifest['platform']}): no env declared by this target")
 
     # ── Gate A: Token Sanitization Gate ──
     # Final check: fail loudly if any content tokens survived all sanitization passes.
