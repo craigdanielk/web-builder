@@ -119,7 +119,11 @@ function baseReport(extra) {
 }
 
 function notMeasured(outputDir, reason, extra) {
-  const report = baseReport(Object.assign({ reason }, extra || {}));
+  // `not_measured_reason` mirrors the field name `_run_compile_gate`
+  // (orchestrate.py:8452) already reads off its sibling gate, so a chain call
+  // site can interpret both gates with the same three lines.
+  const report = baseReport(Object.assign(
+    { reason, not_measured_reason: reason }, extra || {}));
   writeReport(outputDir, report);
   return EXIT.not_measured;
 }
