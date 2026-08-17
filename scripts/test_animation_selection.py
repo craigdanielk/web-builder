@@ -255,6 +255,30 @@ def test_declared_role_preferences_are_backed_by_a_usable_component():
     )
 
 
+def test_components_converted_for_wrappability_are_reachable():
+    """The four components E4 gave a children prop must reach the selector.
+
+    They are not reachable at cape-crypto's `moderate` ceiling — all four
+    derive as `dramatic` from registry measurement fields
+    (`causes_layout_shift_risk: medium`, `animation_type: background`), and
+    editing those to clear the ceiling would be falsifying a measurement to
+    pass a gate. So the assertion runs at the ceiling where they are supply.
+    Without it, removing a `children` prop would be invisible to every other
+    test here.
+    """
+    expected = {
+        "entrance__fade_up_single",
+        "entrance__word_reveal",
+        "continuous__gradient_shift",
+        "interactive__tilt_card",
+    }
+    reachable = set()
+    for archetype in sorted({a for page in _cape_pages().values() for a in page}):
+        reachable.update(_drain_pool(archetype, intensity="dramatic"))
+    missing = expected - reachable
+    assert not missing, f"converted components no longer selectable: {sorted(missing)}"
+
+
 def test_rows_with_no_file_on_disk_are_never_marked_verified():
     """`dependencies_verified` may only be set on a row backed by a real file.
 

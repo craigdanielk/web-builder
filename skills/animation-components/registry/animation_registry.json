@@ -277,7 +277,7 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 62,
+      "line_count": 70,
       "has_default_export": false,
       "named_exports": [
         "FadeText"
@@ -807,8 +807,8 @@
       "example_usage_refs": [],
       "dependencies_verified": true,
       "id_describes_file": true,
-      "actual_export": "AnimatedGroup",
-      "duplicate_of": "entrance__fade_up_stagger"
+      "duplicate_of": "entrance__fade_up_stagger",
+      "actual_export": "AnimatedGroup"
     },
     {
       "animation_id": "entrance__word_reveal",
@@ -867,7 +867,7 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 59,
+      "line_count": 83,
       "has_default_export": true,
       "named_exports": [
         "WordReveal"
@@ -2131,7 +2131,7 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 57,
+      "line_count": 95,
       "has_default_export": false,
       "named_exports": [
         "InteractiveTiltCard"
@@ -2339,7 +2339,7 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 73,
+      "line_count": 81,
       "has_default_export": false,
       "named_exports": [
         "GradientBackground"
@@ -2950,7 +2950,7 @@
       "dependencies": [
         "framer-motion"
       ],
-      "line_count": 90,
+      "line_count": 95,
       "has_default_export": false,
       "named_exports": [
         "TextShimmerWave"

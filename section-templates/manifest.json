@@ -1,24 +1,36 @@
 {
-  "version": "1.0.0",
-  "generated": "2026-02-13",
+  "version": "2.0.0",
+  "generated": "2026-08-17",
+  "generated_by": "scripts/build_section_template_manifest.py",
+  "sources": {
+    "local": "section-templates/<ARCHETYPE>/<variant>.tsx (resolved first)",
+    "db": "Supabase section_archetypes.code_template where has_template = true"
+  },
   "total_archetypes": 26,
   "total_variants": 76,
-  "templates_available": 13,
+  "templates_available": 76,
+  "templates_local": 14,
+  "templates_db_only": 62,
+  "variants_without_template": 0,
   "archetypes": {
     "ABOUT": {
       "directory": "section-templates/ABOUT/",
       "variants": [
         {
           "name": "editorial-split",
+          "resolution": "local",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
-          "file_name": "editorial-split.tsx"
+          "template_path": "section-templates/ABOUT/editorial-split.tsx",
+          "db_has_template": true,
+          "local_file": "editorial-split.tsx"
         },
         {
           "name": "inline-blurb",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "inline-blurb.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -27,9 +39,11 @@
       "variants": [
         {
           "name": "grid",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "grid.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -38,9 +52,11 @@
       "variants": [
         {
           "name": "slide-out",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "slide-out.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -49,15 +65,19 @@
       "variants": [
         {
           "name": "inline-compare",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "inline-compare.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "table",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "table.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -66,9 +86,11 @@
       "variants": [
         {
           "name": "split-form",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "split-form.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -77,20 +99,11 @@
       "variants": [
         {
           "name": "rich-text",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "rich-text.tsx"
-        }
-      ]
-    },
-    "CURRENCY-MAP": {
-      "directory": "section-templates/CURRENCY-MAP/",
-      "variants": [
-        {
-          "name": "interactive",
-          "has_template": true,
-          "template_path": "section-templates/CURRENCY-MAP/interactive.tsx",
-          "file_name": "interactive.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -99,27 +112,48 @@
       "variants": [
         {
           "name": "centered",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "centered.tsx"
-        },
-        {
-          "name": "inline",
-          "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
-          "file_name": "inline.tsx"
-        },
-        {
-          "name": "split-image",
-          "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
-          "file_name": "split-image.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "dark-band",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/CTA/dark-band.tsx",
-          "file_name": "dark-band.tsx"
+          "db_has_template": true,
+          "local_file": "dark-band.tsx"
+        },
+        {
+          "name": "inline",
+          "resolution": "db",
+          "has_template": true,
+          "template_path": "db:section_archetypes.code_template",
+          "db_has_template": true,
+          "local_file": null
+        },
+        {
+          "name": "split-image",
+          "resolution": "db",
+          "has_template": true,
+          "template_path": "db:section_archetypes.code_template",
+          "db_has_template": true,
+          "local_file": null
+        }
+      ]
+    },
+    "CURRENCY-MAP": {
+      "directory": "section-templates/CURRENCY-MAP/",
+      "variants": [
+        {
+          "name": "interactive",
+          "resolution": "local",
+          "has_template": true,
+          "template_path": "section-templates/CURRENCY-MAP/interactive.tsx",
+          "db_has_template": false,
+          "local_file": "interactive.tsx"
         }
       ]
     },
@@ -128,15 +162,19 @@
       "variants": [
         {
           "name": "accordion",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/FAQ/accordion.tsx",
-          "file_name": "accordion.tsx"
+          "db_has_template": true,
+          "local_file": "accordion.tsx"
         },
         {
           "name": "mini-accordion",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "mini-accordion.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -145,33 +183,43 @@
       "variants": [
         {
           "name": "goal-navigator",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "goal-navigator.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "icon-grid",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/FEATURES/icon-grid.tsx",
-          "file_name": "icon-grid.tsx"
+          "db_has_template": true,
+          "local_file": "icon-grid.tsx"
         },
         {
           "name": "icon-row",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "icon-row.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "impact-metrics",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "impact-metrics.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "spec-table",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "spec-table.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -180,15 +228,19 @@
       "variants": [
         {
           "name": "mega",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/FOOTER/mega.tsx",
-          "file_name": "mega.tsx"
+          "db_has_template": true,
+          "local_file": "mega.tsx"
         },
         {
           "name": "minimal",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "minimal.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -197,33 +249,43 @@
       "variants": [
         {
           "name": "in-context",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "in-context.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "lookbook-banner",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "lookbook-banner.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "lookbook-grid",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "lookbook-grid.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "masonry",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "masonry.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "room-inspiration",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "room-inspiration.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -232,51 +294,67 @@
       "variants": [
         {
           "name": "animated-gradient",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "animated-gradient.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "centered",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/HERO/centered.tsx",
-          "file_name": "centered.tsx"
+          "db_has_template": true,
+          "local_file": "centered.tsx"
         },
         {
           "name": "full-bleed-overlay",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/HERO/full-bleed-overlay.tsx",
-          "file_name": "full-bleed-overlay.tsx"
+          "db_has_template": true,
+          "local_file": "full-bleed-overlay.tsx"
         },
         {
           "name": "minimal-text",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "minimal-text.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "page-header",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "page-header.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "product-hero",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "product-hero.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "split-image",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/HERO/split-image.tsx",
-          "file_name": "split-image.tsx"
+          "db_has_template": true,
+          "local_file": "split-image.tsx"
         },
         {
           "name": "video-background",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "video-background.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -285,21 +363,27 @@
       "variants": [
         {
           "name": "horizontal-timeline",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "horizontal-timeline.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "numbered-steps",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/HOW-IT-WORKS/numbered-steps.tsx",
-          "file_name": "numbered-steps.tsx"
+          "db_has_template": true,
+          "local_file": "numbered-steps.tsx"
         },
         {
           "name": "routine-banner",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "routine-banner.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -308,15 +392,19 @@
       "variants": [
         {
           "name": "scrolling-marquee",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/LOGO-BAR/scrolling-marquee.tsx",
-          "file_name": "scrolling-marquee.tsx"
+          "db_has_template": true,
+          "local_file": "scrolling-marquee.tsx"
         },
         {
           "name": "static-grid",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "static-grid.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -325,27 +413,35 @@
       "variants": [
         {
           "name": "hamburger-only",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "hamburger-only.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "mega-menu",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "mega-menu.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "sticky-solid",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "sticky-solid.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "sticky-transparent",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/NAV/sticky-transparent.tsx",
-          "file_name": "sticky-transparent.tsx"
+          "db_has_template": true,
+          "local_file": "sticky-transparent.tsx"
         }
       ]
     },
@@ -354,9 +450,11 @@
       "variants": [
         {
           "name": "inline",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "inline.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -365,9 +463,11 @@
       "variants": [
         {
           "name": "masonry",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "masonry.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -376,9 +476,11 @@
       "variants": [
         {
           "name": "tiered-cards",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "tiered-cards.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -387,27 +489,35 @@
       "variants": [
         {
           "name": "description-tabs",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "description-tabs.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "gallery-sidebar",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "gallery-sidebar.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "subscription-upsell",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "subscription-upsell.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "variant-selector",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "variant-selector.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -416,81 +526,107 @@
       "variants": [
         {
           "name": "accessories",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "accessories.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "bestsellers",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "bestsellers.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "bundle-builder",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "bundle-builder.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "carousel",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "carousel.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "complete-the-look",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "complete-the-look.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "curated-pairing",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "curated-pairing.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "featured-3",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "featured-3.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "filtered-grid",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "filtered-grid.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "hover-cards",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "hover-cards.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "related-products",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "related-products.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "routine-builder",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "routine-builder.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "stack-builder",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "stack-builder.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "trending",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "trending.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -499,9 +635,11 @@
       "variants": [
         {
           "name": "counter",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "counter.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -510,15 +648,19 @@
       "variants": [
         {
           "name": "grid",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "grid.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "headshot-grid-square",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/TEAM/headshot-grid-square.tsx",
-          "file_name": "headshot-grid-square.tsx"
+          "db_has_template": true,
+          "local_file": "headshot-grid-square.tsx"
         }
       ]
     },
@@ -527,27 +669,35 @@
       "variants": [
         {
           "name": "carousel",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "carousel.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "mini-reviews",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "mini-reviews.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "single-featured",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "single-featured.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "wall",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "wall.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -556,21 +706,27 @@
       "variants": [
         {
           "name": "horizontal-strip",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "horizontal-strip.tsx"
-        },
-        {
-          "name": "inline-strip",
-          "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
-          "file_name": "inline-strip.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "icon-strip",
+          "resolution": "local",
           "has_template": true,
           "template_path": "section-templates/TRUST-BADGES/icon-strip.tsx",
-          "file_name": "icon-strip.tsx"
+          "db_has_template": false,
+          "local_file": "icon-strip.tsx"
+        },
+        {
+          "name": "inline-strip",
+          "resolution": "db",
+          "has_template": true,
+          "template_path": "db:section_archetypes.code_template",
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     },
@@ -579,15 +735,19 @@
       "variants": [
         {
           "name": "autoplay-hero",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "autoplay-hero.tsx"
+          "db_has_template": true,
+          "local_file": null
         },
         {
           "name": "inline-player",
+          "resolution": "db",
           "has_template": true,
           "template_path": "db:section_archetypes.code_template",
-          "file_name": "inline-player.tsx"
+          "db_has_template": true,
+          "local_file": null
         }
       ]
     }
