@@ -1,0 +1,194 @@
+{
+  "schema": "aurelix.funnel_rules.v1",
+  "_doc": [
+    "Conversion-funnel rules over a BUILT site, as data. The evaluator is",
+    "scripts/quality/funnel-verdicts.py; it holds no rule of its own.",
+    "",
+    "WHAT IS AUTHORITATIVE. These rules are evaluated over section-artifacts/,",
+    "the sections that ACTUALLY LANDED — never over site-manifest's sections[],",
+    "which is the planned page model. On the committed cape-crypto build the two",
+    "disagree hard: the manifest plans 8 identical sections on all 5 routes (40),",
+    "and 21 were built, because omitted-sections.json records 23 omissions with",
+    "reasons. Grading the plan would have scored a funnel nobody can visit —",
+    "the homepage's planned closing CTA is one of the omissions.",
+    "",
+    "SLOT VALUES COME FROM PROVENANCE. A section artifact's provenance[] rows",
+    "carry {slot, value, source}. A slot with source 'empty' holds no value even",
+    "though the template rendered its markup: merchants/02-cta emits an <a> with",
+    "href=\"\" and no label. So a rule about an action asks provenance whether the",
+    "action was sourced, not whether the archetype was placed.",
+    "",
+    "ASSERTION KINDS ARE CODE; EVERYTHING ELSE IS DATA. applies_to.kind and",
+    "assertion.kind name predicates implemented in the evaluator against a closed",
+    "vocabulary. Families, slot names, thresholds, severities, scopes, reasons and",
+    "remedies are data here. Adding a rule of an existing kind needs no code;",
+    "adding a new kind needs both, and the evaluator refuses an unknown kind",
+    "rather than skipping it (a skipped rule in a verdict list reads as passed).",
+    "",
+    "THREE STATES, NEVER TWO. A rule that cannot apply to a route is",
+    "NOT_MEASURED for that route with applies_to.not_measured_reason. It is never",
+    "a vacuous PASS: 'no two CTAs are adjacent' on a route with one CTA is true",
+    "and means nothing, which is exactly the gate-that-can-only-say-yes this",
+    "repo's standing rules forbid.",
+    "",
+    "MEASURED figures in each description are from the committed build at",
+    "web-builder/output/cape-crypto/ on 2026-08-17 (5 routes, 21 built sections)."
+  ],
+  "families": {
+    "conversion": {
+      "archetypes": ["CTA", "CONTACT", "NEWSLETTER", "PRICING"],
+      "_doc": "Sections whose job is the ask. Vocabulary from skills/section-taxonomy.md; the cape-crypto build uses CTA only."
+    },
+    "trust": {
+      "archetypes": ["TRUST-BADGES", "LOGO-BAR", "TESTIMONIALS", "STATS", "COMPARISON"],
+      "_doc": "Sections that supply the evidence a visitor needs before the ask."
+    },
+    "hero": {
+      "archetypes": ["HERO"],
+      "_doc": "The above-the-fold opener."
+    }
+  },
+  "action_slots": {
+    "url": ["cta_url", "primary_cta_url", "secondary_cta_url", "button_url", "link_url"],
+    "text": ["cta_text", "primary_cta_text", "secondary_cta_text", "button_text", "link_text"],
+    "pairs": [
+      ["cta_text", "cta_url"],
+      ["primary_cta_text", "primary_cta_url"],
+      ["button_text", "button_url"]
+    ],
+    "_doc": "Slot names as they appear in a section artifact's provenance[]. Verified against all 21 artifacts of the cape-crypto build; the pairs are the (label, destination) couples a rendered button needs BOTH halves of."
+  },
+  "rules": [
+    {
+      "id": "funnel_route_closes_with_conversion",
+      "severity": "high",
+      "verdict_scope": "route",
+      "description": "The last section a visitor reaches on a route is a conversion section. MEASURED on cape-crypto: 4 PASS (wealth, merchants, developers, about all end in CTA/centered), 1 FAIL (homepage ends in FAQ/accordion — its planned CTA/dark-band was omitted for 'template resolved but the harvest filled no slot'), 0 NOT_MEASURED. This is the rule that catches the build's single largest funnel hole.",
+      "applies_to": {
+        "kind": "every_built_route",
+        "not_measured_reason": "route built no sections"
+      },
+      "assertion": {
+        "kind": "last_section_in_family",
+        "family": "conversion"
+      },
+      "remedy_hint": "The route's closing conversion section was planned and omitted. Read omitted-sections.json for its cause: 'no_sourced_content' means the harvest carried no CTA copy for this route — supply it from the phase-0 declaration or accept the route as informational; 'variant_not_in_library' means the requested variant does not exist and a built variant must be chosen."
+    },
+    {
+      "id": "funnel_route_offers_an_action",
+      "severity": "critical",
+      "verdict_scope": "route",
+      "description": "Somewhere on the route, at least one sourced destination URL exists — the route is not a dead end even if it carries no conversion section. MEASURED on cape-crypto: 5 PASS, 0 FAIL, 0 NOT_MEASURED. It passes everywhere on this build and is kept because it is the floor and it is live-falsifiable: the homepage passes ONLY on its hero's harvested signup link, having lost its CTA section entirely, and its hero's secondary_cta_url came back 'empty' by the same harvest-exhausted mechanism that emptied merchants/02-cta. One more empty slot and this rule fails.",
+      "applies_to": {
+        "kind": "every_built_route",
+        "not_measured_reason": "route built no sections"
+      },
+      "assertion": {
+        "kind": "route_has_sourced_url",
+        "url_slots": "action_slots.url"
+      },
+      "remedy_hint": "No section on this route has a sourced destination. A visitor who arrives can only leave via the nav. Harvest the source page's links, or declare the route's action in phase-0."
+    },
+    {
+      "id": "funnel_route_opens_with_hero",
+      "severity": "medium",
+      "verdict_scope": "route",
+      "description": "The first section a visitor reaches is a HERO. MEASURED on cape-crypto: 5 PASS, 0 FAIL, 0 NOT_MEASURED. Falsifiable by the same mechanism that already fired elsewhere on this build — wealth's second planned section (PORTFOLIO/filtered-grid) was omitted for 'variant_not_in_library', so an omission at position 1 is a live failure mode, not a hypothetical.",
+      "applies_to": {
+        "kind": "every_built_route",
+        "not_measured_reason": "route built no sections"
+      },
+      "assertion": {
+        "kind": "first_section_in_family",
+        "family": "hero"
+      },
+      "remedy_hint": "The route opens on something other than a hero. Either the hero was omitted (check omitted-sections.json) or the section order places another archetype first."
+    },
+    {
+      "id": "funnel_conversion_has_a_sourced_action",
+      "severity": "critical",
+      "verdict_scope": "section",
+      "description": "Every conversion section on the route renders a button with BOTH halves sourced — a label and a destination. MEASURED on cape-crypto: 3 PASS (wealth, developers, about), 1 FAIL (merchants/02-cta, section_uid e39a0c99d1c1: cta_text and cta_url are both source 'empty', reason 'harvest-exhausted', so the built markup is <a href=\"\"> with no label — a conversion section that cannot convert), 1 NOT_MEASURED (homepage carries no conversion section). This is the funnel lane's routable verdict: it names a section, so it merges into the copy-findings stream.",
+      "applies_to": {
+        "kind": "route_contains_family",
+        "family": "conversion",
+        "not_measured_reason": "route carries no conversion section"
+      },
+      "assertion": {
+        "kind": "family_sections_have_sourced_action_pair",
+        "family": "conversion",
+        "pairs": "action_slots.pairs"
+      },
+      "remedy_hint": "The conversion section's button label and/or destination were not sourced. Revise this section's copy from the source page, which is exactly what a --copy-findings verdict on this slot makes the build do."
+    },
+    {
+      "id": "funnel_conversion_destination_reachable_from_nav",
+      "severity": "medium",
+      "verdict_scope": "section",
+      "description": "Every sourced conversion destination on the route is also reachable from the nav — the visitor has a second path to the same place. Matching is by normalised prefix (scheme and fragment stripped), so a nav link to a section of the destination site counts. MEASURED on cape-crypto: 3 PASS (about → trade.capecrypto.com/signup is a nav link exactly; wealth and merchants → support.capecrypto.com/hc/en-za/requests/n... sits under the nav's 'Support' link), 1 FAIL (developers/03-cta, section_uid e0f502415fe2 → apidocs.capecrypto.com/#introduction, and none of the 8 nav links reach apidocs at all), 1 NOT_MEASURED (homepage has no conversion section).",
+      "applies_to": {
+        "kind": "route_contains_family_with_sourced_url",
+        "family": "conversion",
+        "url_slots": "action_slots.url",
+        "not_measured_reason": "route carries no conversion section with a sourced destination"
+      },
+      "assertion": {
+        "kind": "family_sourced_urls_reachable_from_nav",
+        "family": "conversion",
+        "url_slots": "action_slots.url"
+      },
+      "remedy_hint": "The conversion destination appears nowhere in the nav. Either add the destination to the harvested nav, or point the CTA at a destination the nav already offers."
+    },
+    {
+      "id": "funnel_trust_precedes_first_conversion",
+      "severity": "high",
+      "verdict_scope": "route",
+      "description": "At least one trust section is reached before the route's first conversion section — the evidence arrives before the ask. MEASURED on cape-crypto: 2 PASS (developers TRUST-BADGES at position 2 before CTA at 3; about TRUST-BADGES at 2 before CTA at 6), 2 FAIL (wealth asks at position 3 and merchants at position 2 with no trust section built anywhere on the route), 1 NOT_MEASURED (homepage carries no conversion section — it is all evidence and no ask, which funnel_route_closes_with_conversion already fails it for).",
+      "applies_to": {
+        "kind": "route_contains_family",
+        "family": "conversion",
+        "not_measured_reason": "route carries no conversion section"
+      },
+      "assertion": {
+        "kind": "family_precedes_family",
+        "before_family": "trust",
+        "after_family": "conversion"
+      },
+      "remedy_hint": "The route asks before it proves. A trust section was either never planned for this route or was omitted; check omitted-sections.json for TRUST-BADGES / LOGO-BAR on this page."
+    },
+    {
+      "id": "funnel_first_conversion_within_reach",
+      "severity": "medium",
+      "verdict_scope": "route",
+      "description": "The route's first conversion section is no deeper than built position 4, so a visitor meets an ask without a long scroll. MEASURED on cape-crypto: 3 PASS (merchants at 2, wealth at 3, developers at 3), 1 FAIL (about at 6 — six built sections and the ask is the last of them), 1 NOT_MEASURED (homepage carries no conversion section). Position counts BUILT sections, not planned ones: about's planned position for its CTA was 7 of 8, and two omissions moved it to 6 of 6.",
+      "applies_to": {
+        "kind": "route_contains_family",
+        "family": "conversion",
+        "not_measured_reason": "route carries no conversion section"
+      },
+      "assertion": {
+        "kind": "first_family_position_at_most",
+        "family": "conversion",
+        "max_position": 4
+      },
+      "remedy_hint": "The first ask sits below a long stretch of content. Either promote a conversion section earlier in the route's section order, or accept the depth for a route whose intent is genuinely editorial."
+    },
+    {
+      "id": "funnel_no_adjacent_conversion_pair",
+      "severity": "high",
+      "verdict_scope": "route",
+      "description": "No two conversion sections are adjacent in the built order — back-to-back asks read as a templating accident, not emphasis. MEASURED on cape-crypto: 1 FAIL (merchants built CTA/centered at positions 2 AND 3, and the first of the pair is the one with no sourced action at all), 4 NOT_MEASURED (homepage 0 conversion sections; wealth, developers and about carry exactly 1 each, and adjacency is undefined below two — a PASS there would be true and empty). This rule is deliberately NOT_MEASURED-heavy: 4 of 5 cells report that they measured nothing, which is the honest reading of this build.",
+      "applies_to": {
+        "kind": "route_contains_at_least_n_of_family",
+        "family": "conversion",
+        "n": 2,
+        "not_measured_reason": "route carries fewer than two conversion sections; adjacency is undefined"
+      },
+      "assertion": {
+        "kind": "no_adjacent_family_pair",
+        "family": "conversion"
+      },
+      "remedy_hint": "Two asks sit side by side. Collapse them into one, or separate them with the content that earns the second ask."
+    }
+  ]
+}
