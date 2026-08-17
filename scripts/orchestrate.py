@@ -181,6 +181,21 @@ SKILLS_DIR = ROOT / "skills"
 TEMPLATES_DIR = ROOT / "templates"
 BRIEFS_DIR = ROOT / "briefs"
 OUTPUT_DIR = ROOT / "output"
+# An INPUT root, deliberately not derived from OUTPUT_DIR.
+#
+# A crawl is an input to a build, not a product of one: it is expensive, it is
+# cached across runs, and several builds of the same tenant reuse it. Deriving
+# it as `OUTPUT_DIR / "extractions"` made it follow `--output-root`, so a build
+# into a scratch root looked for `<scratch>/extractions/`, found nothing, left
+# `extraction_dir = None`, and resolved ZERO assets — measured 2026-08-17 on the
+# M3 cape-crypto build: asset-coverage went `extracted: 5` -> `extracted: 0`,
+# the tenant's five real images (aluma, dave, idatco, numeral, xago) fell to
+# `unresolved`, and the build exited 0. Losing the tenant's own logos and
+# founder photo is a content-provenance failure, and it presented as success.
+#
+# `--extractions-root` overrides it for a genuinely isolated run. Outputs move
+# with `--output-root`; inputs move with this. Neither moves the other.
+EXTRACTIONS_DIR = ROOT / "output" / "extractions"
 
 def load_env_file():
     """Load simple KEY=VALUE pairs from .env into os.environ if not already set."""
@@ -831,7 +846,7 @@ def stage_url_extract(
 
     # Generate unique extraction ID to prevent race conditions in parallel builds
     extraction_id = f"{project_name}-{uuid.uuid4().hex[:8]}"
-    extraction_dir = OUTPUT_DIR / "extractions" / extraction_id
+    extraction_dir = EXTRACTIONS_DIR / extraction_id
 
     # Step 0a: Run url-to-preset.js → generates preset and extraction data
     print("\n  [0a] Generating preset from URL...")
@@ -10011,6 +10026,12 @@ def main():
                         "When set, all build artifacts write under <output-root>/{project}/... "
                         "(re-rooted, same subtree layout). Accepts absolute or relative paths.",
                         default=None, metavar="PATH")
+    parser.add_argument("--extractions-root", default=None, metavar="PATH",
+                        help="Override the crawl/extraction INPUT store. Default: "
+                             "<web-builder>/output/extractions. This is deliberately NOT "
+                             "moved by --output-root: a crawl is a cached input reused "
+                             "across builds, and re-rooting it silently resolves zero "
+                             "assets while the build still exits 0.")
     parser.add_argument("--target-platform", choices=["shopify", "vercel"], default=None,
                         help="Deploy target platform (shopify=current behavior, vercel=clean Next.js app). "
                              "Default: resolved from tenant config, falls back to shopify")
@@ -10132,8 +10153,8 @@ def main():
     # Default (flag absent) is a no-op — OUTPUT_DIR stays <web-builder>/output.
     # When provided, resolve to absolute, create the tree, and validate writability,
     # then rebind the module-level OUTPUT_DIR so every path builder inherits it.
+    global OUTPUT_DIR, EXTRACTIONS_DIR
     if getattr(args, "output_root", None):
-        global OUTPUT_DIR
         resolved_root = Path(args.output_root).expanduser().resolve()
         try:
             resolved_root.mkdir(parents=True, exist_ok=True)
@@ -10145,6 +10166,19 @@ def main():
             sys.exit(1)
         OUTPUT_DIR = resolved_root
         print(f"  ✓ Output root overridden: {OUTPUT_DIR}")
+        print(f"    Extraction inputs still read from: {EXTRACTIONS_DIR}")
+
+    # ── Extractions-root injection: re-root the crawl INPUT store ──
+    # Separate flag, separate root. Moving outputs must never move inputs.
+    if getattr(args, "extractions_root", None):
+        _ex_root = Path(args.extractions_root).expanduser().resolve()
+        try:
+            _ex_root.mkdir(parents=True, exist_ok=True)
+        except OSError as _e:
+            print(f"\n❌ --extractions-root cannot be created: {_ex_root}\n   {_e}")
+            sys.exit(EXIT_USAGE)
+        EXTRACTIONS_DIR = _ex_root
+        print(f"  ✓ Extractions root overridden: {EXTRACTIONS_DIR}")
 
     # ── Copy Fidelity Node (Phase 2): load optional weakness findings ──
     copy_findings = None
@@ -10476,7 +10510,7 @@ def main():
 
     # Resolve extraction_dir from previous runs if not set (e.g. --skip-to mode)
     if extraction_dir is None:
-        extraction_base = OUTPUT_DIR / "extractions"
+        extraction_base = EXTRACTIONS_DIR
         if extraction_base.exists():
             # Try exact project name first, then preset name as fallback
             search_prefixes = [f"{args.project}-"]
