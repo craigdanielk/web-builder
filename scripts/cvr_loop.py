@@ -604,10 +604,41 @@ def finding_keys(unroutable_path: Path | None, copy_findings: dict) -> set:
 
 VERDICT_LOADED_MARKER = "Loaded copy findings for"
 
+#: Schema of the disposition register `lib/copy_revision.write_register`
+#: writes at the build root. Matched exactly: a `copy-manifest*.json` written
+#: by the LLM branch is a different file with a different shape, and reading
+#: one as the other would report a verdict lane as measured on the strength of
+#: a filename.
+DISPOSITION_SCHEMA = "aurelix.copy_revision.v1"
+
+
+def _disposition_register(build_dir: Path) -> dict | None:
+    """Build B's copy-verdict disposition register, or None.
+
+    None for every reason a reader can have — absent, unreadable, wrong schema,
+    or an unbalanced `dispositions != verdicts` — because each of those means
+    the register cannot testify that the verdicts were accounted for, and a
+    lane that cannot be evidenced must not be reported as measured.
+    """
+    for path in sorted(build_dir.glob("copy-manifest*.json")) if build_dir.is_dir() else []:
+        try:
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(doc, dict) or doc.get("schema") != DISPOSITION_SCHEMA:
+            continue
+        summary = doc.get("summary") or {}
+        if (isinstance(summary.get("verdicts"), int)
+                and summary["verdicts"] > 0
+                and summary.get("dispositions") == summary["verdicts"]):
+            return {"path": str(path), "summary": summary,
+                    "pages_covered": list(doc.get("pages_covered") or [])}
+    return None
+
 
 def verdict_effect(build_b: dict, build_a_dir: Path, build_b_dir: Path,
                    section_diff: dict, verdict_slots: int) -> dict:
-    """Did the verdicts actually reach anything? Three states, never a shrug.
+    """Did the verdicts actually reach anything? Four states, never a shrug.
 
     MEASURED 2026-08-17 and the reason this exists: the loop's first real run
     ended `2 verdict slots, 0 sections changed`, which reads as "the loop did
@@ -619,9 +650,21 @@ def verdict_effect(build_b: dict, build_a_dir: Path, build_b_dir: Path,
     count is printed, and nothing downstream reads it. Neither build wrote a
     copy-manifest, which is the positive evidence for that reading.
 
-    So: `applied` when sections changed; `loaded-but-inert` when the build
-    confirms the load and no artefact of consumption exists; `not-loaded` when
-    the build never reported reading the file.
+    So: `applied` when sections changed; `recorded-unactionable` when the build
+    wrote a disposition register accounting for every verdict and none of them
+    could act (see below); `loaded-but-inert` when the build confirms the load
+    and no artefact of consumption exists; `not-loaded` when the build never
+    reported reading the file.
+
+    THE FOURTH STATE, added when the template path got a consumer. `applied`
+    means copy changed and `loaded-but-inert` means nothing read the verdicts;
+    a build that reads every verdict and records, per verdict, the named reason
+    it cannot act is neither. Reporting it as inert would send a lane that IS
+    measured into `not_measured_lanes`, and reporting it as `applied` would
+    claim a copy change that did not happen — the "gate that can only say yes"
+    this repo keeps removing. The register is the evidence and is required to
+    balance: `dispositions == verdicts`, which `compute_dispositions` enforces
+    by raising rather than emitting a short register.
     """
     loaded = VERDICT_LOADED_MARKER in Path(build_b["log"]).read_text(
         encoding="utf-8", errors="replace")
@@ -629,11 +672,25 @@ def verdict_effect(build_b: dict, build_a_dir: Path, build_b_dir: Path,
         str(p.name) for d in (build_a_dir, build_b_dir) if d.is_dir()
         for p in d.glob("copy-manifest*.json"))
     changed = len(section_diff.get("changed") or [])
+    register = _disposition_register(build_b_dir)
     if changed:
         state, reason = "applied", f"{changed} section artifact(s) changed"
     elif not loaded:
         state, reason = "not-loaded", ("the build never reported reading the "
                                        "verdicts file")
+    elif register:
+        _s = register["summary"]
+        state = "recorded-unactionable"
+        reason = (
+            f"the build recorded {_s['dispositions']} disposition(s) for "
+            f"{_s['verdicts']} verdict(s) across pages "
+            f"{', '.join(register['pages_covered'])} and no section changed. "
+            "Per-verdict reasons: "
+            + "; ".join(f"{n} {r}" for r, n in sorted(_s["by_reason"].items()))
+            + f". {_s['revised']} revised — the template fill path is 1:1 with "
+              "the harvest and carries no candidate set to re-select from, so "
+              "there is no next-best string a verdict could promote."
+        )
     else:
         state = "loaded-but-inert"
         reason = (f"the build loaded {verdict_slots} verdict slot(s) and no "
@@ -646,7 +703,8 @@ def verdict_effect(build_b: dict, build_a_dir: Path, build_b_dir: Path,
             "verdicts_loaded_by_build": loaded,
             "copy_manifests_found": manifests,
             "verdict_slots": verdict_slots,
-            "sections_changed": changed}
+            "sections_changed": changed,
+            "dispositions": (register or {}).get("summary")}
 
 
 def funnel_fail_cells(lane: dict) -> set:
@@ -797,7 +855,10 @@ def run_iteration(n: int, args: argparse.Namespace, orchestrate_cmd: list[str],
     it["verdict_effect"] = verdict_effect(
         it["build_b"], build_a_dir, build_b_dir, it["section_diff"],
         merged["accounting"]["merged_slots"])
-    if it["verdict_effect"]["state"] != "applied":
+    # `recorded-unactionable` is a MEASURED outcome, not a missing one: every
+    # verdict has a disposition with a named reason. Sending it to
+    # not_measured_lanes would file evidence as absence.
+    if it["verdict_effect"]["state"] not in ("applied", "recorded-unactionable"):
         not_measured("verdict-application", it["verdict_effect"]["reason"])
 
     it["k2_after"] = run_k2(build_b_dir, verdicts / "k2-after", args.rules)

@@ -125,6 +125,16 @@ from lib.phase0_content import (
 # it. See scripts/lib/render_facts.py.
 from lib.render_facts import format_render_facts, read_render_facts
 
+# The copy-verdict consumer on the TEMPLATE path. `--copy-findings` was
+# consumed at exactly one site — inside the LLM section-generation branch — so
+# a deterministic build loaded the verdicts into nothing. This records what
+# became of each one. See scripts/lib/copy_revision.py.
+from lib.copy_revision import (
+    compute_dispositions,
+    section_outcome,
+    write_register as write_verdict_register,
+)
+
 # Pre-deploy compliance gate (D4). Optional import: a build in a tree without
 # it must say NOT_MEASURED, never proceed silently as though it had passed.
 try:
@@ -4071,6 +4081,26 @@ def stage_sections(
     _slot_provenance: list[dict] = []
     #: Sections dropped because the harvest filled none of their slots.
     _omitted_sections: list[dict] = []
+    #: What the build did with each section, keyed by every alias a verdict may
+    #: address it by. Read only when --copy-findings was loaded; without it the
+    #: verdicts reach nothing on the template path (cvr_loop: loaded-but-inert).
+    _verdict_outcomes: dict[str, dict] = {}
+
+    def _record_outcome(idx: int, sect: dict, fname: str, outcome: dict) -> None:
+        """Register one section's fate under each key a verdict may carry.
+
+        K1 keys a verdict by `section_uid` when the spec has one and by the
+        section index otherwise — the same fallback chain the finding lookup
+        below walks. The identity key is authoritative and always wins; the
+        positional aliases are `setdefault` because two sections can collide on
+        one (section 3's `index` may equal section 5's loop position), and
+        first-writer-wins keeps the register a function of the section list
+        rather than of dict ordering.
+        """
+        _verdict_outcomes[str(section_identity(sect, idx))] = outcome
+        for _alias in (str(sect.get("index", idx)), str(idx), fname):
+            if _alias:
+                _verdict_outcomes.setdefault(_alias, outcome)
 
     # Content policy, read from the SPEC. `sourced_only` (the default) means a
     # section with no template is omitted and recorded rather than written by a
@@ -4276,7 +4306,15 @@ def stage_sections(
                         "reason": _omit_reason,
                         "cause": _omit_cause,
                     })
+                    _record_outcome(i, section, filename, section_outcome(
+                        "omitted", file=filename, archetype=section["archetype"],
+                        variant=section.get("variant", ""),
+                        reason=_omit_reason, cause=_omit_cause))
                     continue
+
+                _record_outcome(i, section, filename, section_outcome(
+                    "template", file=filename, archetype=section["archetype"],
+                    variant=section.get("variant", ""), provenance=_fill_prov))
 
                 sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
                 out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
@@ -4336,6 +4374,12 @@ def stage_sections(
                 "cause": ("variant_not_in_library" if _available
                           else "archetype_not_in_library"),
             })
+            _record_outcome(i, section, _fallback_name, section_outcome(
+                "omitted", file=_fallback_name, archetype=section["archetype"],
+                variant=section.get("variant", ""),
+                reason="no template resolved; generated content is not sourced",
+                cause=("variant_not_in_library" if _available
+                       else "archetype_not_in_library")))
             print(f"      ⊘ omitted: no template for "
                   f"{section['archetype']}/{section.get('variant', '')}"
                   + (f" — library has {', '.join(_available)}" if _available
@@ -4625,6 +4669,12 @@ For background images, use: style={{backgroundImage: 'url("{asset_src}")'}}
             "harvested_strings": len(_harvested),
             "copy_source": "audit_captures" if _from_audit else ("site_spec" if _harvested else "generated"),
         })
+        # The generation path has its own verdict consumer (`_finding` above,
+        # which sets `_copy_status = "revised"`). Recording the kind here keeps
+        # the two consumers from both claiming the same verdict.
+        _record_outcome(i, section, filename, section_outcome(
+            "generated", file=filename, archetype=section.get("archetype") or "",
+            variant=section.get("variant", "")))
         if _copy_status == "revised":
             _copy_trace.append({
                 "section_uid": section_identity(section, i),
@@ -4878,6 +4928,34 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
         },
         "omitted": _register,
     }, indent=2))
+
+    # ── Build-root copy-verdict disposition register ──────────────────────
+    # Gated on verdicts having been handed in, not on the build having done
+    # anything with them: every verdict in this page's slice gets exactly one
+    # disposition, and `compute_dispositions` raises rather than emit a
+    # register that has silently dropped one. Every disposition is currently
+    # `unactionable` — the template fill path carries no candidate set to
+    # re-select from — and that is a measured fact with a named reason per
+    # verdict, not a skip. See scripts/lib/copy_revision.py.
+    _verdict_slice = copy_findings
+    if copy_findings and _findings_are_page_scoped(copy_findings):
+        # A page-keyed findings file that reached here unsliced: the multipage
+        # caller resolves the page's entry before calling, the single-page
+        # caller passes the file through. Recording page ids as slot keys would
+        # be a register of things that were never verdicts, so this says
+        # NOT_MEASURED rather than emit one.
+        _verdict_slice = None
+        print("  ⚖ Copy verdicts: NOT_MEASURED — the findings file is keyed by "
+              "page and reached section generation unsliced")
+    if _verdict_slice:
+        _disp = compute_dispositions(_verdict_slice, _verdict_outcomes)
+        _vdoc = write_verdict_register(
+            OUTPUT_DIR / project_name, _page_key, _disp)
+        _by_reason = _vdoc["by_page"][_page_key]["summary"]["by_reason"]
+        print(f"  ⚖ Copy verdicts: {len(_disp)} disposition(s) for "
+              f"{len(_verdict_slice)} verdict(s) on '{_page_key}' — "
+              + (", ".join(f"{n} {r}" for r, n in sorted(_by_reason.items()))
+                 or "none"))
 
     if _tpl_fill_stats:
         _tf = sum(s["filled"] for s in _tpl_fill_stats)

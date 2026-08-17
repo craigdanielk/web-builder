@@ -529,7 +529,7 @@ test("routes are de-duplicated and dynamic segments dropped",
 shutil.rmtree(tmp, ignore_errors=True)
 
 
-print("\n─── verdict_effect: three states, none of them a shrug ───")
+print("\n─── verdict_effect: four states, none of them a shrug ───")
 tmp = Path(tempfile.mkdtemp(prefix="cvr-effect-"))
 log = tmp / "b.log"
 a, b = tmp / "a", tmp / "b"
@@ -545,6 +545,56 @@ test("a changed section → applied", e["state"] == "applied", e["state"])
 log.write_text("no mention of the file at all\n")
 e = cvr.verdict_effect({"log": str(log)}, a, b, {"changed": []}, 2)
 test("never loaded → not-loaded", e["state"] == "not-loaded", e["state"])
+
+# ── the fourth state: every verdict got a disposition, none could act ──
+log.write_text("  ✓ Loaded copy findings for 2 slot(s) from /x\n")
+
+
+def _register(**summary) -> None:
+    (b / "copy-manifest-verdicts.json").write_text(json.dumps({
+        "schema": "aurelix.copy_revision.v1",
+        "pages_covered": ["homepage"],
+        "summary": {"verdicts": 2, "dispositions": 2, "revised": 0,
+                    "unactionable": 2,
+                    "by_reason": {"no-alternate-candidate": 2}, **summary},
+    }))
+
+
+_register()
+e = cvr.verdict_effect({"log": str(log)}, a, b, {"changed": []}, 2)
+test("a balanced register, nothing changed → recorded-unactionable",
+     e["state"] == "recorded-unactionable", e["state"])
+test("the reason names the per-verdict reasons, not just a count",
+     "no-alternate-candidate" in e["reason"], e["reason"])
+test("the disposition summary travels in the field",
+     (e.get("dispositions") or {}).get("dispositions") == 2,
+     json.dumps(e.get("dispositions")))
+
+# A register that does not balance cannot testify. It must fall back to inert,
+# never be believed on the strength of its filename.
+_register(dispositions=1)
+e = cvr.verdict_effect({"log": str(log)}, a, b, {"changed": []}, 2)
+test("a short register is not evidence → loaded-but-inert",
+     e["state"] == "loaded-but-inert", e["state"])
+_register(verdicts=0, dispositions=0)
+e = cvr.verdict_effect({"log": str(log)}, a, b, {"changed": []}, 2)
+test("an empty register is not evidence → loaded-but-inert",
+     e["state"] == "loaded-but-inert", e["state"])
+(b / "copy-manifest-verdicts.json").write_text(json.dumps(
+    {"schema": "aurelix.copy_manifest.v9", "summary":
+     {"verdicts": 2, "dispositions": 2}}))
+e = cvr.verdict_effect({"log": str(log)}, a, b, {"changed": []}, 2)
+test("a copy-manifest of another schema is not read as a register",
+     e["state"] == "loaded-but-inert", e["state"])
+(b / "copy-manifest-verdicts.json").write_text("{not json")
+e = cvr.verdict_effect({"log": str(log)}, a, b, {"changed": []}, 2)
+test("a corrupt register is not evidence → loaded-but-inert",
+     e["state"] == "loaded-but-inert", e["state"])
+# A real copy change still outranks the register: `applied` means copy moved.
+_register()
+e = cvr.verdict_effect({"log": str(log)}, a, b, {"changed": ["h/02-cta.json"]}, 2)
+test("a changed section still wins over the register → applied",
+     e["state"] == "applied", e["state"])
 shutil.rmtree(tmp, ignore_errors=True)
 
 
