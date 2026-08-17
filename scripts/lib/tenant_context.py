@@ -181,14 +181,13 @@ def _extract_palette(phase0: dict[str, Any]) -> dict[str, Any]:
 # the field; the build reads only what was collected. A guess in this position
 # looks exactly like a decision and silently picks the wrong adapter.
 #
-# TODO(A1-followup): `TARGET_PLATFORMS`, `SOURCE_PLATFORMS` and
-# `_declared_platform` also exist in `scripts/orchestrate.py:6006-6060` (the
-# vocabularies at :6006 and :6011, the reader at :6026), which is where
-# `resolve_target_platform` / `resolve_source_platform` read them. The plan's
-# Task A1 Step 3 moves those three into this module so there is exactly one
-# vocabulary; that move is deferred because another agent owns `orchestrate.py`
-# this wave. Until it lands the two copies MUST be kept identical — a second
-# copy that drifts is how "shopify" becomes the default again.
+# This module is the ONLY definition of the platform vocabulary. `orchestrate.py`
+# carried a second copy of `TARGET_PLATFORMS`, `SOURCE_PLATFORMS` and a reader
+# until the A1 follow-up; `resolve_target_platform` / `resolve_source_platform`
+# now delegate to `declared_platform()` below, and
+# `scripts/test_platform_vocabulary.py` asserts object identity across the two
+# modules so a re-introduced copy fails a test rather than drifting silently.
+# A second copy that drifts is how "shopify" becomes the default again.
 
 #: Where a built site is deployed.
 TARGET_PLATFORMS = ("shopify", "vercel")
@@ -257,6 +256,31 @@ def _unmeasured(tenant_context: dict | None, what: str) -> PlatformNotMeasured |
         "tenant declares — do not record it as undeclared.\n"
         + ("\n".join(f"  {r}" for r in reasons) if reasons else "  (no reason recorded)")
     )
+
+
+def declared_platform(
+    tenant_context: dict | None, field: str, allowed: tuple, what: str
+) -> str:
+    """Read ONE collected platform declaration off a tenant context, or refuse.
+
+    The single reader behind `declared_platforms()` here and
+    `resolve_target_platform` / `resolve_source_platform` in orchestrate.py.
+    Never inferred: `tech_stack` prose, connector booleans and domain patterns
+    are evidence an operator uses while *collecting* the field; the build reads
+    only what was collected.
+
+    Raises PlatformNotMeasured when the context never loaded, PlatformNotDeclared
+    when it loaded and the field is absent or out of vocabulary. Both derive from
+    PlatformDeclarationError; catch the subclass wherever the difference between
+    "nobody asked" and "we asked and there is no answer" is reportable.
+    """
+    unmeasured = _unmeasured(tenant_context, f"the {what} declaration")
+    if unmeasured is not None:
+        raise unmeasured
+    ctx = tenant_context or {}
+    slug = ctx.get("slug") or ctx.get("coordinate") or "<unknown tenant>"
+    values = ctx.get("phase0_field_values") or {}
+    return _platform_field(values, field, allowed, slug)
 
 
 def _platform_field(values: dict, field: str, allowed: tuple, slug: str) -> str:

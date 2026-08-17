@@ -101,6 +101,14 @@ except ImportError:
     load_tenant_context = None  # type: ignore
     TENANT_CONTEXT_AVAILABLE = False
 
+# The platform vocabulary and its declaration reader. Imported as a MODULE, not
+# as names, so the resolvers below read TARGET_PLATFORMS/SOURCE_PLATFORMS at
+# call time — there is one definition and no import-time snapshot of it.
+# Unlike the optional reader above this is not degradable: a build that cannot
+# read the vocabulary cannot resolve a deploy target, and inventing a fallback
+# copy here is the exact defect the single-definition rule exists to prevent.
+from lib import tenant_context as _tenant_vocab
+
 # Layer 6: Site manifest for multi-page generation
 try:
     from lib import site_manifest as site_manifest_lib
@@ -6508,60 +6516,18 @@ class VercelAdapter(DeployAdapter):
         return "#"
 
 
-#: Where a built site is deployed.
-TARGET_PLATFORMS = ("shopify", "vercel")
-
-#: What the tenant's existing site runs on. `unknown` is a DECLARED value — an
-#: operator saying "we looked and could not tell" — which is a different state
-#: from the field being absent, and the two must not collapse.
-SOURCE_PLATFORMS = (
-    "shopify", "woocommerce", "magento", "wordpress", "ghost", "custom", "unknown",
-)
-
-
-class PlatformNotDeclared(Exception):
-    """A platform was needed and the tenant record does not declare it.
-
-    Raised instead of returning a default. The previous implementation returned
-    "shopify" for every input — including None, and including a tenant whose own
-    phase 0 record says it is not an e-commerce merchant — so a real resolution
-    and four distinct failures were indistinguishable.
-    """
-
-
-def _declared_platform(tenant_context, field, allowed, what):
-    """Read a COLLECTED platform declaration from phase 0, or refuse.
-
-    Never inferred. `tech_stack` prose, connector booleans and domain patterns
-    are all evidence an operator may use when *collecting* this field, but the
-    build reads only the declaration itself. Fuzzy-matching them here would be
-    a guess wearing the costume of a decision — the same failure the spec
-    forbids for benchmark selection.
-    """
-    if not tenant_context:
-        raise PlatformNotDeclared(
-            f"no tenant context, so no {what} declaration to read — "
-            f"pass --tenant <slug>, or state it explicitly"
-        )
-
-    slug = tenant_context.get("slug") or tenant_context.get("coordinate") or "<unknown tenant>"
-    values = tenant_context.get("phase0_field_values") or {}
-    raw = values.get(field)
-
-    if raw is None or (isinstance(raw, str) and not raw.strip()):
-        raise PlatformNotDeclared(
-            f"tenant '{slug}' does not declare {field}. "
-            f"Collect it at phase 0 as one of: {', '.join(allowed)}. "
-            f"It is not inferred from tech_stack or connector flags."
-        )
-
-    value = str(raw).strip().lower()
-    if value not in allowed:
-        raise PlatformNotDeclared(
-            f"tenant '{slug}' declares {field}={value!r}, which is not a "
-            f"supported {what}. Supported: {', '.join(allowed)}."
-        )
-    return value
+# The platform vocabulary lives in ONE place: scripts/lib/tenant_context.py.
+# It was duplicated here until the A1 follow-up, and two allowed-sets is how
+# "shopify" becomes the default again — a platform added to one list and not
+# the other is accepted by one resolver and refused by the other. Re-exported
+# under the historical names so importers keep working;
+# scripts/test_platform_vocabulary.py asserts these are the SAME objects, not
+# equal ones.
+TARGET_PLATFORMS = _tenant_vocab.TARGET_PLATFORMS
+SOURCE_PLATFORMS = _tenant_vocab.SOURCE_PLATFORMS
+PlatformDeclarationError = _tenant_vocab.PlatformDeclarationError
+PlatformNotDeclared = _tenant_vocab.PlatformNotDeclared
+PlatformNotMeasured = _tenant_vocab.PlatformNotMeasured
 
 
 def resolve_target_platform(tenant_context: dict | None) -> str:
@@ -6571,13 +6537,21 @@ def resolve_target_platform(tenant_context: dict | None) -> str:
     queried `tenants.deploy_target`, a column that does not exist: the query
     raised HTTPError 400, a bare `except Exception: pass` swallowed it, and the
     function returned "shopify" — for every input that has ever been passed.
+
+    The vocabulary is read off the module at CALL time, not bound at import, so
+    there is no window in which this resolver and `declared_platforms()` can
+    disagree about what is allowed.
     """
-    return _declared_platform(tenant_context, "target_platform", TARGET_PLATFORMS, "deploy target")
+    return _tenant_vocab.declared_platform(
+        tenant_context, "target_platform", _tenant_vocab.TARGET_PLATFORMS, "deploy target"
+    )
 
 
 def resolve_source_platform(tenant_context: dict | None) -> str:
     """The declared platform the tenant's existing site runs on, or refuse."""
-    return _declared_platform(tenant_context, "source_platform", SOURCE_PLATFORMS, "source platform")
+    return _tenant_vocab.declared_platform(
+        tenant_context, "source_platform", _tenant_vocab.SOURCE_PLATFORMS, "source platform"
+    )
 
 
 def platform_modules(target_platform: str, source_platform: str = "unknown") -> dict:
@@ -9573,16 +9547,24 @@ def main():
     if tenant_context:
         try:
             _source_platform = resolve_source_platform(tenant_context)
-        except PlatformNotDeclared as exc:
+        except PlatformDeclarationError as exc:
             # A source platform is not yet load-bearing for the build, so this
             # is stated and carried as `unknown` rather than fatal. It is never
-            # guessed from prose.
+            # guessed from prose. NOT_MEASURED is printed as itself: an
+            # unreachable context says nothing about what the tenant declares.
             print(f"  ⚠ Source platform not declared: {exc}")
 
     if getattr(args, "target_platform", None) is None:
         try:
             args.target_platform = resolve_target_platform(tenant_context)
             print(f"  🎯 Target platform, declared at phase 0: {args.target_platform}")
+        except PlatformNotMeasured as exc:
+            # The context never loaded. "Undeclared" would be a claim the read
+            # never earned, so this exits NOT_MEASURED, not FAILED.
+            print(f"\n⊘ Deploy target NOT_MEASURED: {exc}")
+            print("   Pass --target-platform explicitly to override for this run.")
+            record_build_failure("resolve", f"target platform NOT_MEASURED: {exc}")
+            sys.exit(EXIT_NOT_MEASURED)
         except PlatformNotDeclared as exc:
             print(f"\n❌ Cannot resolve a deploy target: {exc}")
             print("   Pass --target-platform explicitly to override for this run.")
