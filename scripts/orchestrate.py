@@ -1318,49 +1318,41 @@ def parse_scaffold(scaffold: str) -> list[dict]:
     return sections
 
 
-def parse_preset_section_sequence(preset_name: str) -> list[dict]:
+def parse_preset_section_sequence(
+    preset_name: str, page_type: str | None = None
+) -> list[dict]:
+    """The preset's declared section sequence, for one page type.
+
+    Reads `## Section Sequence — <page_type>` when the preset declares one for
+    this page, else `## Default Section Sequence`. Used when the registry
+    returns 0 rows for (industry, page_type).
+
+    Callers that need to know WHICH block answered use
+    `resolve_preset_section_sequence`; this wrapper keeps the original
+    signature, and with `page_type=None` behaves exactly as before.
     """
-    Load the preset markdown and parse its "Default Section Sequence" block into
-    section dicts compatible with get_section_sequence (position, archetype, variant,
-    content_direction, priority). Used when DB returns 0 sections for multipage.
+    return resolve_preset_section_sequence(preset_name, page_type)["sections"]
+
+
+def resolve_preset_section_sequence(
+    preset_name: str, page_type: str | None = None
+) -> dict:
+    """As above, and says which declaration answered.
+
+    Returns `{"sections": [...], "source": str | None, "status": str}` with
+    status `page_type` | `default` | `none`. The distinction matters: a
+    sequence declared FOR this page type and the preset's single fallback
+    applied to every page are different design claims, and until 2026-08-18
+    they were indistinguishable in the manifest because only the second
+    existed.
     """
     path = SKILLS_DIR / "presets" / f"{preset_name}.md"
-    if not path.exists():
-        return []
-    text = path.read_text(encoding="utf-8")
-    # Find ## Default Section Sequence and the next ``` block (skip opening fence)
-    in_header = False
-    past_fence = False
-    block_lines: list[str] = []
-    for line in text.split("\n"):
-        if line.strip().startswith("## Default Section Sequence"):
-            in_header = True
-            continue
-        if in_header:
-            if line.strip().startswith("```"):
-                if not block_lines:
-                    past_fence = True
-                    continue
-                break
-            if past_fence:
-                block_lines.append(line)
-    result: list[dict] = []
-    for i, line in enumerate(block_lines):
-        cleaned = line.strip().replace("**", "")
-        # Match: 1. ARCHETYPE | variant   or   1. ARCHETYPE | variant | content
-        match = re.match(
-            r"\d+\.\s+([\w][\w-]*)\s*\|\s*([\w][\w-]*)(?:\s*\|\s*(.+))?",
-            cleaned,
-        )
-        if match:
-            result.append({
-                "position": i + 1,
-                "archetype": match.group(1).strip(),
-                "variant": match.group(2).strip(),
-                "content_direction": (match.group(3) or "").strip(),
-                "priority": "required",
-            })
-    return result
+    if not path.exists() or site_manifest_lib is None:
+        return {"sections": [], "source": None, "status": "none"}
+    blocks = site_manifest_lib.parse_sequence_blocks(
+        path.read_text(encoding="utf-8")
+    )
+    return site_manifest_lib.resolve_preset_sequence(blocks, page_type)
 
 
 # Archetype aliases. The Supabase section registry stores some archetypes
@@ -5590,28 +5582,78 @@ def stage_scaffold_multipage(
     industry: str,
     preset: str | None = None,
 ) -> dict:
-    """Layer 6: Enrich manifest with per-page section sequences from Supabase (NAV/FOOTER filtered).
-    When DB returns 0 sections for a page, falls back to preset's Default Section Sequence if preset is set."""
+    """Layer 6: per-page section sequences, resolved by a declared chain.
+
+    THE KEY IS `industry` (decision recorded 2026-08-18, gap 8 of the
+    library-absorption census). `section_presets` is the only sequence store
+    that exists and it is keyed (industry, page_type); `market` keys the
+    reference/benchmark, carries no sequence field, and is declared in no
+    phase-0 row. Market evidence revises registry rows; it does not resolve
+    them. See `lib/site_manifest.py` for the full statement.
+
+    The chain, per page, in order:
+
+      1. registry  — `get_section_sequence(industry, <registry page_type>)`.
+         The page_type is translated into the registry's vocabulary first;
+         `content` is not `content-page`, and querying the untranslated word
+         returns 0 rows on every industry while looking like a real miss.
+      2. preset    — a `## Section Sequence — <page_type>` block, else the
+         preset's `## Default Section Sequence`.
+      3. nothing   — recorded as such. A page with no sequence from any source
+         is NOT_MEASURED, not an empty page nobody noticed.
+
+    Every page records `sequence_source` and `sequence_status` in the manifest,
+    so a build can be read back to the declaration that produced it.
+    """
     print("\n📋 Layer 6: Scaffold (multi-page) — loading section sequences per page type...")
     if not get_section_sequence and not preset:
         print("  ⚠ Supabase not available and no preset; cannot load per-page sections. Use --preset for single-page.")
         return manifest
-    preset_sections: list[dict] | None = None
     for page in manifest.get("pages", []):
         page_type = page.get("page_type", "homepage")
         page_id = page.get("id", "")
         if page_id == "not-found":
             page["sections"] = []
+            page["sequence_source"] = None
+            page["sequence_status"] = "not_applicable"
             continue
-        raw = get_section_sequence(industry, page_type) if get_section_sequence else []
+
+        raw: list[dict] = []
+        source: str | None = None
+        status = "none"
+
+        registry_pt = (
+            site_manifest_lib.registry_page_type(page_type)
+            if site_manifest_lib
+            else {"handle": page_type, "status": "identity"}
+        )
+        if get_section_sequence and registry_pt["handle"]:
+            raw = get_section_sequence(industry, registry_pt["handle"]) or []
+            if raw:
+                source = f"registry:{industry}/{registry_pt['handle']}"
+                status = "registry"
         if not raw and preset:
-            if preset_sections is None:
-                preset_sections = parse_preset_section_sequence(preset)
-                if preset_sections:
-                    print(f"  Using preset '{preset}' Default Section Sequence ({len(preset_sections)} sections) for pages with no DB sequence.")
-            raw = preset_sections if preset_sections else []
+            declared = resolve_preset_section_sequence(preset, page_type)
+            if declared["sections"]:
+                raw = declared["sections"]
+                source = f"preset:{preset}{declared['source']}"
+                status = f"preset_{declared['status']}"
+
         page["sections"] = site_manifest_lib.filter_nav_footer_from_sections(raw) if site_manifest_lib else raw
-        print(f"  {page_id} ({page_type}): {len(page['sections'])} sections")
+        page["sequence_source"] = source
+        page["sequence_status"] = status
+        if registry_pt["handle"] is None:
+            # Recorded, not silently skipped: this page could never have
+            # matched a registry row, whatever the industry.
+            page["registry_page_type"] = None
+            page["registry_page_type_status"] = registry_pt["status"]
+        else:
+            page["registry_page_type"] = registry_pt["handle"]
+            page["registry_page_type_status"] = registry_pt["status"]
+        print(
+            f"  {page_id} ({page_type} → {registry_pt['handle'] or 'NO REGISTRY KEY'}): "
+            f"{len(page['sections'])} sections · {source or 'NOT_MEASURED'}"
+        )
     out_path = OUTPUT_DIR / project_name / "site-manifest.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -11967,7 +12009,12 @@ def main():
         if build_cache and build_cache.section_sequence:
             _registry_for_recon = build_cache.section_sequence
         elif preset:
-            _registry_for_recon = parse_preset_section_sequence(preset)
+            # Single-page builds are a page OF a type too: honour a
+            # per-page-type declaration when the preset carries one, and fall
+            # back to the default block exactly as before when it does not.
+            _registry_for_recon = parse_preset_section_sequence(
+                preset, getattr(args, "page", "homepage")
+            )
         _harvested_for_recon = site_spec.get("sections", [])
         if _registry_for_recon or _harvested_for_recon:
             sections, _reconciliation_meta = reconcile_page_sections(

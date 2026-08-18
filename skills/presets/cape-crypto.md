@@ -74,6 +74,48 @@ Inherits the spine sequence. Tenant adjustments, justified by the capture:
 Note: only 4 partner logos were captured, below the spine's marquee threshold
 of 5 — render as a static centred row, not a marquee.
 
+The block above is the **homepage** sequence and is used for any page type with
+no block of its own. Until 2026-08-18 it was the sequence for *every* page:
+five pages of four different types all demanded the same eight sections, and 19
+of 21 omissions on the last build were `registry_gap_fill_no_source` — a
+section demanded on a page whose source has no such block. The per-page-type
+blocks below are the fix.
+
+## Section Sequence — content
+
+Measured from the ratified reference corpus, not from Cape Crypto's own pages.
+`node scripts/quality/annotate-corpus-archetypes.js
+benchmarks/corpora/enterprise-stablecoin-payments-measured` classifies BVNK's
+three product/solution pages (payments, embedded-wallets, digital-assets) and
+**HERO, FEATURES, HOW-IT-WORKS and FAQ appear on 3 of 3**. CTA is measured on
+the reference home page and present in the harvest of every Cape Crypto content
+page. LOGO-BAR, TRUST-BADGES and STATS are measured on **0 of 3** reference
+solution pages — they are homepage furniture, and demanding them on a solution
+page is what produced the gap-fills.
+
+```
+1. HERO                 | gradient-split
+2. FEATURES             | icon-grid
+3. HOW-IT-WORKS         | numbered-steps
+4. FAQ                  | accordion
+5. CTA                  | dark-band
+```
+
+## Section Sequence — about
+
+From the same corpus: `about-us` classifies ABOUT, FEATURES, HOW-IT-WORKS
+(3 measured of 7 sections; the remaining 4 are image-led sections the mapper
+reports NOT_MEASURED rather than guessing). HERO opens the page and CTA closes
+it, as on every other page of the reference.
+
+```
+1. HERO                 | gradient-split
+2. ABOUT                | editorial-split
+3. FEATURES             | icon-grid
+4. HOW-IT-WORKS         | numbered-steps
+5. CTA                  | dark-band
+```
+
 ---
 
 ## Style Configuration
