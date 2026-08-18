@@ -85,10 +85,91 @@ ROOT = Path(__file__).resolve().parent.parent          # web-builder/
 REPO_ROOT = ROOT.parent                                # services/aurelix-ag/
 AUDIT_REPO = REPO_ROOT / "aurelix-uiux-audit"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib.capability import describe  # noqa: E402
+
 EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_NOT_MEASURED = 3
 EXIT_USAGE = 64
+
+# What this instrument is, in its own words. Compiled into the capability
+# register by `scripts/capability_register.py`; see that file for why it lives here.
+CAPABILITY = {
+    "id": "aurelix.harness.cvr-loop",
+    "name": "CVR loop driver — build → audit the built site → verdicts → rebuild → diff",
+    "kind": "harness",
+    "invocation": "python3 scripts/cvr_loop.py <project> --output-root <scratch-dir> "
+                  "[--tenant <slug>] [--captures <dir>] [--routes <csv>] [--benchmark <market>] "
+                  "[--preset <name>] [--max-iterations 1]",
+    "preconditions": [
+        "--output-root must be OUTSIDE web-builder/output — the loop refuses to write there",
+        "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY exported; every build it drives needs them",
+        "npm, node_modules and a production `next build` in the built site, or the audit lane "
+        "is recorded NOT_MEASURED with a reason and the loop continues on the funnel lane alone",
+        "for the axe lane: axe.min.js (--axe-js or $AXE_JS) and an installed Playwright chromium",
+        "the aurelix-uiux-audit submodule initialised at ../aurelix-uiux-audit",
+    ],
+    "inputs": [
+        "the build's own inputs: captures bundle, benchmark, preset, brief, extraction store",
+        "skills/funnel-rules.json (or --rules) — the funnel lane's rules-as-data",
+        "the audit of the BUILT site it starts and serves itself, on a free local port",
+        "K1 scripts/quality/findings-to-verdicts.py and K2 scripts/quality/funnel-verdicts.py",
+    ],
+    "outputs": [
+        "<output-root>/cvr-loop-report.json (or --report) — iterations[], merged verdict "
+        "accounting, section_diff, funnel_fail_fate, findings_fate, verdict_effect, "
+        "not_measured_lanes[] and the control field non_verdict_inputs_unchanged",
+        "the merged copy-findings.json each rebuild is driven with",
+        "two full build trees under <output-root>",
+    ],
+    "outcome": "whether feeding audit- and funnel-derived verdicts back into a rebuild changed "
+               "anything, with the diff attributable to the verdicts file alone",
+    "exit_contract": {
+        0: "the pass completed. FAIL verdicts are findings, not loop failures",
+        1: "an accounting failure inside the verdict merge; also substituted when an aborting "
+           "build exited 0 while reporting a fatal gate — the loop refuses to pass that 0 through",
+        3: "NOT_MEASURED — neither the audit lane nor the funnel lane could measure anything",
+        64: "usage — --output-root under web-builder/output, --max-iterations < 1, "
+            "--tolerate-build-failure compliance, an empty seam command, or a build command "
+            "that is not executable",
+    },
+    "measures": [
+        "the aborting build's exit code and the compliance verdict read off its stdout, "
+        "cross-checked against each other (record_gate_result only prints; GATE_RESULTS is "
+        "never serialised)",
+        "section-level diff between build A and build B: counts before/after and which changed",
+        "the fate of funnel FAILs and audit findings across the rebuild: closed / still failing / new",
+        "the control field: every non-verdict input is digested before both builds, so a diff "
+        "that is not attributable to the verdicts file is reported as invalid rather than hidden",
+    ],
+    "cannot_see": [
+        "whether a changed section is BETTER. It measures that the verdict moved something; "
+        "quality is not in its instrument set",
+        "gate verdicts as data — it scrapes stdout for 'GATE compliance: FAIL' and "
+        "'BUILD FAILURE [', so a wording change in orchestrate.py blinds the compliance lane "
+        "while the loop keeps reporting",
+        "anything about a lane it could not run: no built site, no axe.min.js, no Playwright "
+        "browser or a server that will not start ⇒ the audit lane is NOT_MEASURED with a reason "
+        "and never inferred from the funnel lane",
+        "source-level findings when the audit bundle describes the SOURCE site — axe selectors "
+        "then name the source theme's classes and match nothing the build owns (K1's real run "
+        "compiled 562 findings into one verdict for exactly this reason)",
+        "an abort's exit code as anything it declared: on abort it exits with the ABORTING "
+        "BUILD's own code verbatim, which may be any value orchestrate.py can return (2 = "
+        "review needed is the live example) and is not in the contract above",
+        "whether the verdicts it merged are correct — it drives K1 and K2, it does not judge them",
+    ],
+    "reachable_from": [
+        "scripts/test_cvr_loop.py:37,215,456-506 — tests only, against stub build/audit scripts",
+        "scripts/lib/copy_revision.py:4,52,334 — prose references, no invocation",
+        "standalone CLI. No chain stage and no orchestrate.py path invokes this",
+    ],
+    "cost": "EXPENSIVE. Two full builds plus a served local audit: default --build-timeout 3600s "
+            "each and --audit-timeout 1800s, so tens of minutes to hours of wall clock, "
+            "gigabytes of build output under --output-root, and Supabase reads throughout",
+}
 
 # Printed by orchestrate.record_gate_result / record_build_failure. The gate
 # results are in-memory only, so stdout is the only channel that carries them.
@@ -984,6 +1065,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Before parse_args: <project> and --output-root are required, so a
+    # --describe that had to parse would exit 64 instead of describing.
+    if describe(CAPABILITY, argv):
+        return EXIT_OK
     try:
         args = parse_args(sys.argv[1:] if argv is None else argv)
     except SystemExit as exc:

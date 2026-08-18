@@ -12,9 +12,49 @@ const path = require('path');
 const fs = require('fs');
 const { extractReference } = require('./lib/extract-reference');
 const { collectTokens, compareToPreset, parsePreset } = require('./lib/design-tokens');
+const { describe } = require('./lib/capability');
 
 const PRESETS_DIR = path.resolve(__dirname, '../../skills/presets');
 const DEFAULT_OUTPUT_DIR = path.resolve(__dirname, '../../output/enrichment');
+
+/** What this instrument is, in its own words. Compiled into the capability
+ *  register by `scripts/capability_register.py`; see that file for why it lives
+ *  here. */
+const CAPABILITY = {
+  id: 'aurelix.probe.preset-enrichment',
+  name: 'Preset claim vs live reference-site probe',
+  kind: 'probe',
+  invocation: 'node scripts/quality/enrich-preset.js <preset-name> [--output-dir <dir>] [--max-sites <n>]',
+  preconditions: [
+    'skills/presets/<preset-name>.md exists and lists reference sites',
+    'playwright with chromium installed — extract-reference.js launches a headless browser and nothing checks it first',
+    'outbound network access to the reference sites',
+  ],
+  inputs: ['skills/presets/<preset-name>.md', 'the live reference sites the preset names'],
+  outputs: [
+    '<output-dir>/enrichment-report-<preset>.md — accuracy, confirmed claims, discrepancies, top fonts, discoveries',
+    '<output-dir>/<preset>/<host>/ — the raw per-site extraction from extract-reference.js',
+  ],
+  outcome: 'how much of what a preset claims about its reference sites is true of those sites today, per claim, with the measured value beside the claimed one',
+  exit_contract: {
+    0: 'the report was written. It exits 0 at ANY accuracy — 0% confirmed and 100% confirmed return the same code, because this reports and does not judge',
+    1: 'no preset name given, the preset file does not exist, the preset lists no usable reference sites, every site failed to extract, or a fatal throw',
+  },
+  measures: [
+    'rendered fonts, text colours, background colours and border radii per reference site, from computed style in a real browser',
+    'frequency across sites — a token on 5 of 5 sites is reported differently from one on 1 of 5',
+    'match / mismatch / discovery against the preset\'s own claims, with a severity per mismatch',
+  ],
+  cannot_see: [
+    'a site it failed to reach. Per-site failures are caught, pushed to failedSites and printed, and the accuracy figure is then computed over the survivors alone — a report saying "5 sites analyzed" where 4 failed reads as a weaker claim, not as an unmeasured one, and still exits 0',
+    'whether the reference site is the one the preset meant. nameToUrl() GUESSES a URL from a prose name — it strips punctuation and appends .com — so a wrong-but-live domain is measured with full confidence and never flagged',
+    'whether the preset is wrong or the site changed. A discrepancy is reported as a discrepancy; which side moved is outside what it reads',
+    'anything a headless chromium at 1440x900 does not render: consent walls, geo-variant designs, A/B arms, authed and hover states',
+    'whether anyone acts on it. It never edits the preset it grades, no caller invokes it beyond the npm alias, and no gate reads the report',
+  ],
+  reachable_from: ['scripts/quality/package.json — `npm run enrich`', 'standalone CLI'],
+  cost: 'browser-bound: roughly 10-40s per reference site, default 5 sites. Requires network and an installed chromium',
+};
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -95,6 +135,7 @@ function generateReport(presetName, aggregated, comparison, analyzed, failed) {
 }
 
 async function main() {
+  if (describe(CAPABILITY)) return;
   const config = parseArgs();
   if (!config.presetName) { console.error('Error: No preset name.'); printUsage(); process.exit(1); }
 

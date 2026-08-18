@@ -31,6 +31,78 @@ from pathlib import Path
 # web-builder/scripts/quality/ -> web-builder/ -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[3]
 AUDIT_ROOT = REPO_ROOT / "aurelix-uiux-audit"
+WEB_BUILDER = Path(__file__).resolve().parents[2]
+
+# The neighbours' idiom is `sys.path.insert(0, WEB_BUILDER / "scripts")` and
+# `from lib.capability import describe`. Here that idiom BREAKS the file: this
+# module later does `sys.path.insert(0, AUDIT_ROOT)` and imports
+# `lib.design_conformance` from the AUDIT's `lib` package. Both trees have a
+# top-level package named `lib`, and the first one imported wins for the rest of
+# the process — importing `lib.capability` first left `lib.__path__` pointing at
+# web-builder/scripts/lib, and the analyser import then failed with
+# ModuleNotFoundError. Measured, not theorised.
+#
+# So: take the path, take the name, put both back. `describe` is the only thing
+# this file needs, and it needs it before argparse runs.
+sys.path.insert(0, str(WEB_BUILDER / "scripts"))
+try:
+    from lib.capability import describe                   # noqa: E402
+finally:
+    sys.path.pop(0)
+    for _name in [n for n in sys.modules if n == "lib" or n.startswith("lib.")]:
+        del sys.modules[_name]
+
+# What this instrument is, in its own words. Compiled into the capability
+# register by `scripts/capability_register.py`; see that file for why it lives
+# here rather than in a separate document.
+CAPABILITY = {
+    "id": "aurelix.extractor.conformance-runner",
+    "name": "Design-conformance analyser driver",
+    "kind": "extractor",
+    "invocation": (
+        "python3 scripts/quality/conformance_runner.py --benchmark <file> "
+        "--url <url> [--url <url> ...] --out <results.json> [--viewport 1440x900]"
+    ),
+    "preconditions": [
+        "the aurelix-uiux-audit submodule is initialised at <repo-root>/aurelix-uiux-audit "
+        "(an uninitialised checkout is a directory that exists and imports nothing)",
+        "playwright importable inside that submodule, with a chromium browser installed",
+        "every --url is already being served — this driver does not start a server; conformance-gate.js does",
+        "a ratified benchmark file that load_benchmark() accepts",
+    ],
+    "inputs": ["a benchmark json", "one or more served route URLs"],
+    "outputs": [
+        "--out results json: {error, urls_requested, urls_reached, notes, results[]} "
+        "where results[] are design_conformance RuleResults flattened to plain JSON"
+    ],
+    "outcome": (
+        "the raw per-rule measured-vs-expected output of the audit's design_conformance "
+        "analyser, and which of the requested URLs were actually reached"
+    ),
+    "exit_contract": {
+        "0": "the analyser ran and its results were written. TRANSPORT-LEVEL only — 0 does not mean the rules passed, "
+             "and does not even mean a URL was reached: a dead port also exits 0, with urls_reached empty",
+        "3": "the analyser could not be run: submodule absent, import failed, benchmark unreadable, no URLs given, or no computed styles collected",
+    },
+    "measures": [
+        "computed style of each served route, via the audit's extract_computed",
+        "urls_reached vs urls_requested — a route that failed to load is visible as an absence, not silently folded in",
+    ],
+    "cannot_see": [
+        "PASS or FAIL. By design it renders no verdict, filters no rules and reshapes no measurement — "
+        "conformance-gate.js owns the interpretation so there is exactly one place the verdict is defined",
+        "WHERE an offence is: evaluate() flattens measured['per_page'] into one aggregate and stamps "
+        "pages[0] onto every evidence record, so the URL on a result is 'the first page', not the offending page",
+        "that nothing was reached. Measured 2026-08-18 against a dead port: it exits 0 with error=None, "
+        "urls_reached=[] and 10 results of which some read PASS. The only honest signal is the EMPTY "
+        "urls_reached and a 'conformance skip <url>' line in notes — a caller reading the exit code, "
+        "or the results' states, learns that an unserved site conforms",
+        "source-level tokens: it reads rendered computed style, never a template or a compiled globals.css",
+        "any route it was not handed a --url for; it discovers nothing",
+    ],
+    "reachable_from": ["scripts/quality/conformance-gate.js:379 (spawnSync)", "standalone CLI"],
+    "cost": "a few seconds per URL, all of it inside the audit's playwright extraction; no build, no deploy",
+}
 
 
 def _jsonable(value):
@@ -50,6 +122,8 @@ def _jsonable(value):
 
 
 def main(argv: list[str] | None = None) -> int:
+    if describe(CAPABILITY, argv):
+        return 0
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--benchmark", required=True)
     ap.add_argument("--url", action="append", default=[],

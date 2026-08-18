@@ -5,6 +5,52 @@ const fs = require('fs');
 const path = require('path');
 const { validateBuild } = require('./lib/visual-validator');
 
+const { describe } = require('./lib/capability');
+
+/** What this instrument is, in its own words. Compiled into the capability
+ *  register by `scripts/capability_register.py`; see that file for why it lives
+ *  here rather than in a separate document. */
+const CAPABILITY = {
+  id: 'aurelix.gate.validate-build',
+  name: 'Visual validation gate (screenshot diff, and a deployed-URL smoke check)',
+  kind: 'gate',
+  invocation: 'node scripts/quality/validate-build.js <project-dir> [--reference-dir <dir>] [--port <n>] [--threshold <0-1>]   |   node scripts/quality/validate-build.js <preview-url>',
+  preconditions: [
+    'project-dir mode: reference screenshots exist, either at --reference-dir or under ' +
+      '<project-dir>/.quality/references, <project-dir>/references, or output/<name>/references',
+    'project-dir mode: the project can start a dev server on --port (default 4567), and ' +
+      'pixelmatch/pngjs/playwright are installed in scripts/quality/node_modules',
+    'url mode: the URL is already deployed and reachable — this instrument neither builds nor deploys',
+  ],
+  inputs: [
+    'project-dir mode: the project directory plus a directory of reference screenshots (.png/.jpg, ordered by filename)',
+    'url mode: a single http(s) URL, read once with fetch()',
+  ],
+  outputs: ['project-dir mode: <project-dir>/.quality-report.json — per-section diffPercentage, overallSimilarity, iterations'],
+  outcome: 'project-dir mode: which sections drifted from their reference screenshot, and by how much. url mode: whether a deployed page returns 200 with real text and no crash/hydration marker in the SSR HTML',
+  exit_contract: {
+    0: 'PASS — every section under the diff threshold; or url mode found no issues; or --help/no-args printed usage',
+    1: 'FAIL — sections need regeneration, url-mode issues found, OR a precondition was missing (no references, absent project dir, validator threw). This gate has no NOT_MEASURED code, so "could not measure" is reported as FAIL',
+  },
+  measures: [
+    'per-section pixel difference against a reference screenshot, as a diff percentage, with a diff image written per failing section',
+    'url mode only: HTTP status, HTML length, the count of visible text elements, and the literal strings "Application error" / "Internal Server Error" / "Hydration failed" in the SSR HTML',
+  ],
+  cannot_see: [
+    'whether the REFERENCE is right — it measures agreement with a prior screenshot, so a site that was wrong ' +
+      'when the references were captured passes at 100% similarity',
+    'anything at all with no reference screenshots: it exits 1 rather than 3, so "never measured" and ' +
+      '"visually regressed" reach the caller as the same exit code',
+    'url mode sees only the SSR HTML fetched once with no browser — no client render, no hydration in practice, ' +
+      'no CSS, no images, no console errors. Its text-element count is a regex over raw HTML',
+    'WHY a section drifted: a pixel diff cannot separate an intended redesign from a broken layout, ' +
+      'so every deliberate change reads as a failure until the references are recaptured',
+    'any route other than the ones the validator screenshots — there is no route list argument',
+  ],
+  reachable_from: ['scripts/quality/package.json → npm run validate', 'standalone CLI'],
+  cost: 'project-dir mode: minutes — it starts a dev server and screenshots up to 2 iterations. url mode: one HTTP fetch, under a second',
+};
+
 // ---------------------------------------------------------------------------
 // Post-deploy visual verification (Phase 5C)
 // ---------------------------------------------------------------------------
@@ -282,6 +328,7 @@ function buildProgressBar(ratio, length) {
 
 async function main() {
   const argv = process.argv.slice(2);
+  if (describe(CAPABILITY, argv)) return 0;
   const firstArg = argv[0];
 
   // Standalone deployment validation: node validate-build.js <preview-url>

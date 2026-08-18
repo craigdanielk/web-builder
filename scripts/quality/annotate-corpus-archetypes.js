@@ -34,6 +34,45 @@
 const fs = require('fs');
 const path = require('path');
 const { annotateSectionArchetypes } = require('./lib/archetype-mapper');
+const { describe } = require('./lib/capability');
+
+/** What this instrument is, in its own words. Compiled into the capability
+ *  register by `scripts/capability_register.py`; see that file for why it lives
+ *  here. */
+const CAPABILITY = {
+  id: 'aurelix.probe.corpus-archetypes',
+  name: 'Persisted-corpus archetype annotator',
+  kind: 'probe',
+  invocation: 'node scripts/quality/annotate-corpus-archetypes.js <corpus-dir> [--json] [--write] [--out <dir>]',
+  preconditions: [
+    'a persisted capture corpus directory holding index.json plus <slug>/extraction.json per page',
+    'nothing else — no network, no browser, no database. The corpus exists so the site is not re-measured on a different day',
+  ],
+  inputs: ['<corpus-dir>/index.json', '<corpus-dir>/<slug>/extraction.json'],
+  outputs: [
+    'stdout: the measured section sequence per page (or the whole result as JSON under --json)',
+    'under --write: <slug>/extraction.json rewritten with archetype fields — in place, or into --out after copying the whole corpus there first',
+  ],
+  outcome: 'the reference section sequence a corpus actually contains, per page, with a confidence and method per section',
+  exit_contract: {
+    0: 'every page classified. Sections below the mapper threshold are reported NOT_MEASURED — that is a measurement, not a failure',
+    3: 'NOT_MEASURED — no page in the corpus carried any section at all',
+    64: 'usage error: no corpus directory, an unknown flag, --out without a value, or no index.json at the given path',
+  },
+  measures: [
+    'archetype and variant per section, with confidence and the method that produced it',
+    'the measured/not-measured split per page, and the minimum confidence across the page',
+  ],
+  cannot_see: [
+    'whether the archetype label is RIGHT. It is the same annotateSectionArchetypes() call extract-reference.js makes, at the same threshold — it re-runs a classifier, it does not check one, so a systematic mapper error is reproduced here with a confidence score attached to it',
+    'whether the corpus is current. It reads persisted extraction.json and has no notion of when the site was captured or whether it has since changed — that staleness is the deliberate trade for not re-crawling, and it is invisible from inside this tool',
+    'a page listed in index.json whose extraction.json is missing — it records NOT_MEASURED for that slug and still exits 0 as long as one other page carried sections',
+    'sections the capture never persisted. It classifies data.sections as found; a page whose extractor dropped a section is indistinguishable here from a page that did not have one',
+    'whether anything consumes the annotation. --write persists it into the corpus, and no gate reads the archetype field back',
+  ],
+  reachable_from: ['scripts/test_corpus_archetypes.py:183,201,229', 'standalone CLI'],
+  cost: '<1s per corpus; filesystem only. --write --out copies the whole corpus first, so it costs its size on disk',
+};
 
 const EXIT_OK = 0;
 const EXIT_NOT_MEASURED = 3;
@@ -76,6 +115,7 @@ function corpusSlugs(corpusDir) {
 }
 
 function main() {
+  if (describe(CAPABILITY)) return EXIT_OK;
   const args = parseArgs(process.argv.slice(2));
   const corpusDir = path.resolve(args.corpus);
   const slugs = corpusSlugs(corpusDir);

@@ -22,6 +22,59 @@ const {
   analyzeAnimationEvidence,
 } = require('./lib/animation-detector');
 
+const { describe } = require('./lib/capability');
+
+/** What this instrument is, in its own words. Compiled into the capability
+ *  register by `scripts/capability_register.py`.
+ *
+ *  NOT A TEST, despite the filename. It asserts nothing and has no expected
+ *  values: the "Expect: moderate" comments beside its default URLs are prose,
+ *  never compared to `analysis.intensity.level`. It drives the detector against
+ *  live sites and prints what it saw, which is a PROBE. Declaring it a test
+ *  would put a green tick beside a run that cannot fail. */
+const CAPABILITY = {
+  id: 'aurelix.probe.animation-detection',
+  name: 'Animation-detection probe over live URLs',
+  kind: 'probe',
+  invocation: 'node scripts/quality/test-animation-detector.js [url ...]',
+  preconditions: [
+    'playwright chromium installed (`npx playwright install chromium`) — nothing checks it, ' +
+      'and its absence is printed per-URL and then exited 0',
+    'outbound network access to every URL given; defaults to example.com, stripe.com, linear.app',
+  ],
+  inputs: ['URLs on argv, or three hardcoded default sites', 'scripts/quality/lib/animation-detector.js'],
+  outputs: [],
+  outcome:
+    'what motion a live site actually ships: detected libraries and how they were detected, ' +
+    '@keyframes count, animated/transition element counts, scroll triggers and IntersectionObservers, ' +
+    'Lottie/Rive/3D asset requests, and the intensity level + score + confidence the scorer derives',
+  exit_contract: {
+    0: 'the run completed — INCLUDING when every URL errored. Per-URL failures are caught, ' +
+       'printed as "ERROR:" and reported as success:false in a table; the process still exits 0',
+    1: 'main() itself rejected (a fault outside the per-URL try, e.g. the summary formatter)',
+  },
+  measures: [
+    'runtime animation evidence from a real browser: injected pre-navigation hooks, network ' +
+      'interception, a MutationObserver, and a full-page scroll that triggers lazy reveals',
+    'the intensity scorer end to end, on input no fixture can produce',
+  ],
+  cannot_see: [
+    'whether the intensity it reports is RIGHT. There is no expected value and no assertion — ' +
+      'stripe.com scoring "none" and scoring "expressive" produce the same exit code',
+    'section-level attribution: it passes [] for sections and [] for the DOM to ' +
+      'analyzeAnimationEvidence, so every per-section field is empty by construction, not by measurement',
+    'motion that needs interaction — hover, click, focus, form state, carousels on a timer past ' +
+      'the fixed 1.5s-per-viewport scroll settle. It scrolls and waits, nothing more',
+    'anything about an Aurelix build: it reads live third-party sites and no output/ directory, ' +
+      'so it can never tell you what the pipeline emitted',
+    'that it ran at all in CI or the chain — reachable_from is [], measured repo-wide',
+  ],
+  reachable_from: [],
+  cost:
+    'a chromium launch and a full scroll per URL: ~30-60s each on the three defaults, ' +
+    'plus network. No credentials, no spend',
+};
+
 const VIEWPORT = { width: 1440, height: 900 };
 const SCROLL_SETTLE_MS = 1500;
 const POST_LOAD_DELAY_MS = 3000;
@@ -145,6 +198,7 @@ async function testUrl(url) {
 }
 
 async function main() {
+  if (describe(CAPABILITY)) return 0;
   const args = process.argv.slice(2);
   const urls = args.length > 0
     ? args

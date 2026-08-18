@@ -1,6 +1,73 @@
 {
   "records": [
     {
+      "id": "aurelix.builder.animation-registry",
+      "not_run": "all five outputs are git-tracked; a run now would replace a 1034-row registry with ~53 rows and exit 0"
+    },
+    {
+      "id": "aurelix.builder.component-registry",
+      "not_run": "OUTPUT_PATH is hardcoded to the git-tracked component-registry.json, with no output flag"
+    },
+    {
+      "argv": "python3 scripts/build_site_manifest.py --project scratch-probe --industry fintech --pages homepage,about --output /tmp/site-manifest.json",
+      "exit": 0,
+      "id": "aurelix.builder.site-manifest",
+      "note": "9 pages"
+    },
+    {
+      "argv": "node scripts/quality/build-site-spec.js output/extractions/cape-crypto-149c037c/ scratch-probe --out /tmp/spec-out",
+      "exit": 0,
+      "id": "aurelix.builder.site-spec",
+      "note": "6 sections"
+    },
+    {
+      "argv": "python3 scripts/supply_register.py -o /tmp/supply-register.json",
+      "exit": 0,
+      "id": "aurelix.builder.supply-register",
+      "note": "27 of 99 demanded pairs unsupplied; 129 of 995 demand rows unsatisfiable"
+    },
+    {
+      "argv": "python3 scripts/benchmark_library.py index --check",
+      "exit": 0,
+      "id": "aurelix.compiler.benchmark-library",
+      "note": "index.json agrees with 4 file(s) on disk"
+    },
+    {
+      "argv": "python3 scripts/quality/findings-to-verdicts.py ~/Developer/GitHub/control-tower/artifacts/ui-ux-audit/xago/audit_result.yaml --out-dir /tmp/v",
+      "exit": 0,
+      "id": "aurelix.compiler.copy-findings",
+      "note": "266 findings in -> 0 verdicts, 266 unroutable (145 rule-not-copy-actionable, 90 state-not-actionable, 31 no-section-map)"
+    },
+    {
+      "argv": "python3 scripts/quality/funnel-verdicts.py output/xago-exchange-mockup --out-dir /tmp/f",
+      "exit": 3,
+      "id": "aurelix.compiler.funnel-verdicts",
+      "note": "NOT_MEASURED: no built sections under section-artifacts - the honest branch"
+    },
+    {
+      "argv": "node scripts/quality/capture-benchmark-pages.js --market scratch-probe --page 'probe|http://127.0.0.1:8791/probe.html|smoke test' --out /tmp/corpus",
+      "exit": 0,
+      "id": "aurelix.extractor.benchmark-corpus-capture",
+      "note": "1/1 captured"
+    },
+    {
+      "argv": "python3 scripts/quality/conformance_runner.py --benchmark benchmarks/enterprise-payments-bvnk.json --url http://127.0.0.1:4999/ --out /tmp/conf2.json",
+      "exit": 0,
+      "id": "aurelix.extractor.conformance-runner",
+      "note": "exit 0 against a DEAD port with urls_reached=[] - an unreachable site reports as a successful extraction"
+    },
+    {
+      "argv": "node scripts/quality/run-extract-aa.js http://127.0.0.1:8791/probe.html /tmp/xa",
+      "exit": 0,
+      "id": "aurelix.extractor.run-extract-aa"
+    },
+    {
+      "argv": "node scripts/quality/render-fix-contrast.js --report /tmp/report.json --site-spec /tmp/site-spec.json --globals /tmp/globals.css --apply",
+      "exit": 0,
+      "id": "aurelix.fixer.render-contrast",
+      "note": "REPAIRED on a scratch fixture: text_muted #9aa0a6 -> #0b0d10, arithmetically correct and DARKER than primary text. It re-measures nothing after writing"
+    },
+    {
       "argv": "node scripts/quality/compile-gate.js output/xago-exchange-mockup/site --out /tmp/cg-out",
       "exit": 0,
       "id": "aurelix.gate.compile",
@@ -11,6 +78,106 @@
       "exit": 1,
       "id": "aurelix.gate.conformance",
       "note": "2026-08-18 xago-exchange-mockup: FAIL, 9 violations / 1 conform over 13 routes. A dark site measured against a light benchmark, so the palette-role failures are a benchmark mismatch, not gate error; type-scale, shadow-layers and palette-size are real"
+    },
+    {
+      "id": "aurelix.gate.determinism",
+      "not_run": "runs two full orchestrate.py builds back to back; minutes to tens of minutes"
+    },
+    {
+      "argv": "python3 scripts/verify_rails_gate.py --site-dir output/xago-exchange-mockup/site --output-dir /tmp/rails",
+      "exit": 1,
+      "id": "aurelix.gate.rails",
+      "note": "FAIL, no rails-emission.json - correct, that tenant declares no cms"
+    },
+    {
+      "argv": "node scripts/quality/check-template-tokens.js",
+      "exit": 0,
+      "id": "aurelix.gate.template-tokens",
+      "note": "15 templates, 0 violations"
+    },
+    {
+      "argv": "node scripts/quality/validate-build.js https://example.com",
+      "exit": 1,
+      "id": "aurelix.gate.validate-build",
+      "note": "url mode: FAIL, only 3 visible text elements"
+    },
+    {
+      "argv": "python3 scripts/verify_gate_c.py",
+      "exit": 3,
+      "id": "aurelix.gate.verify-c",
+      "note": "NOT_MEASURED branch, no generated app to verify"
+    },
+    {
+      "argv": "python3 scripts/verify_gate_d.py",
+      "exit": 3,
+      "id": "aurelix.gate.verify-d",
+      "note": "NOT_MEASURED branch, no deployed store was reached"
+    },
+    {
+      "argv": "python3 scripts/verify_gate_e.py",
+      "exit": 3,
+      "id": "aurelix.gate.verify-e",
+      "note": "NOT_MEASURED branch"
+    },
+    {
+      "id": "aurelix.generator.media-commission",
+      "not_run": "spends generation credits via the higgsfield CLI (one charge per uncached job); no image-jobs.json exists to dry-run against"
+    },
+    {
+      "id": "aurelix.generator.url-to-brief",
+      "not_run": "writes briefs/<project>.md into the tracked repo with no output-dir flag, and spends a live claude call"
+    },
+    {
+      "id": "aurelix.generator.url-to-preset",
+      "not_run": "performs a live external crawl AND a claude call; overwrites skills/presets/<name>.md"
+    },
+    {
+      "id": "aurelix.harness.cvr-loop",
+      "not_run": "two full builds plus a served local audit; build timeout defaults to 3600s each, audit 1800s"
+    },
+    {
+      "argv": "node scripts/quality/test-animation-detector.js https://example.com",
+      "exit": 0,
+      "id": "aurelix.probe.animation-detection",
+      "note": "Intensity none, score 0, engine css"
+    },
+    {
+      "argv": "node scripts/quality/annotate-corpus-archetypes.js benchmarks/corpora/enterprise-stablecoin-payments-measured --json",
+      "exit": 0,
+      "id": "aurelix.probe.corpus-archetypes",
+      "note": "5 pages, 41 sections, 22 measured / 19 NOT_MEASURED"
+    },
+    {
+      "id": "aurelix.probe.preset-enrichment",
+      "not_run": "launches headless chromium against live third-party sites, 5 by default"
+    },
+    {
+      "argv": "node scripts/quality/render-audit.js --base http://127.0.0.1:4791 --routes / --out /tmp/ra-out --settle 1500",
+      "exit": 0,
+      "id": "aurelix.probe.render-audit",
+      "note": "exit 0 WITH total_defects 2 (1 critical, 1 high) - confirms the exit code carries no verdict"
+    },
+    {
+      "argv": "node scripts/quality/shot-aa.js /tmp/probe.html /tmp/aa.png",
+      "exit": 0,
+      "id": "aurelix.probe.shot-aa",
+      "note": "48KB PNG"
+    },
+    {
+      "argv": "node scripts/quality/shot-hero.js /tmp/probe.html /tmp/hero.png",
+      "exit": 0,
+      "id": "aurelix.probe.shot-hero",
+      "note": "22KB PNG"
+    },
+    {
+      "argv": "node scripts/quality/shot-live.js http://127.0.0.1:8791/probe.html /tmp/live.png",
+      "exit": 0,
+      "id": "aurelix.probe.shot-live"
+    },
+    {
+      "argv": "node scripts/quality/shot-width.js http://127.0.0.1:8791/probe.html /tmp/w390.png 390 844",
+      "exit": 0,
+      "id": "aurelix.probe.shot-width"
     }
   ]
 }

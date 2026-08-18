@@ -92,6 +92,85 @@ import re
 import sys
 from pathlib import Path
 
+# web-builder/scripts/quality/ -> web-builder/scripts (same seam commission-media.py uses)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from lib.capability import describe                       # noqa: E402
+
+#: What this compiler is, in its own words. Compiled into the capability
+#: register by `scripts/capability_register.py`.
+CAPABILITY = {
+    "id": "aurelix.compiler.copy-findings",
+    "name": "Audit findings -> --copy-findings verdicts",
+    "kind": "compiler",
+    "invocation": (
+        "python3 scripts/quality/findings-to-verdicts.py <audit_result.yaml> "
+        "--site-spec <site-spec.json> --out-dir <dir>"
+    ),
+    "preconditions": [
+        "PyYAML importable — the audit's report is YAML (audit_result.yaml), never JSON",
+        "an audit bundle whose report carries findings[]",
+        "site-spec.json (preferred — it carries section_uid) or site-manifest.json, from the "
+        "SAME build the verdicts will be fed back into",
+    ],
+    "inputs": [
+        "audit_result.yaml — findings[], 13 fields each, flat across every layer and page",
+        "site-spec.json / site-manifest.json — page ids, section identities, archetypes, "
+        "and whether each section has harvested copy",
+    ],
+    "outputs": [
+        "<out-dir>/copy-findings.json — the page-scoped verdict file orchestrate.py's "
+        "--copy-findings consumes: {page_id: {slot_key: {rule_id, detail, ...}}}",
+        "<out-dir>/unroutable-findings.json — every finding that became no verdict, with a "
+        "reason from a closed vocabulary, plus the counting summary",
+    ],
+    "outcome": (
+        "which built sections a human-readable audit finding actually blames, and — for every "
+        "finding it cannot blame on one — the named reason why. The two files' finding counts "
+        "sum to the input count, so nothing lands on the floor"
+    ),
+    "exit_contract": {
+        "0": "compiled — both files written and the accounting invariant holds",
+        "1": "PyYAML absent, or an accounting failure (findings in != findings accounted for)",
+        "2": "argparse usage error (a missing positional or unknown flag). Undeclared by the "
+             "module docstring; it is argparse's own exit",
+        "3": "NOT_MEASURED — the report carries no findings[]. Nothing was compiled and this is "
+             "not a pass",
+        "64": "usage — the named audit report or site spec does not exist on disk",
+    },
+    "measures": [
+        "two routable lanes only: an axe selector that names a section by its section_uid or by "
+        "an archetype-slug class token, and a rule_id in the declared COPY_RULE_TARGETS table "
+        "whose route resolves to a built page",
+        "whether a target section has harvested copy at all — a verdict on a section with none "
+        "would never fire in the consumer, so it is refused rather than emitted",
+        "its own output shape, against the consumer's _findings_are_page_scoped() detector",
+    ],
+    "cannot_see": [
+        "a finding's section identity, because the audit almost never emits one: measured on the "
+        "cape-crypto bundle, 100% of findings carry a route and 0 OF 322 carry a section identity "
+        "(docs/census/2026-08-17-audit-findings.md §2-§3). --axe is the only in-tree source of "
+        "section-resolvable selectors and it is off by default",
+        "where a dna_* conformance finding actually offended: evaluate() stamps pages[0] onto every "
+        "record, so its page_url is 'the first page in the list' and it carries no selector. Those "
+        "findings are counted unroutable rather than routed to a page they may not concern",
+        "whether a verdict changes anything downstream. Its only effect is flipping one prompt "
+        "block from 'reproduce verbatim' to 'revise from source'; nothing here observes the rebuilt "
+        "copy, so a verdict that produced identical text is indistinguishable from one that worked",
+        "whether the audit measured the same build these verdicts will be applied to — it matches "
+        "identities, and a stale spec silently produces zero matches rather than an error",
+        "the truth of a finding. A false positive from the audit becomes a confident verdict here",
+    ],
+    "reachable_from": [
+        "scripts/cvr_loop.py:434 (the CVR loop's K1 lane)",
+        "scripts/test_findings_verdicts.py:36",
+        "scripts/test_funnel_verdicts.py:42",
+        "standalone CLI",
+    ],
+    "cost": "<1s on a 322-finding bundle. No network, no LLM, no randomness — same inputs, "
+            "byte-identical outputs",
+}
+
 try:
     import yaml
 except ImportError:  # pragma: no cover - environment defect, reported not hidden
@@ -532,6 +611,8 @@ def write_outputs(result: dict, out_dir: Path) -> tuple[Path, Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if describe(CAPABILITY, argv):
+        return 0
     parser = argparse.ArgumentParser(
         description="Compile audit findings into a --copy-findings verdict file.")
     parser.add_argument("audit_result", help="Path to the audit's audit_result.yaml")

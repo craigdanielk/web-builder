@@ -75,7 +75,53 @@ const { extractFeatures, classifyComponent, detectMotionIntents } = require("./l
 const { buildRegistryEntry, buildSearchIndex, buildCapabilityMatrixCSV, buildAnalysisLog, mapToArchetypes } = require("./lib/registry-builders");
 const { validateRegistry, discoverCuratedComponents, discover21stDevComponents } = require("./lib/registry-utils");
 
+const { describe } = require("./lib/capability");
+
+/** What this builder is, in its own words. Compiled into the capability register
+ *  by `scripts/capability_register.py`; see that file for why it lives here. */
+const CAPABILITY = {
+  id: "aurelix.builder.animation-registry",
+  name: "Animation component catalogue builder",
+  kind: "builder",
+  invocation: "node scripts/quality/build-animation-registry.js",
+  preconditions: [
+    "curated component sources under skills/animation-components/<category>/*.tsx",
+    "skills/animation-components/21st-dev-library/ with registry-full.json for the second source — ABSENT from this checkout, measured 2026-08-18",
+  ],
+  inputs: [
+    "skills/animation-components/{entrance,scroll,interactive,continuous,text,effect,background}/*.tsx",
+    "skills/animation-components/21st-dev-library/registry-full.json",
+  ],
+  outputs: [
+    "skills/animation-components/registry/animation_taxonomy.json",
+    "skills/animation-components/registry/animation_registry.json",
+    "skills/animation-components/registry/animation_search_index.json",
+    "skills/animation-components/registry/animation_capability_matrix.csv",
+    "skills/animation-components/registry/analysis_log/<animation_id>.md",
+  ],
+  outcome: "a catalogue row per discovered component — classification (animation/ui/hybrid), motion intents, triggers, archetype affinity — plus a per-component rationale log",
+  exit_contract: {
+    0: "the catalogue was written. This is the ONLY code it returns: quality-gate issues are printed and the run still exits 0, and a per-file read/parse error is counted and skipped",
+    1: "an unhandled throw (unreadable input directory, unwritable output directory)",
+  },
+  measures: [
+    "per-component source features: imports, engine, hooks, triggers, export shape",
+    "classification into animation | ui | hybrid, and the motion intents behind it",
+    "validateRegistry() issues — taxonomy violations and missing fields, printed but never fatal",
+  ],
+  cannot_see: [
+    "that one of its two declared sources has vanished. skills/animation-components/21st-dev-library/ does not exist in this checkout; discover21stDevComponents() returns 0 and that zero is reported as a component count, not as a missing input. Re-running it today would replace the tracked 1034-row animation_registry.json with the 53 curated components alone",
+    "whether the rows it wrote stay file-backed. 986 of the 1034 rows in the registry it last produced name paths under that absent tree — measured by os.path.exists over every row, 2026-08-18. The output is a CATALOGUE, not an inventory, and nothing in this builder makes that distinction",
+    "drift. It only ever rewrites everything: 53 curated .tsx are on disk today against 48 file-backed registry rows, and it has no way to report those 5 as new — only to regenerate",
+    "that selection does not read what it writes. component-inject.js reads animation_library.json (the 48 backed rows), which THIS builder does not emit — registry/annotate_backed_rows.py derives it. Two producers write animation_registry.json and neither knows about the other",
+    "whether a classified component actually renders, compiles, or has its npm dependency installed — it reads source text and never executes anything",
+  ],
+  reachable_from: [],
+  cost: "~5-30s, filesystem only; scales with component count. Writes one markdown log per component",
+};
+
 function main() {
+  if (describe(CAPABILITY)) return;
   console.log("═══════════════════════════════════════════════════════");
   console.log("  Animation Registry Builder v1.0.0");
   console.log("═══════════════════════════════════════════════════════\n");

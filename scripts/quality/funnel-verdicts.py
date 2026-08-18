@@ -93,6 +93,82 @@ import json
 import sys
 from pathlib import Path
 
+# web-builder/scripts/quality/ -> web-builder/scripts (same seam commission-media.py uses)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from lib.capability import describe                       # noqa: E402
+
+#: What this evaluator is, in its own words. Compiled into the capability
+#: register by `scripts/capability_register.py`.
+CAPABILITY = {
+    "id": "aurelix.compiler.funnel-verdicts",
+    "name": "Funnel-rule evaluation over a built site",
+    "kind": "compiler",
+    "invocation": (
+        "python3 scripts/quality/funnel-verdicts.py <output/<project>/> --out-dir <dir> "
+        "[--rules skills/funnel-rules.json]"
+    ),
+    "preconditions": [
+        "a completed build directory holding site-manifest.json AND section-artifacts/<page>/*.json "
+        "— the artifacts are authoritative for the SEQUENCE, the manifest only for routes and identity",
+        "a rule file; defaults to skills/funnel-rules.json. Rules are DATA — this file is the engine",
+    ],
+    "inputs": [
+        "site-manifest.json — routes, page identity, nav",
+        "section-artifacts/<page>/NN-<archetype>.json — the sections that were actually built, "
+        "and each one's provenance[] rows {slot, value, source in harvested|phase0|empty}",
+        "skills/funnel-rules.json — the declared rules and their verdict_scope",
+    ],
+    "outputs": [
+        "<out-dir>/funnel-verdicts.json — copy_findings (K1's page-scoped shape, rule ids "
+        "namespaced funnel_* so they cannot collide with an audit rule), rule_verdicts "
+        "(one three-state record per rule x route cell), and unrouted (FAILs that name no section)",
+    ],
+    "outcome": (
+        "whether each route asks the visitor for anything — measured per rule per route as "
+        "PASS / FAIL / NOT_MEASURED with a reason — and which built section each actionable "
+        "FAIL blames. No audit finding covers this; a homepage with no conversion section is "
+        "invisible to every other instrument in the tree"
+    ),
+    "exit_contract": {
+        "0": "evaluated. NOTE: 0 means the evaluation RAN, not that the funnel is sound — a run "
+             "where every cell FAILs also exits 0. The verdict is in the artifact, never the code",
+        "1": "an unreadable or invalid rule file, or the accounting invariant broke",
+        "2": "argparse usage error. Undeclared by the module docstring; it is argparse's own exit",
+        "3": "NOT_MEASURED — no built sections under section-artifacts/. Not a pass",
+        "64": "usage — the build dir or the rule file does not exist",
+    },
+    "measures": [
+        "presence and ORDER of built sections per route, from section-artifacts rather than the "
+        "manifest — the manifest plans sections that omitted-sections.json then removed (40 planned "
+        "vs 21 built on cape-crypto), so grading the plan would grade a funnel nobody can visit",
+        "whether a slot's value was sourced, by reading provenance[].source: `empty` means the "
+        "markup rendered with nothing in it, which is what several rules are about",
+        "every rule against every route, including cells it cannot judge — those are recorded "
+        "NOT_MEASURED with a reason rather than skipped",
+    ],
+    "cannot_see": [
+        "whether anyone converts. It grades the presence and provenance of sections and slots, "
+        "not behaviour: no analytics, no session, no click. A perfectly-scoring funnel may convert nobody",
+        "the rendered page. It never reads the generated TSX or the built DOM — parsing JSX to "
+        "recover a value the emitter already recorded would be a second, weaker source of truth — "
+        "so a section with sourced provenance and broken markup passes here",
+        "which section to blame for a route-scoped FAIL. 'This route ends in a FAQ' indicts the "
+        "ABSENCE of a section; revising an existing section's copy would not add one. Those FAILs "
+        "declare verdict_scope 'route' and land in unrouted with that reason, never as verdicts",
+        "a section that was planned and then omitted, beyond what section-artifacts records — the "
+        "reason lives in omitted-sections.json, which this evaluator does not read",
+        "whether its rules are the right rules. skills/funnel-rules.json is a declaration; a wrong "
+        "rule produces confident PASSes",
+    ],
+    "reachable_from": [
+        "scripts/cvr_loop.py:461 (the CVR loop's K2 lane)",
+        "scripts/test_funnel_verdicts.py:41",
+        "standalone CLI",
+    ],
+    "cost": "<1s over a 21-section build. No network, no LLM, no randomness",
+}
+
 EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_NOT_MEASURED = 3
@@ -787,6 +863,8 @@ def write_outputs(result: dict, out_dir: Path) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if describe(CAPABILITY, argv):
+        return 0
     parser = argparse.ArgumentParser(
         description="Evaluate the funnel rules over a built site.")
     parser.add_argument("build_dir", help="output/<project>/ — site-manifest.json "

@@ -40,6 +40,73 @@
 const fs = require("fs");
 const path = require("path");
 
+const { describe } = require("./lib/capability");
+
+/** What this fixer is, in its own words. Compiled into the capability register
+ *  by `scripts/capability_register.py`; see that file for why it lives here.
+ *
+ *  NOTE ON `reachable_from: []` — measured 2026-08-18, repo-wide:
+ *    grep -rn "render-fix-contrast" --include=*.py --include=*.js --include=*.json .
+ *  returns this file, its unit test, one comment in render-audit.js and one in
+ *  lib/post-process.js. NOTHING INVOKES IT. It is a complete, tested fixer that
+ *  has never run on a build. */
+const CAPABILITY = {
+  id: "aurelix.fixer.render-contrast",
+  name: "Contrast remediation at the design-token layer",
+  kind: "fixer",
+  invocation:
+    "node scripts/quality/render-fix-contrast.js --report <render-audit-results/report.json> " +
+    "--site-spec <output/<project>/site-spec.json> --globals <site/src/app/globals.css> [--apply]",
+  preconditions: [
+    "a render audit has already run and written report.json with routes[].facts.contrast[] " +
+      "carrying #rrggbb fg/bg (render-audit.js:126 emits exactly this shape for this file)",
+    "site-spec.json declares style.design_source === \"benchmark\" — any other provenance is refused",
+    "the palette role behind the failing colour is emitted as a CSS custom property in globals.css",
+    "--apply MUTATES globals.css and site-spec.json in place; point it at a copy, never a git checkout",
+  ],
+  inputs: [
+    "render-audit-results/report.json — routes[].facts.contrast[] {fg,bg,ratio,need,pass,selector}",
+    "site-spec.json — style.palette and style.design_source",
+    "site/src/app/globals.css — the emitted CSS custom properties",
+  ],
+  outputs: [
+    "a JSON verdict on stdout {status, measured, passed, failed, adjustments[], unrepairable[]}",
+    "with --apply only: a rewritten globals.css and a site-spec.json whose palette and " +
+      "style.adjustments[] record the change",
+  ],
+  outcome:
+    "whether every measured contrast pair reaches its required ratio, and — when it does not — " +
+    "which palette ROLE to change to which already-in-palette value to repair it without regressing " +
+    "a currently-passing measurement",
+  exit_contract: {
+    0: "PASS (nothing failing) or REPAIRED (a token change repairs every failure)",
+    1: "FAIL — a failure no token change can reach, or a thrown refusal " +
+       "(PROVENANCE / CONTRAST_UNREACHABLE / TOKEN_NOT_DECLARED)",
+    2: "usage — a missing --report / --site-spec / --globals. Undeclared by the header comment; " +
+       "read off process.exit(2) in main()",
+    3: "NOT_MEASURED — the report carries no facts.contrast[] at all. Not a pass",
+  },
+  measures: [
+    "WCAG contrast of every fg/bg pair the render probe measured, per route and selector",
+    "whether a candidate palette value repairs every measurement bound to a role AND regresses none",
+    "which failures are token-driven and which are not, by indexing the compiled palette by hex",
+  ],
+  cannot_see: [
+    "whether its fix is CORRECT — it proves the arithmetic, not the result. It rewrites a token and " +
+      "re-measures nothing; only a fresh render audit can say the repaired page still reads as the brand",
+    "the blast radius of a role change. A role repaired for one selector on one route applies " +
+      "site-wide, including routes absent from this report",
+    "any contrast failure whose colour is not a token: a Tailwind utility (text-gray-900, text-white) " +
+      "is indexed to no palette role and is reported unrepairable, never repaired",
+    "anything the probe did not measure — hover, focus and client-only states, text over images or " +
+      "gradients (the probe composites solid background layers only), and unvisited routes",
+    "whether it has ever run. reachable_from is [] as measured: no pipeline stage, no gate and no " +
+      "orchestrator call site invokes this file, so its verdict has never reached a build",
+  ],
+  reachable_from: [],
+  cost: "<1s; pure arithmetic over an existing report. --apply writes two files and spends nothing",
+};
+
 const hexToRgb = (h) => {
   h = String(h).replace("#", "").trim();
   if (h.length === 3) h = h.split("").map((c) => c + c).join("");
@@ -313,6 +380,7 @@ function parseArgs(argv) {
 }
 
 function main() {
+  if (describe(CAPABILITY)) return 0;
   const opts = parseArgs(process.argv.slice(2));
   if (!opts.reportPath || !opts.siteSpecPath || !opts.globalsPath) {
     console.error(

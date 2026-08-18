@@ -52,6 +52,91 @@ from lib.image_jobs import (                             # noqa: E402
     MEDIA_TYPE_VIDEO,
 )
 from lib.media_cache import cache_path, resolve_cached   # noqa: E402
+from lib.capability import describe                      # noqa: E402
+
+#: What this commissioner is, in its own words. Compiled into the capability
+#: register by `scripts/capability_register.py`.
+#:
+#: THIS IS THE ONE INSTRUMENT IN THIS SHARD THAT SPENDS MONEY. Without
+#: `--dry-run` it calls the higgsfield CLI through the image-pipeline runner and
+#: consumes generation credits, one charge per uncached job.
+CAPABILITY = {
+    "id": "aurelix.generator.media-commission",
+    "name": "Media commissioner — generate the pictures a build asked for",
+    "kind": "generator",
+    "invocation": (
+        "python3 scripts/quality/commission-media.py --jobs output/<project>/image-jobs.json "
+        "--cache tenants/<tenant>/assets/generated [--dry-run] [--only <hash,...>] [--json]"
+    ),
+    "preconditions": [
+        "image-jobs.json must hold LOWERED job specs ({jobs: [{job_hash, job, demands}]}); a bare "
+        "gap list is refused by name — rebuild with a stage_resolve_assets that calls to_job_v1",
+        "every entry's recorded job_hash must equal job_hash(spec), or the run aborts: a cache keyed "
+        "on a stale hash is a cache keyed on a lie",
+        "for stills and generative motion: the image-pipeline checkout at $IMAGE_PIPELINE_ROOT "
+        "(default ~/Developer/GitHub/services/image-pipeline), and an AUTHENTICATED `higgsfield` CLI "
+        "session — `hf auth login`. There is no API-key env var; the credential is the CLI's session",
+        "for remotion motion jobs: web-builder/motion/node_modules installed (`npm install`)",
+        "WITHOUT --dry-run this SPENDS GENERATION CREDITS, one charge per uncached job",
+    ],
+    "inputs": [
+        "output/<project>/image-jobs.json — the lowered job specs the build emitted",
+        "the cache directory, checked before the provider is even looked at",
+    ],
+    "outputs": [
+        "one file per generated job at <cache>/<job_hash>.<ext> — exactly one legal name per hash, "
+        "staged through a tempdir so the runner's auto-incrementing versions never accumulate",
+        "a per-job console ledger and, with --json, a machine-readable summary as the last line",
+    ],
+    "outcome": (
+        "how many of the build's demanded images/videos already exist in the cache, what the "
+        "uncached ones would cost (--dry-run), and — when told to spend — which were produced, "
+        "which failed, and which are UNRENDERED with a named reason"
+    ),
+    "exit_contract": {
+        "0": "done — every job cached, generated, estimated or explicitly skipped",
+        "1": "at least one job FAILED (the provider errored or produced no file); also the refusals "
+             "raised as SystemExit: a bare gap list, or a job_hash mismatch",
+        "2": "argparse usage error (a missing --jobs / --cache). argparse's own exit",
+        "3": "NOT_MEASURED — at least one job is UNRENDERED with a reason (missing remotion "
+             "node_modules, a missing entry, or generative motion, whose cost was never measured). "
+             "Folding this into 0 would make a missing toolchain read as a completed commission",
+    },
+    "measures": [
+        "cache hit/miss per job_hash, before any provider is consulted — this is what makes a rerun "
+        "after a crash cost nothing",
+        "a provider cost estimate per uncached job under --dry-run, reported verbatim, and as the "
+        "raw line when it does not parse",
+        "which renderer each job belongs to, from media_type + motion.engine",
+    ],
+    "cannot_see": [
+        "whether the image it commissioned is any GOOD, on brief, or even depicts the subject. It "
+        "moves exactly one produced file to <hash>.<ext> and never looks at the pixels; a provider "
+        "that returns a plausible wrong picture is indistinguishable from success here",
+        "whether the build will use what it generated. This file is deliberately OFF the build path "
+        "— orchestrate.py neither imports nor invokes it (asserted by a grep in "
+        "scripts/test_media_cache.py) — so a commissioned asset only lands if a later build reads "
+        "the cache with the same hash",
+        "the cost of generative MOTION. That path is NOT_MEASURED by declaration: the census could "
+        "not obtain a price (docs/census/2026-08-17-motion-engine.md §6), so it refuses rather than "
+        "spend against an unmeasured figure",
+        "that a palette change just invalidated every hash. job_hash digests the palette by design "
+        "(lib/image_jobs.py:704), so one token change cache-misses the entire set at once and this "
+        "file will happily re-commission all of it",
+        "whether the higgsfield session is still authenticated until it fails — an expired login "
+        "surfaces as a FAILED job, not as a precondition error",
+    ],
+    "reachable_from": [
+        "hand-run only — by design",
+        "scripts/test_media_cache.py:256 and scripts/test_motion_jobs.py:482 (as a subprocess, with "
+        "MEDIA_COMMISSION_FAKE_PROVIDER=1)",
+    ],
+    "cost": (
+        "REAL MONEY without --dry-run: generation credits, one charge per uncached job, unbounded "
+        "by the number of jobs in the file (use --only to cap it). --dry-run spends nothing and "
+        "takes ~1s per uncached job. Remotion motion is compute-only, ~5s per 390 frames warm"
+    ),
+}
 
 #: The deterministic runner. A sibling service repo, not a submodule — resolved
 #: by env override first so a checkout somewhere else still works, and reported
@@ -293,6 +378,8 @@ def _cost_from_log(log: str):
 
 
 def main(argv=None):
+    if describe(CAPABILITY, argv):
+        return 0
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--jobs", required=True, help="path to image-jobs.json")
     ap.add_argument("--cache", required=True,

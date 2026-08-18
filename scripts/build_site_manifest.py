@@ -43,6 +43,73 @@ from typing import Any, Dict, List, Optional
 
 # Add scripts/lib to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "lib"))
+# …and scripts/ itself, so `lib.capability` resolves as a package import.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib.capability import describe  # noqa: E402
+
+# What this instrument is, in its own words. Compiled into the capability
+# register by `scripts/capability_register.py`; see that file for why it lives here.
+CAPABILITY = {
+    "id": "aurelix.builder.site-manifest",
+    "name": "Site manifest builder — page list or harvested spec → site-manifest.json",
+    "kind": "builder",
+    "invocation": "python3 scripts/build_site_manifest.py --project <name> --industry <handle> "
+                  "(--site-spec <copy-harvest/site-spec.json> | --pages <a,b,c> | "
+                  "--pages-file <file> | --use-default-pages) [--exact-pages] [--output <path>]",
+    "preconditions": [
+        "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY exported from web-builder/.env — "
+        "section_presets and industry_styles are read through lib/supabase_client",
+        "an industry handle that section_presets actually keys on; an unknown one silently "
+        "degrades to the single-page {'homepage'} fallback",
+        "for --site-spec: a copy-harvest site-spec.json with a non-empty pages[]",
+    ],
+    "inputs": [
+        "--pages / --pages-file / --use-default-pages: an enumerated page-type list",
+        "--site-spec: harvested pages[] from a copy-harvest, mapped 1:1",
+        "section_presets via get_all_page_sections(industry) — the required page types",
+        "industry_styles via get_industry_metadata(industry) — nav and footer variants",
+    ],
+    "outputs": [
+        "site-manifest.json at --output, default output/<project>/site-manifest.json — "
+        "{project, industry, shared_components, pages[]} with id/route/app_path/page_type",
+    ],
+    "outcome": "the page set the multipage pipeline will build, reconciled against the "
+               "industry's required page types unless --exact-pages was passed",
+    "exit_contract": {
+        0: "the manifest was built (and written, if --output was given). main() returns None "
+           "and the process falls off the end",
+        1: "a source was missing or unusable: no page selector given, --site-spec absent or "
+           "unparseable or with no pages[], --pages-file absent, or build_site_manifest raised",
+    },
+    "measures": [
+        "which page types the industry's presets require (get_all_page_sections keys)",
+        "the industry's declared nav and footer variants",
+        "the reconciled page set, deduplicated and sorted so the output is byte-identical "
+        "across runs (set iteration is salted per process; this iterates sorted())",
+    ],
+    "cannot_see": [
+        "whether a template exists for anything it schedules — it lists page types and shared "
+        "components; supply is scripts/supply_register.py's question, and the two do not talk",
+        "the difference between 'this industry has no required pages' and 'the database was "
+        "unreachable' — get_required_page_types catches every exception, prints a warning and "
+        "returns {'homepage'}, so an outage becomes a confident one-page site",
+        "the same blindness again for styling: a failed get_industry_metadata is caught and "
+        "the manifest silently ships the hardcoded sticky-transparent / four-column defaults",
+        "whether the page_type vocabulary it emits (8 values) maps onto the one section_presets "
+        "keys (14 values). `content`, `product` and `blog` do not overlap; translation is "
+        "lib/site_manifest.registry_page_type()'s job, not this file's",
+        "whether a route it invents from a page id corresponds to anything on the source site — "
+        "without --exact-pages it folds in industry-required pages and not-found regardless",
+        "content: it schedules sections, it never checks that any of them can be filled",
+    ],
+    "reachable_from": [
+        "orchestrate.py:11223 — imports build_site_manifest() as a function (the CLI is not "
+        "invoked by the chain)",
+        "standalone CLI",
+    ],
+    "cost": "seconds; two Supabase reads and no build. Writes site-manifest.json at --output",
+}
 
 try:
     import site_manifest
@@ -361,6 +428,10 @@ def build_site_manifest(
 
 
 def main():
+    # Before parse_args: --project and --industry are required, so a --describe
+    # that had to parse would exit 2 on a usage error instead of describing.
+    if describe(CAPABILITY):
+        return
     parser = argparse.ArgumentParser(
         description="Build a site-manifest.json from an enumerated page list",
         formatter_class=argparse.RawDescriptionHelpFormatter,

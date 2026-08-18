@@ -61,8 +61,78 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib.capability import describe  # noqa: E402
+
 DEMAND_PATH = ROOT / "supabase" / "exports" / "section_presets.csv"
 SUPPLY_PATH = ROOT / "section-templates" / "manifest.json"
+
+# What this instrument is, in its own words. Compiled into the capability
+# register by `scripts/capability_register.py`; see that file for why it lives here.
+CAPABILITY = {
+    "id": "aurelix.builder.supply-register",
+    "name": "Supply register — template demand the library cannot supply",
+    "kind": "builder",
+    "invocation": "python3 scripts/supply_register.py [-o <supply-register.json>] "
+                  "[--build-dir <output/PROJECT>]",
+    "preconditions": [
+        "supabase/exports/section_presets.csv exists — the tracked demand export. Regenerate "
+        "with `python3 scripts/export_section_presets.py export`",
+        "section-templates/manifest.json exists and has a non-empty archetypes object",
+        "no database and no network: both sources are version-controlled, so the register is "
+        "re-derivable offline",
+    ],
+    "inputs": [
+        "supabase/exports/section_presets.csv — demand, one row per (industry, page_type, position)",
+        "section-templates/manifest.json — supply, the local .tsx ∪ DB archetype union",
+        "--build-dir/site-manifest.json — optional, read-only, to annotate one build's asks",
+    ],
+    "outputs": [
+        "the register JSON on stdout, or at -o: {schema, sources, summary, missing[]} where each "
+        "missing record carries archetype, variant, cause, demand_rows, page_types, industries, "
+        "demanded_by[] and (with --build-dir) demanded_by_build_routes",
+    ],
+    "outcome": "which (archetype, variant) pairs the section-preset registry demands and no "
+               "template supplies, attributed to the industries and page types that asked",
+    "exit_contract": {
+        0: "the register was derived and emitted. A non-empty register is the honest state of "
+           "the library, NOT a failure — this is a builder, not a gate",
+        1: "a source was missing or malformed (SourceMissing), or --build-dir has no "
+           "site-manifest.json. No register is emitted rather than an empty one, because an "
+           "empty register reads as 'the library is complete'",
+    },
+    "measures": [
+        "distinct demanded pairs, distinct supplied pairs, and the set difference",
+        "cause per missing pair: archetype_absent vs variant_not_in_library — the same "
+        "vocabulary omitted-sections.json uses",
+        "how many demand ROWS each missing pair costs, and which industries/page types asked",
+        "with --build-dir: which pairs one build actually tripped over, and on which routes",
+        "its own arithmetic — assert_balanced() raises if the summary disagrees with the records",
+    ],
+    "cannot_see": [
+        "whether a SUPPLIED template is any good, or renders at all. Supply here means a name "
+        "appears in manifest.json; body depth, token use and correctness are invisible",
+        "demand newer than the tracked CSV export. It reads a committed snapshot, never "
+        "section_presets live, so a preset added today is absent until someone re-exports",
+        "demand that never reaches a preset row: a preset-declared sequence, an operator "
+        "brief, or a build's own hand-authored fallback sequence",
+        "the third page-type vocabulary problem — it compares archetype/variant pairs and is "
+        "blind to a page_type that matches no registry row at all, which yields 0 demand and "
+        "therefore 0 recorded shortfall",
+        "which build, if any, will hit a missing pair — without --build-dir it is registry-wide, "
+        "and with it, it sees exactly one manifest",
+        "whether anything acts on it: nothing in the build reads this register (see reachable_from)",
+    ],
+    "reachable_from": [
+        "scripts/test_supply_register.py:20,215 — tests only",
+        "standalone CLI",
+        "NOTE: the module docstring says emit_supply_register is 'used by the wire patch in "
+        "orchestrate.py'. It is not — a repo-wide grep finds no non-test caller. The header "
+        "is stale; the code is authoritative",
+    ],
+    "cost": "under a second; two file reads, no database, no network, no build",
+}
 
 SCHEMA = "aurelix.supply_register.v1"
 
@@ -323,6 +393,8 @@ def _print_summary(reg: dict[str, Any]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if describe(CAPABILITY, argv):
+        return 0
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("-o", "--output", type=Path, help="write the register here")
     ap.add_argument(

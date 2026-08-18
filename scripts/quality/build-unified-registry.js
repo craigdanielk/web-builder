@@ -26,6 +26,46 @@ const OUTPUT_PATH = path.join(SKILLS_ANIM, 'component-registry.json');
 
 const CURATED_CATEGORIES = ['entrance', 'scroll', 'interactive', 'continuous', 'text', 'effect', 'background'];
 
+const { describe } = require('./lib/capability');
+
+/** What this builder is, in its own words. Compiled into the capability register
+ *  by `scripts/capability_register.py`; see that file for why it lives here. */
+const CAPABILITY = {
+  id: 'aurelix.builder.component-registry',
+  name: 'Unified component registry builder',
+  kind: 'builder',
+  invocation: 'node scripts/quality/build-unified-registry.js',
+  preconditions: [
+    'curated component sources under skills/animation-components/<category>/*.tsx',
+    'skills/animation-components/registry.json for selection metadata — ABSENT from this checkout, measured 2026-08-18; it then discovers from the filesystem instead',
+  ],
+  inputs: [
+    'skills/animation-components/{entrance,scroll,interactive,continuous,text,effect,background}/*.tsx',
+    'skills/animation-components/registry.json (legacy metadata: archetypes, intensity, affinity)',
+    'skills/animation-components/registry/animation_registry.json (export-name cross-check)',
+  ],
+  outputs: ['skills/animation-components/component-registry.json — per component: export_name, export_type, import_statement, dependencies, engine'],
+  outcome: 'the verified export shape and import statement for every curated component, so the pipeline never emits a wrong import (the failure that took gradient-shift → GradientBackground)',
+  exit_contract: {
+    0: 'the registry was written. This is the only code it returns — a component whose source file is missing is emitted with a guessed PascalCase export name rather than being refused',
+    1: 'an unhandled throw (malformed registry.json, unwritable output path)',
+  },
+  measures: [
+    'default and named exports, by regex over the source text',
+    'external npm dependencies per component, scope-aware (@gsap/react keeps its scope — splitting on the first / once recorded a bare @gsap and broke the Next.js build)',
+    'engine attribution: gsap vs framer-motion, from the dependency set',
+  ],
+  cannot_see: [
+    'selection metadata once registry.json is gone. On the filesystem-discovery path it emits affinity: {}, archetypes: [] and intensity: "moderate" defaults — measured: 53 of 53 rows in the committed component-registry.json carry an empty affinity and empty archetypes, and selectAnimation() scores affinity[archetype] || 0 and skips a zero forever. Every component it registers is therefore inert at selection time, and the builder reports that as 53 components',
+    'exports it cannot regex. It matches `export default function|class|<ident>;` and `export function|const|{...}` — an export written any other way falls through to the literal string "Component", which is a wrong import, not a refusal',
+    'whether the import path it writes resolves. It hardcodes @/components/animations/<stem> and never checks that the build copies the component there',
+    'whether a declared dependency is installed or the component renders — it reads source text and executes nothing',
+    'whether it is stale. Nothing invokes it (measured: zero references in scripts/, run_pipeline.py or package.json) while five consumers read its committed output, so the output can be older than the sources it describes and no gate notices',
+  ],
+  reachable_from: [],
+  cost: '<1s, filesystem only; 53 components on this checkout',
+};
+
 /**
  * Extract default export name from source.
  * Matches: export default function Foo, export default Foo, export default class Foo
@@ -128,6 +168,7 @@ function buildImportStatement(stem, exportType, exportName) {
 }
 
 function main() {
+  if (describe(CAPABILITY)) return;
   let legacy = { components: {} };
   if (fs.existsSync(LEGACY_REGISTRY_PATH)) {
     legacy = JSON.parse(fs.readFileSync(LEGACY_REGISTRY_PATH, 'utf8'));

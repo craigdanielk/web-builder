@@ -29,6 +29,47 @@ const crypto = require('crypto');
 const { mapSectionsToArchetypes } = require('./lib/archetype-mapper');
 const pageHarvest = require('./lib/html-page-harvest');
 
+const { describe } = require('./lib/capability');
+
+/** What this builder is, in its own words. Compiled into the capability register
+ *  by `scripts/capability_register.py`; see that file for why it lives here. */
+const CAPABILITY = {
+  id: 'aurelix.builder.site-spec',
+  name: 'Deterministic site-spec builder',
+  kind: 'builder',
+  invocation: 'node scripts/quality/build-site-spec.js <extraction-dir> <project-name> [--captures <dir>] [--routes <a,b>] [--max-pages <n>] [--out <dir>]',
+  preconditions: [
+    'either an extraction dir holding extraction-data.json AND mapped-sections.json, or --captures naming an audit run dir with a usable capture bundle',
+    'skills/animation-components/component-registry.json for component resolution (absent degrades to {} rather than failing)',
+  ],
+  inputs: [
+    '<extraction-dir>/extraction-data.json, mapped-sections.json, animation-analysis.json',
+    'an audit capture bundle under --captures (captures/ + captures_manifest.json)',
+    'skills/animation-components/component-registry.json',
+  ],
+  outputs: ['<--out or output/<project>>/site-spec.json — style tokens, sections[], and pages[] when captures were given'],
+  outcome: 'a single deterministic site-spec.json — no LLM call — carrying the section sequence and, per route, the harvested blocks the build will fill from',
+  exit_contract: {
+    0: 'the spec was written',
+    1: 'usage error (missing positional), missing/invalid extraction inputs without --captures, or an unhandled throw — an unusable capture bundle reaches here as a throw from loadCaptures',
+  },
+  measures: [
+    'style tokens derived from the extraction DOM: palette, dominant radius, font mapping, colour temperature',
+    'per-route section sequences harvested from the capture bundle, one pages[] entry per usable capture',
+    'section_uid minting — sha1(page|archetype|variant|first-text) — the routing key everything downstream joins on',
+  ],
+  cannot_see: [
+    'whether the harvested copy is TRUE. usableCaptures() checks only that html is a non-empty string with no fetch_error and status < 400; a capture of a stale, redirected or consent-walled page produces a confidently structured spec',
+    'a route it was asked for that the bundle does not contain. buildPages() filters usable captures DOWN to --routes and never reports the difference, so five requested routes and one captured route both emit a spec and exit 0',
+    'a page it silently dropped: harvestPage() yielding 0 blocks, and a page_id collision, are both `continue` with no counter and no stderr line',
+    'whether anything reads its output. The default output dir is output/<project> relative to the CWD, so under a re-rooted caller it writes a correct spec somewhere nobody looks and still exits 0',
+    'whether the archetypes it maps have a template behind them — template resolution happens later, in orchestrate.py, against section_archetypes',
+    'whether its style block survives. The benchmark gate overwrites these tokens from the ratified benchmark; a wrong extraction here is invisible because it is discarded downstream',
+  ],
+  reachable_from: ['orchestrate.py:788', 'orchestrate.py:948', 'scripts/test_captures_wiring.py', 'standalone CLI'],
+  cost: '~1-5s; no network, no browser, no LLM. Scales with capture count and page size',
+};
+
 const designTokens = (function () {
   try {
     return require('./lib/design-tokens.js');
@@ -857,6 +898,7 @@ function parseArgs(argv) {
 }
 
 function runCLI() {
+  if (describe(CAPABILITY)) return;
   const { positional, flags } = parseArgs(process.argv.slice(2));
   const extractionDir = positional[0];
   const projectName = positional[1];

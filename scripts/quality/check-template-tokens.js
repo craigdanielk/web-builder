@@ -48,6 +48,46 @@
 const fs = require('fs');
 const path = require('path');
 
+const { describe } = require('./lib/capability');
+
+/** What this instrument is, in its own words. Compiled into the capability
+ *  register by `scripts/capability_register.py`; see that file for why it lives
+ *  here rather than in a separate document. */
+const CAPABILITY = {
+  id: 'aurelix.gate.template-tokens',
+  name: 'Section-template token conversion check',
+  kind: 'gate',
+  invocation: 'node scripts/quality/check-template-tokens.js [dir]   (default: section-templates/)',
+  preconditions: [
+    'a directory of .tsx section templates on disk; defaults to web-builder/section-templates',
+  ],
+  inputs: ['every .tsx under the target directory, recursively, skipping node_modules and dot-directories'],
+  outputs: [],
+  outcome: 'which templates still hardcode an opaque palette literal, and which outer <section> does not take its vertical rhythm from var(--section-py)',
+  exit_contract: {
+    0: 'PASS — no violations in any template scanned',
+    1: 'FAIL — at least one violation. NOTE: a missing target directory ALSO returns 1, so "the directory is not there" and "the templates are wrong" are the same exit code',
+  },
+  measures: [
+    'opaque Tailwind palette literals (bg|text|border|ring|fill|stroke|divide|from|via|to)-(white|black|gray/grey/slate/zinc/neutral/stone-NNN) outside comments and outside strings',
+    'whether the outer <section> returned by the default export carries --section-py in its opening tag',
+    'translucent overlays (bg-white/5 and kin) on a separate WARNING channel that never affects the exit code',
+  ],
+  cannot_see: [
+    'the database tier — it walks a filesystem directory, and the unconverted templates are the ' +
+      '74 rows of section_archetypes.code_template, which never touch disk and are therefore never scanned',
+    'a palette literal written as a hex or an arbitrary value: the regex names Tailwind colour FAMILIES, ' +
+      'so #ffffff, bg-[#0b0b0b] and style={{color:"white"}} all pass',
+    'rendered colour — it is a text scan, so a template reading var(--surface) passes even when that ' +
+      'token compiles to the wrong value, which is exactly what the conformance gate looks at instead',
+    'rhythm on any root element other than <section>: a <header> or <footer> root is deliberately exempt, ' +
+      'so a footer with hardcoded py-24 is invisible here',
+    'whether the template renders at all — it never parses, compiles or executes the file',
+  ],
+  reachable_from: ['scripts/quality/check-template-tokens.test.js (imported as a module by the tests)', 'standalone CLI'],
+  cost: 'under a second over the 15 local templates; no network, no build, no database',
+};
+
 // ---------------------------------------------------------------------------
 // Rule (a): opaque palette literals.
 //
@@ -295,6 +335,7 @@ function checkDir(dir) {
 }
 
 function main(argv) {
+  if (describe(CAPABILITY, argv.slice(2))) return 0;
   const target = argv[2] || path.resolve(__dirname, '../../section-templates');
   if (!fs.existsSync(target)) {
     process.stderr.write(`check-template-tokens: no such directory: ${target}\n`);

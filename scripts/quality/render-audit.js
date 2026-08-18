@@ -32,6 +32,58 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
 
+const { describe } = require("./lib/capability");
+
+/** What this instrument is, in its own words. Compiled into the capability
+ *  register by `scripts/capability_register.py`; see that file for why it lives
+ *  here rather than in a separate document. */
+const CAPABILITY = {
+  id: "aurelix.probe.render-audit",
+  name: "Post-build render audit (headless Chromium probe)",
+  kind: "probe",
+  invocation:
+    "node scripts/quality/render-audit.js --base <url> (--routes <a,b,c> | --manifest <site-manifest.json>) --out <dir> [--viewport 1440x900] [--settle 2500]",
+  preconditions: [
+    "the site is already SERVED at --base (a local `npm run start` or a deployed URL) — this probe neither builds nor deploys",
+    "playwright with a chromium browser installed (`npx playwright install chromium`); its absence is a launch failure, not a measurement",
+  ],
+  inputs: ["every route reachable at <base><route>, from --routes or the non-dynamic pages of --manifest"],
+  outputs: [
+    "<out>/render-audit.json — the DEFECT SUMMARY (counts by severity/category, per-page totals); `facts` are discarded here",
+    "<out>/report.json — schema aurelix.render_audit.v2, the raw per-route `facts` the summary throws away",
+    "<out>/render-<route>.png — one full-page screenshot per route",
+    "stdout: one JSON line {report, total_defects, by_severity} for the Python caller",
+  ],
+  outcome:
+    "what the built site actually paints per route: section boxes, image load state, nav reachability, measured contrast with a denominator, console errors and 4xx/5xx requests",
+  exit_contract: {
+    0: "the audit RAN and both reports were written. It exits 0 whatever the defect count — this is a probe, not a gate, and the exit code carries no verdict",
+    1: "the probe itself failed (chromium would not launch, or an unhandled error)",
+    2: "usage — --base or --out missing",
+  },
+  measures: [
+    "per-section geometry and paint: height/width, opacity, visibility, textLen, a djb2 text fingerprint, own/child background image, per-section overflowX",
+    "page box: scrollWidth vs clientWidth with a 1px tolerance — the horizontal-overflow measurement",
+    "every <img>: naturalWidth/Height, rendered box, objectFit, load state; CSS background-image URLs are listed but their load state is recorded as null",
+    "contrast on up to 400 text elements that own their text node, alpha-compositing every background layer up to the first opaque ancestor, with measured/passed/failed counts so a failure count has a denominator",
+    "header/nav hrefs against the known route set, console errors, and every response with status >= 400",
+  ],
+  cannot_see: [
+    "any route it was not given: --manifest deliberately drops dynamic [handle] routes and not-found, so a broken product page is outside its world",
+    "a permanently invisible reveal — before probing it injects `[style*=\"opacity\"]{opacity:1!important}` to settle framer entrance animations, which also forces a genuinely stuck-at-0 element visible",
+    "zero-height sections as defects: blocks under 40px are recorded with belowThreshold=true and countedSections() keeps them out of every count and check",
+    "whether a CSS background-image resolves — kind:'bg' records are pushed with loaded:null and nothing ever fetches them",
+    "contrast of text inside a fixed/sticky overlay whose backdrop resolves light: those elements are SKIPPED, because the DOM-ancestor walk cannot see what is visually behind them",
+    "whether the content is TRUE. It measures paint, not provenance — a fabricated statistic renders perfectly and scores zero defects",
+    "anything that needs interaction: hover, modals, form states, authenticated pages. It loads, scrolls, and measures",
+  ],
+  reachable_from: [
+    "orchestrate.py:10002 (Stage 6 resolves the path) and orchestrate.py:10090 (subprocess.run, 180s timeout)",
+    "standalone CLI",
+  ],
+  cost: "roughly 10-20s per route (45s navigation timeout, --settle 2500ms, a scroll pass at 250ms per viewport, plus a full-page screenshot); requires a served site and a chromium download",
+};
+
 function parseArgs(argv) {
   const a = { base: null, routes: null, manifest: null, out: null, viewport: "1440x900", settle: 2500 };
   for (let i = 2; i < argv.length; i++) {
@@ -420,6 +472,7 @@ function countedSections(facts) {
 }
 
 async function main() {
+  if (describe(CAPABILITY)) return 0;
   const args = parseArgs(process.argv);
   if (!args.base || !args.out) {
     console.error("Usage: render-audit.js --base <url> (--routes a,b,c | --manifest path) --out <dir>");

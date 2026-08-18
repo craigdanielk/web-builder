@@ -20,9 +20,53 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 const { callClaudeCli } = require('./lib/claude-cli');
 const { extractReference } = require('./lib/extract-reference');
+const { describe } = require('./lib/capability');
 
 const BRIEFS_DIR = path.resolve(__dirname, '../../briefs');
 const BRIEF_TEMPLATE_PATH = path.join(BRIEFS_DIR, '_template.md');
+
+/** What this instrument is, in its own words. Compiled into the capability
+ *  register by `scripts/capability_register.py`; see that file for why it
+ *  lives here. */
+const CAPABILITY = {
+  id: 'aurelix.generator.url-to-brief',
+  name: 'URL → brief generator (LLM)',
+  kind: 'generator',
+  invocation: 'node scripts/quality/url-to-brief.js <url> <project-name> [--extraction-dir <dir>]',
+  preconditions: [
+    'briefs/_template.md exists — it is read unconditionally and a missing file throws',
+    'the `claude` CLI is installed and subscription-authenticated (callClaudeCli; no ANTHROPIC_API_KEY is used)',
+    'without --extraction-dir: playwright chromium installed and the URL reachable, because extractReference() crawls it live',
+    'with --extraction-dir: that directory already holds extraction-data.json (written by url-to-preset.js)',
+  ],
+  inputs: [
+    'a live URL, or a prior extraction directory\'s extraction-data.json',
+    'briefs/_template.md',
+  ],
+  outputs: [
+    'briefs/<project-name>.md — OVERWRITTEN unconditionally, no backup, no confirmation',
+    'without --extraction-dir also: output/extractions/<project-name>/ (whatever extractReference persists)',
+  ],
+  outcome: 'a written client brief inferred by an LLM from one page of extracted headings, paragraphs, CTAs, links, section labels and image alt text',
+  exit_contract: {
+    0: 'the brief was written — or --help was passed',
+    1: 'usage error (url or project-name missing), --extraction-dir has no extraction-data.json, or any exception (extraction failure, missing template, claude CLI failure) via the FATAL handler',
+  },
+  measures: [
+    'up to 20 headings, 15 paragraphs >30 chars, 10 interactive elements, 15 links, all section labels and 10 image alts from the extraction',
+    'a single page — the URL it was given, nothing followed from it',
+  ],
+  cannot_see: [
+    'whether anything it wrote is TRUE — the brief is an LLM inference about business, audience and brand personality from one page of markup, and nothing downstream distinguishes it from an operator-authored brief',
+    'more than one page: extractReference() crawls exactly the URL given, so a site whose purpose lives on /about or /pricing is described from its home page alone',
+    'design tokens, colour, type or layout — it reads text and hrefs only; that half is url-to-preset.js',
+    'that a --extraction-dir bundle is stale: it reads extraction-data.json with no freshness or source-URL check, so a brief can be generated for one URL from another URL\'s crawl',
+    'whether briefs/<project-name>.md already held hand-authored work — it overwrites, and only git recovers it',
+    'its own output quality: the CLI response is written to disk unparsed and unvalidated, so an error message or a refusal becomes the brief',
+  ],
+  reachable_from: ['scripts/orchestrate.py:889 (the --from-url path, step 0b)'],
+  cost: 'one live crawl (~30-90s) unless --extraction-dir is given, plus one `claude` sonnet call; 120s timeout when invoked from orchestrate.py',
+};
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -147,6 +191,7 @@ Output ONLY the brief markdown. No explanation, no code fences around the entire
 // ---------------------------------------------------------------------------
 
 async function main() {
+  if (describe(CAPABILITY)) return 0;
   const config = parseArgs();
 
   console.log('\n  URL → BRIEF GENERATOR');

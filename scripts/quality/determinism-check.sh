@@ -27,6 +27,59 @@
 
 set -u
 
+# --describe: what this instrument is, in its own words. Shell cannot import
+# scripts/lib/capability.py, so the declaration is a JSON literal here and is
+# validated by `scripts/capability_register.py` when the register is compiled.
+# Same schema, same rules — `cannot_see` is not optional.
+if [ "${1:-}" = "--describe" ]; then
+  cat <<'CAPABILITY_JSON'
+{
+  "id": "aurelix.gate.determinism",
+  "name": "Build determinism gate (build twice, diff the trees)",
+  "kind": "gate",
+  "invocation": "./scripts/quality/determinism-check.sh <project> [extra orchestrate args…]",
+  "preconditions": [
+    "orchestrate.py can build <project> non-interactively to completion, twice, with whatever extra args you pass through",
+    "a writable scratch root — $DETERMINISM_SCRATCH, default $TMPDIR/aurelix-determinism. It never touches web-builder/output/",
+    "an allowlist at $DETERMINISM_ALLOWLIST, default scripts/determinism-allowlist.json"
+  ],
+  "inputs": [
+    "the two build trees it produces itself, under $DETERMINISM_SCRATCH/<project>/{a,b}",
+    "determinism-allowlist.json — the justified-difference declarations",
+    "the two build logs, a.log and b.log, used only to explain a NOT_MEASURED"
+  ],
+  "outputs": [
+    "$DETERMINISM_SCRATCH/<project>/{a,b} — two full build trees, kept for inspection",
+    "$DETERMINISM_SCRATCH/<project>/{a.log,b.log}",
+    "stdout: every unexplained difference, named by FIELD path (/line_items[*]/build_trace/completed_at), not just by filename"
+  ],
+  "outcome": "whether two identical runs produce the same tree, which is the precondition for caching and for attributing any later diff to a change",
+  "exit_contract": {
+    "0": "PASS — the two trees differ only in fields the allowlist justifies",
+    "1": "FAIL — at least one unexplained difference, or the two builds exited with different codes",
+    "3": "NOT_MEASURED — no argument given, the scratch dir could not be created, or fewer than $DETERMINISM_MIN_FILES (default 20) files were produced, so there was nothing worth comparing"
+  },
+  "measures": [
+    "JSON artifacts structurally, so a report names the field that moved rather than the file",
+    "every non-JSON file byte-for-byte — a generated .tsx that changes between two identical runs is a defect, always",
+    "the two builds' exit codes: two identical runs that end differently are non-deterministic whatever the trees look like",
+    "it deliberately does NOT pin PYTHONHASHSEED, so a build that depends on the seed surfaces as a real defect"
+  ],
+  "cannot_see": [
+    "whether the build is CORRECT. Two identically wrong builds pass — this gate measures reproducibility, nothing else, and it says so by comparing the trees even when both runs exited non-zero",
+    "intermittent non-determinism: it samples exactly two runs, so anything that varies less often than one run in two can pass here and still be non-deterministic",
+    "anything written outside --output-root. SKILLS_DIR, BRIEFS_DIR and every Supabase write live in neither scratch root and are compared by nothing",
+    "the two differences it normalises away by construction: the output-root prefix and the loopback port digits of the preview server",
+    "a difference that an allowlist entry wrongly justifies — the allowlist is a declaration, and a field listed there is invisible to this gate forever after",
+    "anything at all when a build dies early: fewer than 20 files exits 3 rather than comparing two near-empty trees that would have read as a pass"
+  ],
+  "reachable_from": [],
+  "cost": "two full builds back to back — minutes to tens of minutes, and roughly twice one build's disk"
+}
+CAPABILITY_JSON
+  exit 0
+fi
+
 if [ "$#" -lt 1 ]; then
   echo "usage: determinism-check.sh <project> [extra orchestrate args…]" >&2
   exit 3

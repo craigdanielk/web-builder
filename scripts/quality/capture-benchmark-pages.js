@@ -52,8 +52,60 @@ const path = require('path');
 const fs = require('fs');
 const { extractReference } = require('./lib/extract-reference.js');
 const { analyzeAnimationEvidence } = require('./lib/animation-detector.js');
+const { describe } = require('./lib/capability');
 
 const WEB_BUILDER = path.resolve(__dirname, '..', '..');
+
+/** What this instrument is, in its own words. Compiled into the capability
+ *  register by `scripts/capability_register.py`; see that file for why it
+ *  lives here. */
+const CAPABILITY = {
+  id: 'aurelix.extractor.benchmark-corpus-capture',
+  name: 'Benchmark corpus capture',
+  kind: 'extractor',
+  invocation: 'node scripts/quality/capture-benchmark-pages.js --market <slug> (--pages <file.json> | --page "slug|url|why" ...) [--out <dir>]',
+  preconditions: [
+    'playwright chromium installed — extractReference() launches a real browser per page',
+    'every page reachable over http(s) from this machine',
+    'every page entry carries a non-empty `why`; an unexplained capture is a usage error, not a warning',
+    'the market slug matches [a-z0-9-] and page slugs are unique',
+  ],
+  inputs: [
+    'a market slug',
+    'a page list: --pages <file.json> (array of [slug,url,why] triples or {slug,url,why} objects) and/or repeated --page "slug|url|why"',
+  ],
+  outputs: [
+    'benchmarks/corpora/<market>/<slug>/extraction.json per page (or under --out) — the persisted evidence a benchmark is compiled from',
+    'benchmarks/corpora/<market>/index.json — written even when every page failed, so the failure is inspectable',
+    'whatever extractReference() persists alongside it (screenshots, crops)',
+  ],
+  outcome: 'a named, in-repo, per-market capture corpus that scripts/commission_benchmark.py can recompile a benchmark from byte-identically',
+  exit_contract: {
+    0: 'at least one page captured',
+    3: 'NOT_MEASURED — no page captured; index.json is still written',
+    64: 'usage error — unknown argument, missing --market, no pages, bad slug, non-http url, missing `why`, duplicate slug',
+    1: 'an unhandled exception outside the per-page try (e.g. the output directory could not be created)',
+  },
+  measures: [
+    'the rendered DOM, text content, sections and assets of each page, via extractReference()',
+    'animations.profile — analyzeAnimationEvidence() run over the RAW evidence extractReference returns, which is where the compiler reads motion intensity {level, score, confidence} from',
+    'dom_elements, text_nodes and motion_level per page, recorded into index.json',
+  ],
+  cannot_see: [
+    'whether the pages chosen REPRESENT the market — page selection is an operator act, which is why `why` is required input and why an unexplained corpus is refused rather than warned about',
+    'one viewport and one moment: extractReference captures at a fixed 1440x900 desktop viewport, so a market whose identity is mobile-first is captured through a desktop lens',
+    'anything behind an interaction, a login, or a consent wall — a page that renders a cookie overlay is captured with the overlay',
+    'whether a page it captured is the page it asked for: a redirect, a geo-block or a bot wall yields a successful capture of the wrong document, counted as ok:true',
+    'a partial failure as a failure — one page out of six captured exits 0; only a total failure reaches exit 3, so the caller must read index.json to learn the real count',
+    'whether the animation profile is meaningful: a profile failure is recorded into animation_profile_error and the capture still counts as ok, deliberately, because a lost capture is worse',
+  ],
+  reachable_from: [
+    'no code invokes it — it is an operator step',
+    'named as the required prior step by scripts/commission_benchmark.py:196,681 and scripts/lib/benchmark_gate.py:155 (CAPTURE_STEP), which read its corpus but never spawn it',
+    'asserted to exist and to write a named in-repo corpus by scripts/test_commission_benchmark.py:45,338 and scripts/test_benchmark_gate.py:410',
+  ],
+  cost: 'one browser launch and full scroll-capture per page — roughly 30-120s each; a five-page corpus is several minutes and writes tens of MB',
+};
 const EXIT_OK = 0;
 const EXIT_NOT_MEASURED = 3;
 const EXIT_USAGE = 64;
@@ -129,6 +181,9 @@ function normalisePages(args) {
 }
 
 (async () => {
+  // Before parseArgs: it rejects unknown arguments with exit 64, and before any
+  // browser launch — `--describe` must never open one.
+  if (describe(CAPABILITY)) return;
   const args = parseArgs(process.argv.slice(2));
   if (!args.market) usage('--market <slug> is required');
   if (!/^[a-z0-9][a-z0-9-]*$/.test(args.market)) {

@@ -1,11 +1,649 @@
 _meta:
   generated_by: scripts/capability_register.py compile
-  instrument_count: 2
+  instrument_count: 33
   status_counts:
-    VERIFIED: 2
+    NOT_RUN: 8
+    VERIFIED: 25
   note: GENERATED — do not edit. Declarations live in each instrument's source file behind `--describe`.
     Edit there and recompile.
 capabilities:
+- id: aurelix.builder.animation-registry
+  name: Animation component catalogue builder
+  kind: builder
+  invocation: node scripts/quality/build-animation-registry.js
+  preconditions:
+  - curated component sources under skills/animation-components/<category>/*.tsx
+  - skills/animation-components/21st-dev-library/ with registry-full.json for the second source — ABSENT
+    from this checkout, measured 2026-08-18
+  inputs:
+  - skills/animation-components/{entrance,scroll,interactive,continuous,text,effect,background}/*.tsx
+  - skills/animation-components/21st-dev-library/registry-full.json
+  outputs:
+  - skills/animation-components/registry/animation_taxonomy.json
+  - skills/animation-components/registry/animation_registry.json
+  - skills/animation-components/registry/animation_search_index.json
+  - skills/animation-components/registry/animation_capability_matrix.csv
+  - skills/animation-components/registry/analysis_log/<animation_id>.md
+  outcome: a catalogue row per discovered component — classification (animation/ui/hybrid), motion intents,
+    triggers, archetype affinity — plus a per-component rationale log
+  exit_contract:
+    '0': 'the catalogue was written. This is the ONLY code it returns: quality-gate issues are printed
+      and the run still exits 0, and a per-file read/parse error is counted and skipped'
+    '1': an unhandled throw (unreadable input directory, unwritable output directory)
+  measures:
+  - 'per-component source features: imports, engine, hooks, triggers, export shape'
+  - classification into animation | ui | hybrid, and the motion intents behind it
+  - validateRegistry() issues — taxonomy violations and missing fields, printed but never fatal
+  cannot_see:
+  - that one of its two declared sources has vanished. skills/animation-components/21st-dev-library/ does
+    not exist in this checkout; discover21stDevComponents() returns 0 and that zero is reported as a component
+    count, not as a missing input. Re-running it today would replace the tracked 1034-row animation_registry.json
+    with the 53 curated components alone
+  - whether the rows it wrote stay file-backed. 986 of the 1034 rows in the registry it last produced
+    name paths under that absent tree — measured by os.path.exists over every row, 2026-08-18. The output
+    is a CATALOGUE, not an inventory, and nothing in this builder makes that distinction
+  - 'drift. It only ever rewrites everything: 53 curated .tsx are on disk today against 48 file-backed
+    registry rows, and it has no way to report those 5 as new — only to regenerate'
+  - that selection does not read what it writes. component-inject.js reads animation_library.json (the
+    48 backed rows), which THIS builder does not emit — registry/annotate_backed_rows.py derives it. Two
+    producers write animation_registry.json and neither knows about the other
+  - whether a classified component actually renders, compiles, or has its npm dependency installed — it
+    reads source text and never executes anything
+  reachable_from: []
+  cost: ~5-30s, filesystem only; scales with component count. Writes one markdown log per component
+  source_file: web-builder/scripts/quality/build-animation-registry.js
+  language: js
+  status: NOT_RUN
+  evidence: all five outputs are git-tracked; a run now would replace a 1034-row registry with ~53 rows
+    and exit 0
+- id: aurelix.builder.component-registry
+  name: Unified component registry builder
+  kind: builder
+  invocation: node scripts/quality/build-unified-registry.js
+  preconditions:
+  - curated component sources under skills/animation-components/<category>/*.tsx
+  - skills/animation-components/registry.json for selection metadata — ABSENT from this checkout, measured
+    2026-08-18; it then discovers from the filesystem instead
+  inputs:
+  - skills/animation-components/{entrance,scroll,interactive,continuous,text,effect,background}/*.tsx
+  - 'skills/animation-components/registry.json (legacy metadata: archetypes, intensity, affinity)'
+  - skills/animation-components/registry/animation_registry.json (export-name cross-check)
+  outputs:
+  - 'skills/animation-components/component-registry.json — per component: export_name, export_type, import_statement,
+    dependencies, engine'
+  outcome: the verified export shape and import statement for every curated component, so the pipeline
+    never emits a wrong import (the failure that took gradient-shift → GradientBackground)
+  exit_contract:
+    '0': the registry was written. This is the only code it returns — a component whose source file is
+      missing is emitted with a guessed PascalCase export name rather than being refused
+    '1': an unhandled throw (malformed registry.json, unwritable output path)
+  measures:
+  - default and named exports, by regex over the source text
+  - external npm dependencies per component, scope-aware (@gsap/react keeps its scope — splitting on the
+    first / once recorded a bare @gsap and broke the Next.js build)
+  - 'engine attribution: gsap vs framer-motion, from the dependency set'
+  cannot_see:
+  - 'selection metadata once registry.json is gone. On the filesystem-discovery path it emits affinity:
+    {}, archetypes: [] and intensity: "moderate" defaults — measured: 53 of 53 rows in the committed component-registry.json
+    carry an empty affinity and empty archetypes, and selectAnimation() scores affinity[archetype] ||
+    0 and skips a zero forever. Every component it registers is therefore inert at selection time, and
+    the builder reports that as 53 components'
+  - exports it cannot regex. It matches `export default function|class|<ident>;` and `export function|const|{...}`
+    — an export written any other way falls through to the literal string "Component", which is a wrong
+    import, not a refusal
+  - whether the import path it writes resolves. It hardcodes @/components/animations/<stem> and never
+    checks that the build copies the component there
+  - whether a declared dependency is installed or the component renders — it reads source text and executes
+    nothing
+  - 'whether it is stale. Nothing invokes it (measured: zero references in scripts/, run_pipeline.py or
+    package.json) while five consumers read its committed output, so the output can be older than the
+    sources it describes and no gate notices'
+  reachable_from: []
+  cost: <1s, filesystem only; 53 components on this checkout
+  source_file: web-builder/scripts/quality/build-unified-registry.js
+  language: js
+  status: NOT_RUN
+  evidence: OUTPUT_PATH is hardcoded to the git-tracked component-registry.json, with no output flag
+- id: aurelix.builder.site-manifest
+  name: Site manifest builder — page list or harvested spec → site-manifest.json
+  kind: builder
+  invocation: python3 scripts/build_site_manifest.py --project <name> --industry <handle> (--site-spec
+    <copy-harvest/site-spec.json> | --pages <a,b,c> | --pages-file <file> | --use-default-pages) [--exact-pages]
+    [--output <path>]
+  preconditions:
+  - SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY exported from web-builder/.env — section_presets and industry_styles
+    are read through lib/supabase_client
+  - an industry handle that section_presets actually keys on; an unknown one silently degrades to the
+    single-page {'homepage'} fallback
+  - 'for --site-spec: a copy-harvest site-spec.json with a non-empty pages[]'
+  inputs:
+  - '--pages / --pages-file / --use-default-pages: an enumerated page-type list'
+  - '--site-spec: harvested pages[] from a copy-harvest, mapped 1:1'
+  - section_presets via get_all_page_sections(industry) — the required page types
+  - industry_styles via get_industry_metadata(industry) — nav and footer variants
+  outputs:
+  - site-manifest.json at --output, default output/<project>/site-manifest.json — {project, industry,
+    shared_components, pages[]} with id/route/app_path/page_type
+  outcome: the page set the multipage pipeline will build, reconciled against the industry's required
+    page types unless --exact-pages was passed
+  exit_contract:
+    '0': the manifest was built (and written, if --output was given). main() returns None and the process
+      falls off the end
+    '1': 'a source was missing or unusable: no page selector given, --site-spec absent or unparseable
+      or with no pages[], --pages-file absent, or build_site_manifest raised'
+  measures:
+  - which page types the industry's presets require (get_all_page_sections keys)
+  - the industry's declared nav and footer variants
+  - the reconciled page set, deduplicated and sorted so the output is byte-identical across runs (set
+    iteration is salted per process; this iterates sorted())
+  cannot_see:
+  - whether a template exists for anything it schedules — it lists page types and shared components; supply
+    is scripts/supply_register.py's question, and the two do not talk
+  - the difference between 'this industry has no required pages' and 'the database was unreachable' —
+    get_required_page_types catches every exception, prints a warning and returns {'homepage'}, so an
+    outage becomes a confident one-page site
+  - 'the same blindness again for styling: a failed get_industry_metadata is caught and the manifest silently
+    ships the hardcoded sticky-transparent / four-column defaults'
+  - whether the page_type vocabulary it emits (8 values) maps onto the one section_presets keys (14 values).
+    `content`, `product` and `blog` do not overlap; translation is lib/site_manifest.registry_page_type()'s
+    job, not this file's
+  - whether a route it invents from a page id corresponds to anything on the source site — without --exact-pages
+    it folds in industry-required pages and not-found regardless
+  - 'content: it schedules sections, it never checks that any of them can be filled'
+  reachable_from:
+  - orchestrate.py:11223 — imports build_site_manifest() as a function (the CLI is not invoked by the
+    chain)
+  - standalone CLI
+  cost: seconds; two Supabase reads and no build. Writes site-manifest.json at --output
+  source_file: web-builder/scripts/build_site_manifest.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 scripts/build_site_manifest.py --project scratch-probe --industry fintech --pages
+    homepage,about --output /tmp/site-manifest.json` → exit 0. 9 pages
+- id: aurelix.builder.site-spec
+  name: Deterministic site-spec builder
+  kind: builder
+  invocation: node scripts/quality/build-site-spec.js <extraction-dir> <project-name> [--captures <dir>]
+    [--routes <a,b>] [--max-pages <n>] [--out <dir>]
+  preconditions:
+  - either an extraction dir holding extraction-data.json AND mapped-sections.json, or --captures naming
+    an audit run dir with a usable capture bundle
+  - skills/animation-components/component-registry.json for component resolution (absent degrades to {}
+    rather than failing)
+  inputs:
+  - <extraction-dir>/extraction-data.json, mapped-sections.json, animation-analysis.json
+  - an audit capture bundle under --captures (captures/ + captures_manifest.json)
+  - skills/animation-components/component-registry.json
+  outputs:
+  - <--out or output/<project>>/site-spec.json — style tokens, sections[], and pages[] when captures were
+    given
+  outcome: a single deterministic site-spec.json — no LLM call — carrying the section sequence and, per
+    route, the harvested blocks the build will fill from
+  exit_contract:
+    '0': the spec was written
+    '1': usage error (missing positional), missing/invalid extraction inputs without --captures, or an
+      unhandled throw — an unusable capture bundle reaches here as a throw from loadCaptures
+  measures:
+  - 'style tokens derived from the extraction DOM: palette, dominant radius, font mapping, colour temperature'
+  - per-route section sequences harvested from the capture bundle, one pages[] entry per usable capture
+  - section_uid minting — sha1(page|archetype|variant|first-text) — the routing key everything downstream
+    joins on
+  cannot_see:
+  - whether the harvested copy is TRUE. usableCaptures() checks only that html is a non-empty string with
+    no fetch_error and status < 400; a capture of a stale, redirected or consent-walled page produces
+    a confidently structured spec
+  - a route it was asked for that the bundle does not contain. buildPages() filters usable captures DOWN
+    to --routes and never reports the difference, so five requested routes and one captured route both
+    emit a spec and exit 0
+  - 'a page it silently dropped: harvestPage() yielding 0 blocks, and a page_id collision, are both `continue`
+    with no counter and no stderr line'
+  - whether anything reads its output. The default output dir is output/<project> relative to the CWD,
+    so under a re-rooted caller it writes a correct spec somewhere nobody looks and still exits 0
+  - whether the archetypes it maps have a template behind them — template resolution happens later, in
+    orchestrate.py, against section_archetypes
+  - whether its style block survives. The benchmark gate overwrites these tokens from the ratified benchmark;
+    a wrong extraction here is invisible because it is discarded downstream
+  reachable_from:
+  - orchestrate.py:788
+  - orchestrate.py:948
+  - scripts/test_captures_wiring.py
+  - standalone CLI
+  cost: ~1-5s; no network, no browser, no LLM. Scales with capture count and page size
+  source_file: web-builder/scripts/quality/build-site-spec.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/build-site-spec.js output/extractions/cape-crypto-149c037c/ scratch-probe
+    --out /tmp/spec-out` → exit 0. 6 sections
+- id: aurelix.builder.supply-register
+  name: Supply register — template demand the library cannot supply
+  kind: builder
+  invocation: python3 scripts/supply_register.py [-o <supply-register.json>] [--build-dir <output/PROJECT>]
+  preconditions:
+  - supabase/exports/section_presets.csv exists — the tracked demand export. Regenerate with `python3
+    scripts/export_section_presets.py export`
+  - section-templates/manifest.json exists and has a non-empty archetypes object
+  - 'no database and no network: both sources are version-controlled, so the register is re-derivable
+    offline'
+  inputs:
+  - supabase/exports/section_presets.csv — demand, one row per (industry, page_type, position)
+  - section-templates/manifest.json — supply, the local .tsx ∪ DB archetype union
+  - --build-dir/site-manifest.json — optional, read-only, to annotate one build's asks
+  outputs:
+  - 'the register JSON on stdout, or at -o: {schema, sources, summary, missing[]} where each missing record
+    carries archetype, variant, cause, demand_rows, page_types, industries, demanded_by[] and (with --build-dir)
+    demanded_by_build_routes'
+  outcome: which (archetype, variant) pairs the section-preset registry demands and no template supplies,
+    attributed to the industries and page types that asked
+  exit_contract:
+    '0': the register was derived and emitted. A non-empty register is the honest state of the library,
+      NOT a failure — this is a builder, not a gate
+    '1': a source was missing or malformed (SourceMissing), or --build-dir has no site-manifest.json.
+      No register is emitted rather than an empty one, because an empty register reads as 'the library
+      is complete'
+  measures:
+  - distinct demanded pairs, distinct supplied pairs, and the set difference
+  - 'cause per missing pair: archetype_absent vs variant_not_in_library — the same vocabulary omitted-sections.json
+    uses'
+  - how many demand ROWS each missing pair costs, and which industries/page types asked
+  - 'with --build-dir: which pairs one build actually tripped over, and on which routes'
+  - its own arithmetic — assert_balanced() raises if the summary disagrees with the records
+  cannot_see:
+  - whether a SUPPLIED template is any good, or renders at all. Supply here means a name appears in manifest.json;
+    body depth, token use and correctness are invisible
+  - demand newer than the tracked CSV export. It reads a committed snapshot, never section_presets live,
+    so a preset added today is absent until someone re-exports
+  - 'demand that never reaches a preset row: a preset-declared sequence, an operator brief, or a build''s
+    own hand-authored fallback sequence'
+  - the third page-type vocabulary problem — it compares archetype/variant pairs and is blind to a page_type
+    that matches no registry row at all, which yields 0 demand and therefore 0 recorded shortfall
+  - which build, if any, will hit a missing pair — without --build-dir it is registry-wide, and with it,
+    it sees exactly one manifest
+  - 'whether anything acts on it: nothing in the build reads this register (see reachable_from)'
+  reachable_from:
+  - scripts/test_supply_register.py:20,215 — tests only
+  - standalone CLI
+  - 'NOTE: the module docstring says emit_supply_register is ''used by the wire patch in orchestrate.py''.
+    It is not — a repo-wide grep finds no non-test caller. The header is stale; the code is authoritative'
+  cost: under a second; two file reads, no database, no network, no build
+  source_file: web-builder/scripts/supply_register.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 scripts/supply_register.py -o /tmp/supply-register.json` → exit 0. 27 of 99 demanded
+    pairs unsupplied; 129 of 995 demand rows unsatisfiable
+- id: aurelix.compiler.benchmark-library
+  name: Benchmark library CLI — index the library, ratify a benchmark
+  kind: compiler
+  invocation: python3 scripts/benchmark_library.py index [--check] | python3 scripts/benchmark_library.py
+    ratify <slug> --ratified-at YYYY-MM-DD --ratify-accent <hex> --ratify-on-accent <hex> --ratify-density
+    <d> --ratify-motion-intensity <i>
+  preconditions:
+  - benchmarks/ exists and holds the benchmark JSON files
+  - 'for ratify: the named benchmarks/<slug>.json exists, and the operator supplies the four fields no
+    tool can measure (accent, on_accent, density, motion.intensity)'
+  - 'for ratify: --ratified-at is mandatory — a ratification with no date is not a record of an operator
+    act'
+  inputs:
+  - benchmarks/*.json — each file's declared market identity and aliases
+  - benchmarks/index.json when --check compares it against those files
+  outputs:
+  - benchmarks/index.json (index, without --check) — GENERATED, timestamp-free so an unchanged library
+    recompiles to identical bytes
+  - the ratified benchmark file's _meta.ratification block (ratify), written by lib/benchmark_gate.resolve_benchmark
+  outcome: 'index: whether the persisted index still agrees with the files on disk, plus any market claimed
+    by two files. ratify: whether an operator declaration was recorded, or the gate''s refusal'
+  exit_contract:
+    '0': the act succeeded — index written, index agrees under --check, or the benchmark ratified
+    '1': 'index --check only: the persisted index disagrees with the files on disk. NOTE the module docstring
+      omits this code; the code (cmd_index) returns it'
+    '3': NOT_MEASURED — benchmarks/ does not exist, or the ratification gate refused and nothing was written
+    '64': usage — ratify without --ratified-at, or --reference-url passed here instead of to scripts/commission_benchmark.py
+  measures:
+  - the market identity each benchmark file declares, and its filename alias
+  - 'collisions: two files claiming one market, which the gate then refuses for ambiguity'
+  - whether benchmarks/index.json is byte-identical to what the files on disk imply
+  - whether the four unmeasurable ratification fields have been declared by an operator
+  cannot_see:
+  - whether a benchmark's NUMBERS are right. It indexes and ratifies identity and declarations; enterprise-payments-bvnk
+    carries basis 'inference' and corpus null, so its measured half is not re-derivable and this tool
+    cannot tell you that by looking
+  - whether the corpus a benchmark claims to be compiled from still reproduces it — that is scripts/test_benchmark_corpus.py,
+    a separate instrument
+  - 'who actually ratified: --ratified-by is free text and is never authenticated'
+  - which tenants or builds depend on the benchmark it is about to overwrite — ratify mutates a file that
+    live builds read
+  - 'a benchmark file that is malformed but uniquely named: index reads identity, not the loader''s eight
+    palette_roles / four rhythm / four type_scale requirements'
+  reachable_from:
+  - scripts/lib/benchmark_gate.py:281,366-423 — every refusal and the generated index name this command
+    as the remedy; no code path executes it
+  - scripts/test_benchmark_index.py:38 (runs the CLI)
+  - standalone CLI
+  cost: 'index: under a second over a four-market library, no network, no database. ratify: sub-second,
+    but it WRITES a tracked benchmark file'
+  source_file: web-builder/scripts/benchmark_library.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 scripts/benchmark_library.py index --check` → exit 0. index.json agrees with
+    4 file(s) on disk
+- id: aurelix.compiler.copy-findings
+  name: Audit findings -> --copy-findings verdicts
+  kind: compiler
+  invocation: python3 scripts/quality/findings-to-verdicts.py <audit_result.yaml> --site-spec <site-spec.json>
+    --out-dir <dir>
+  preconditions:
+  - PyYAML importable — the audit's report is YAML (audit_result.yaml), never JSON
+  - an audit bundle whose report carries findings[]
+  - site-spec.json (preferred — it carries section_uid) or site-manifest.json, from the SAME build the
+    verdicts will be fed back into
+  inputs:
+  - audit_result.yaml — findings[], 13 fields each, flat across every layer and page
+  - site-spec.json / site-manifest.json — page ids, section identities, archetypes, and whether each section
+    has harvested copy
+  outputs:
+  - '<out-dir>/copy-findings.json — the page-scoped verdict file orchestrate.py''s --copy-findings consumes:
+    {page_id: {slot_key: {rule_id, detail, ...}}}'
+  - <out-dir>/unroutable-findings.json — every finding that became no verdict, with a reason from a closed
+    vocabulary, plus the counting summary
+  outcome: which built sections a human-readable audit finding actually blames, and — for every finding
+    it cannot blame on one — the named reason why. The two files' finding counts sum to the input count,
+    so nothing lands on the floor
+  exit_contract:
+    '0': compiled — both files written and the accounting invariant holds
+    '1': PyYAML absent, or an accounting failure (findings in != findings accounted for)
+    '2': argparse usage error (a missing positional or unknown flag). Undeclared by the module docstring;
+      it is argparse's own exit
+    '3': NOT_MEASURED — the report carries no findings[]. Nothing was compiled and this is not a pass
+    '64': usage — the named audit report or site spec does not exist on disk
+  measures:
+  - 'two routable lanes only: an axe selector that names a section by its section_uid or by an archetype-slug
+    class token, and a rule_id in the declared COPY_RULE_TARGETS table whose route resolves to a built
+    page'
+  - whether a target section has harvested copy at all — a verdict on a section with none would never
+    fire in the consumer, so it is refused rather than emitted
+  - its own output shape, against the consumer's _findings_are_page_scoped() detector
+  cannot_see:
+  - 'a finding''s section identity, because the audit almost never emits one: measured on the cape-crypto
+    bundle, 100% of findings carry a route and 0 OF 322 carry a section identity (docs/census/2026-08-17-audit-findings.md
+    §2-§3). --axe is the only in-tree source of section-resolvable selectors and it is off by default'
+  - 'where a dna_* conformance finding actually offended: evaluate() stamps pages[0] onto every record,
+    so its page_url is ''the first page in the list'' and it carries no selector. Those findings are counted
+    unroutable rather than routed to a page they may not concern'
+  - whether a verdict changes anything downstream. Its only effect is flipping one prompt block from 'reproduce
+    verbatim' to 'revise from source'; nothing here observes the rebuilt copy, so a verdict that produced
+    identical text is indistinguishable from one that worked
+  - whether the audit measured the same build these verdicts will be applied to — it matches identities,
+    and a stale spec silently produces zero matches rather than an error
+  - the truth of a finding. A false positive from the audit becomes a confident verdict here
+  reachable_from:
+  - scripts/cvr_loop.py:434 (the CVR loop's K1 lane)
+  - scripts/test_findings_verdicts.py:36
+  - scripts/test_funnel_verdicts.py:42
+  - standalone CLI
+  cost: <1s on a 322-finding bundle. No network, no LLM, no randomness — same inputs, byte-identical outputs
+  source_file: web-builder/scripts/quality/findings-to-verdicts.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 scripts/quality/findings-to-verdicts.py ~/Developer/GitHub/control-tower/artifacts/ui-ux-audit/xago/audit_result.yaml
+    --out-dir /tmp/v` → exit 0. 266 findings in -> 0 verdicts, 266 unroutable (145 rule-not-copy-actionable,
+    90 state-not-actionable, 31 no-section-map)
+- id: aurelix.compiler.funnel-verdicts
+  name: Funnel-rule evaluation over a built site
+  kind: compiler
+  invocation: python3 scripts/quality/funnel-verdicts.py <output/<project>/> --out-dir <dir> [--rules
+    skills/funnel-rules.json]
+  preconditions:
+  - a completed build directory holding site-manifest.json AND section-artifacts/<page>/*.json — the artifacts
+    are authoritative for the SEQUENCE, the manifest only for routes and identity
+  - a rule file; defaults to skills/funnel-rules.json. Rules are DATA — this file is the engine
+  inputs:
+  - site-manifest.json — routes, page identity, nav
+  - section-artifacts/<page>/NN-<archetype>.json — the sections that were actually built, and each one's
+    provenance[] rows {slot, value, source in harvested|phase0|empty}
+  - skills/funnel-rules.json — the declared rules and their verdict_scope
+  outputs:
+  - <out-dir>/funnel-verdicts.json — copy_findings (K1's page-scoped shape, rule ids namespaced funnel_*
+    so they cannot collide with an audit rule), rule_verdicts (one three-state record per rule x route
+    cell), and unrouted (FAILs that name no section)
+  outcome: whether each route asks the visitor for anything — measured per rule per route as PASS / FAIL
+    / NOT_MEASURED with a reason — and which built section each actionable FAIL blames. No audit finding
+    covers this; a homepage with no conversion section is invisible to every other instrument in the tree
+  exit_contract:
+    '0': 'evaluated. NOTE: 0 means the evaluation RAN, not that the funnel is sound — a run where every
+      cell FAILs also exits 0. The verdict is in the artifact, never the code'
+    '1': an unreadable or invalid rule file, or the accounting invariant broke
+    '2': argparse usage error. Undeclared by the module docstring; it is argparse's own exit
+    '3': NOT_MEASURED — no built sections under section-artifacts/. Not a pass
+    '64': usage — the build dir or the rule file does not exist
+  measures:
+  - presence and ORDER of built sections per route, from section-artifacts rather than the manifest —
+    the manifest plans sections that omitted-sections.json then removed (40 planned vs 21 built on cape-crypto),
+    so grading the plan would grade a funnel nobody can visit
+  - 'whether a slot''s value was sourced, by reading provenance[].source: `empty` means the markup rendered
+    with nothing in it, which is what several rules are about'
+  - every rule against every route, including cells it cannot judge — those are recorded NOT_MEASURED
+    with a reason rather than skipped
+  cannot_see:
+  - 'whether anyone converts. It grades the presence and provenance of sections and slots, not behaviour:
+    no analytics, no session, no click. A perfectly-scoring funnel may convert nobody'
+  - the rendered page. It never reads the generated TSX or the built DOM — parsing JSX to recover a value
+    the emitter already recorded would be a second, weaker source of truth — so a section with sourced
+    provenance and broken markup passes here
+  - which section to blame for a route-scoped FAIL. 'This route ends in a FAQ' indicts the ABSENCE of
+    a section; revising an existing section's copy would not add one. Those FAILs declare verdict_scope
+    'route' and land in unrouted with that reason, never as verdicts
+  - a section that was planned and then omitted, beyond what section-artifacts records — the reason lives
+    in omitted-sections.json, which this evaluator does not read
+  - whether its rules are the right rules. skills/funnel-rules.json is a declaration; a wrong rule produces
+    confident PASSes
+  reachable_from:
+  - scripts/cvr_loop.py:461 (the CVR loop's K2 lane)
+  - scripts/test_funnel_verdicts.py:41
+  - standalone CLI
+  cost: <1s over a 21-section build. No network, no LLM, no randomness
+  source_file: web-builder/scripts/quality/funnel-verdicts.py
+  language: py
+  status: VERIFIED
+  evidence: 'ran `python3 scripts/quality/funnel-verdicts.py output/xago-exchange-mockup --out-dir /tmp/f`
+    → exit 3. NOT_MEASURED: no built sections under section-artifacts - the honest branch'
+- id: aurelix.extractor.benchmark-corpus-capture
+  name: Benchmark corpus capture
+  kind: extractor
+  invocation: node scripts/quality/capture-benchmark-pages.js --market <slug> (--pages <file.json> | --page
+    "slug|url|why" ...) [--out <dir>]
+  preconditions:
+  - playwright chromium installed — extractReference() launches a real browser per page
+  - every page reachable over http(s) from this machine
+  - every page entry carries a non-empty `why`; an unexplained capture is a usage error, not a warning
+  - the market slug matches [a-z0-9-] and page slugs are unique
+  inputs:
+  - a market slug
+  - 'a page list: --pages <file.json> (array of [slug,url,why] triples or {slug,url,why} objects) and/or
+    repeated --page "slug|url|why"'
+  outputs:
+  - benchmarks/corpora/<market>/<slug>/extraction.json per page (or under --out) — the persisted evidence
+    a benchmark is compiled from
+  - benchmarks/corpora/<market>/index.json — written even when every page failed, so the failure is inspectable
+  - whatever extractReference() persists alongside it (screenshots, crops)
+  outcome: a named, in-repo, per-market capture corpus that scripts/commission_benchmark.py can recompile
+    a benchmark from byte-identically
+  exit_contract:
+    '0': at least one page captured
+    '1': an unhandled exception outside the per-page try (e.g. the output directory could not be created)
+    '3': NOT_MEASURED — no page captured; index.json is still written
+    '64': usage error — unknown argument, missing --market, no pages, bad slug, non-http url, missing
+      `why`, duplicate slug
+  measures:
+  - the rendered DOM, text content, sections and assets of each page, via extractReference()
+  - animations.profile — analyzeAnimationEvidence() run over the RAW evidence extractReference returns,
+    which is where the compiler reads motion intensity {level, score, confidence} from
+  - dom_elements, text_nodes and motion_level per page, recorded into index.json
+  cannot_see:
+  - whether the pages chosen REPRESENT the market — page selection is an operator act, which is why `why`
+    is required input and why an unexplained corpus is refused rather than warned about
+  - 'one viewport and one moment: extractReference captures at a fixed 1440x900 desktop viewport, so a
+    market whose identity is mobile-first is captured through a desktop lens'
+  - anything behind an interaction, a login, or a consent wall — a page that renders a cookie overlay
+    is captured with the overlay
+  - 'whether a page it captured is the page it asked for: a redirect, a geo-block or a bot wall yields
+    a successful capture of the wrong document, counted as ok:true'
+  - a partial failure as a failure — one page out of six captured exits 0; only a total failure reaches
+    exit 3, so the caller must read index.json to learn the real count
+  - 'whether the animation profile is meaningful: a profile failure is recorded into animation_profile_error
+    and the capture still counts as ok, deliberately, because a lost capture is worse'
+  reachable_from:
+  - no code invokes it — it is an operator step
+  - named as the required prior step by scripts/commission_benchmark.py:196,681 and scripts/lib/benchmark_gate.py:155
+    (CAPTURE_STEP), which read its corpus but never spawn it
+  - asserted to exist and to write a named in-repo corpus by scripts/test_commission_benchmark.py:45,338
+    and scripts/test_benchmark_gate.py:410
+  cost: one browser launch and full scroll-capture per page — roughly 30-120s each; a five-page corpus
+    is several minutes and writes tens of MB
+  source_file: web-builder/scripts/quality/capture-benchmark-pages.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/capture-benchmark-pages.js --market scratch-probe --page 'probe|http://127.0.0.1:8791/probe.html|smoke
+    test' --out /tmp/corpus` → exit 0. 1/1 captured
+- id: aurelix.extractor.conformance-runner
+  name: Design-conformance analyser driver
+  kind: extractor
+  invocation: python3 scripts/quality/conformance_runner.py --benchmark <file> --url <url> [--url <url>
+    ...] --out <results.json> [--viewport 1440x900]
+  preconditions:
+  - the aurelix-uiux-audit submodule is initialised at <repo-root>/aurelix-uiux-audit (an uninitialised
+    checkout is a directory that exists and imports nothing)
+  - playwright importable inside that submodule, with a chromium browser installed
+  - every --url is already being served — this driver does not start a server; conformance-gate.js does
+  - a ratified benchmark file that load_benchmark() accepts
+  inputs:
+  - a benchmark json
+  - one or more served route URLs
+  outputs:
+  - '--out results json: {error, urls_requested, urls_reached, notes, results[]} where results[] are design_conformance
+    RuleResults flattened to plain JSON'
+  outcome: the raw per-rule measured-vs-expected output of the audit's design_conformance analyser, and
+    which of the requested URLs were actually reached
+  exit_contract:
+    '0': 'the analyser ran and its results were written. TRANSPORT-LEVEL only — 0 does not mean the rules
+      passed, and does not even mean a URL was reached: a dead port also exits 0, with urls_reached empty'
+    '3': 'the analyser could not be run: submodule absent, import failed, benchmark unreadable, no URLs
+      given, or no computed styles collected'
+  measures:
+  - computed style of each served route, via the audit's extract_computed
+  - urls_reached vs urls_requested — a route that failed to load is visible as an absence, not silently
+    folded in
+  cannot_see:
+  - PASS or FAIL. By design it renders no verdict, filters no rules and reshapes no measurement — conformance-gate.js
+    owns the interpretation so there is exactly one place the verdict is defined
+  - 'WHERE an offence is: evaluate() flattens measured[''per_page''] into one aggregate and stamps pages[0]
+    onto every evidence record, so the URL on a result is ''the first page'', not the offending page'
+  - 'that nothing was reached. Measured 2026-08-18 against a dead port: it exits 0 with error=None, urls_reached=[]
+    and 10 results of which some read PASS. The only honest signal is the EMPTY urls_reached and a ''conformance
+    skip <url>'' line in notes — a caller reading the exit code, or the results'' states, learns that
+    an unserved site conforms'
+  - 'source-level tokens: it reads rendered computed style, never a template or a compiled globals.css'
+  - any route it was not handed a --url for; it discovers nothing
+  reachable_from:
+  - scripts/quality/conformance-gate.js:379 (spawnSync)
+  - standalone CLI
+  cost: a few seconds per URL, all of it inside the audit's playwright extraction; no build, no deploy
+  source_file: web-builder/scripts/quality/conformance_runner.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 scripts/quality/conformance_runner.py --benchmark benchmarks/enterprise-payments-bvnk.json
+    --url http://127.0.0.1:4999/ --out /tmp/conf2.json` → exit 0. exit 0 against a DEAD port with urls_reached=[]
+    - an unreachable site reports as a successful extraction
+- id: aurelix.extractor.run-extract-aa
+  name: Reference extractor CLI (raw extractReference to a directory)
+  kind: extractor
+  invocation: node scripts/quality/run-extract-aa.js <url> <outDir>
+  preconditions:
+  - playwright chromium installed — extractReference() launches a real browser
+  - the URL reachable over the network from this machine
+  - <outDir> writable; it is created recursively
+  inputs:
+  - a live URL
+  outputs:
+  - <outDir>/extract.json — the whole extractReference() return value, unfiltered and unscored
+  - whatever extractReference() itself persists into <outDir> (screenshots, section crops)
+  outcome: the raw extraction object for one page on disk, plus its top-level key list on stdout — the
+    thinnest possible operator handle on extractReference()
+  exit_contract:
+    '0': extract.json written
+    '1': usage error — <url> or <outDir> missing
+    '2': EXTRACT_FAIL — extractReference() or the write threw
+  measures:
+  - 'exactly what extractReference() returns for one URL: rendered DOM with computed styles, sections,
+    text content, assets, raw animation evidence'
+  cannot_see:
+  - one page and one 1440x900 desktop viewport — extractReference's fixed capture; no interior page is
+    followed and no narrow breakpoint is exercised
+  - 'meaning: it SCORES nothing. It does not call analyzeAnimationEvidence, so animations.evidence stays
+    raw and animations.profile is absent — capture-benchmark-pages.js exists because this wire has to
+    be made by the caller'
+  - 'whether the extraction is empty in the way that matters: it writes and exits 0 on a result with zero
+    sections and zero text, which is indistinguishable here from a genuinely sparse page'
+  - whether the page it got is the page it asked for — a redirect, geo-block or bot wall is captured as
+    a successful extraction
+  - anything behind auth, interaction, or a consent overlay
+  reachable_from: []
+  cost: one browser launch and full scroll-capture — roughly 30-120s; writes a multi-MB extract.json
+  source_file: web-builder/scripts/quality/run-extract-aa.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/run-extract-aa.js http://127.0.0.1:8791/probe.html /tmp/xa` → exit
+    0
+- id: aurelix.fixer.render-contrast
+  name: Contrast remediation at the design-token layer
+  kind: fixer
+  invocation: node scripts/quality/render-fix-contrast.js --report <render-audit-results/report.json>
+    --site-spec <output/<project>/site-spec.json> --globals <site/src/app/globals.css> [--apply]
+  preconditions:
+  - 'a render audit has already run and written report.json with routes[].facts.contrast[] carrying #rrggbb
+    fg/bg (render-audit.js:126 emits exactly this shape for this file)'
+  - site-spec.json declares style.design_source === "benchmark" — any other provenance is refused
+  - the palette role behind the failing colour is emitted as a CSS custom property in globals.css
+  - --apply MUTATES globals.css and site-spec.json in place; point it at a copy, never a git checkout
+  inputs:
+  - render-audit-results/report.json — routes[].facts.contrast[] {fg,bg,ratio,need,pass,selector}
+  - site-spec.json — style.palette and style.design_source
+  - site/src/app/globals.css — the emitted CSS custom properties
+  outputs:
+  - a JSON verdict on stdout {status, measured, passed, failed, adjustments[], unrepairable[]}
+  - 'with --apply only: a rewritten globals.css and a site-spec.json whose palette and style.adjustments[]
+    record the change'
+  outcome: whether every measured contrast pair reaches its required ratio, and — when it does not — which
+    palette ROLE to change to which already-in-palette value to repair it without regressing a currently-passing
+    measurement
+  exit_contract:
+    '0': PASS (nothing failing) or REPAIRED (a token change repairs every failure)
+    '1': FAIL — a failure no token change can reach, or a thrown refusal (PROVENANCE / CONTRAST_UNREACHABLE
+      / TOKEN_NOT_DECLARED)
+    '2': usage — a missing --report / --site-spec / --globals. Undeclared by the header comment; read
+      off process.exit(2) in main()
+    '3': NOT_MEASURED — the report carries no facts.contrast[] at all. Not a pass
+  measures:
+  - WCAG contrast of every fg/bg pair the render probe measured, per route and selector
+  - whether a candidate palette value repairs every measurement bound to a role AND regresses none
+  - which failures are token-driven and which are not, by indexing the compiled palette by hex
+  cannot_see:
+  - whether its fix is CORRECT — it proves the arithmetic, not the result. It rewrites a token and re-measures
+    nothing; only a fresh render audit can say the repaired page still reads as the brand
+  - the blast radius of a role change. A role repaired for one selector on one route applies site-wide,
+    including routes absent from this report
+  - 'any contrast failure whose colour is not a token: a Tailwind utility (text-gray-900, text-white)
+    is indexed to no palette role and is reported unrepairable, never repaired'
+  - anything the probe did not measure — hover, focus and client-only states, text over images or gradients
+    (the probe composites solid background layers only), and unvisited routes
+  - 'whether it has ever run. reachable_from is [] as measured: no pipeline stage, no gate and no orchestrator
+    call site invokes this file, so its verdict has never reached a build'
+  reachable_from: []
+  cost: <1s; pure arithmetic over an existing report. --apply writes two files and spends nothing
+  source_file: web-builder/scripts/quality/render-fix-contrast.js
+  language: js
+  status: VERIFIED
+  evidence: 'ran `node scripts/quality/render-fix-contrast.js --report /tmp/report.json --site-spec /tmp/site-spec.json
+    --globals /tmp/globals.css --apply` → exit 0. REPAIRED on a scratch fixture: text_muted #9aa0a6 ->
+    #0b0d10, arithmetically correct and DARKER than primary text. It re-measures nothing after writing'
 - id: aurelix.gate.compile
   name: TypeScript compile gate
   kind: gate
@@ -89,3 +727,946 @@ capabilities:
     xago-exchange-mockup: FAIL, 9 violations / 1 conform over 13 routes. A dark site measured against
     a light benchmark, so the palette-role failures are a benchmark mismatch, not gate error; type-scale,
     shadow-layers and palette-size are real'
+- id: aurelix.gate.determinism
+  name: Build determinism gate (build twice, diff the trees)
+  kind: gate
+  invocation: ./scripts/quality/determinism-check.sh <project> [extra orchestrate args…]
+  preconditions:
+  - orchestrate.py can build <project> non-interactively to completion, twice, with whatever extra args
+    you pass through
+  - a writable scratch root — $DETERMINISM_SCRATCH, default $TMPDIR/aurelix-determinism. It never touches
+    web-builder/output/
+  - an allowlist at $DETERMINISM_ALLOWLIST, default scripts/determinism-allowlist.json
+  inputs:
+  - the two build trees it produces itself, under $DETERMINISM_SCRATCH/<project>/{a,b}
+  - determinism-allowlist.json — the justified-difference declarations
+  - the two build logs, a.log and b.log, used only to explain a NOT_MEASURED
+  outputs:
+  - $DETERMINISM_SCRATCH/<project>/{a,b} — two full build trees, kept for inspection
+  - $DETERMINISM_SCRATCH/<project>/{a.log,b.log}
+  - 'stdout: every unexplained difference, named by FIELD path (/line_items[*]/build_trace/completed_at),
+    not just by filename'
+  outcome: whether two identical runs produce the same tree, which is the precondition for caching and
+    for attributing any later diff to a change
+  exit_contract:
+    '0': PASS — the two trees differ only in fields the allowlist justifies
+    '1': FAIL — at least one unexplained difference, or the two builds exited with different codes
+    '3': NOT_MEASURED — no argument given, the scratch dir could not be created, or fewer than $DETERMINISM_MIN_FILES
+      (default 20) files were produced, so there was nothing worth comparing
+  measures:
+  - JSON artifacts structurally, so a report names the field that moved rather than the file
+  - every non-JSON file byte-for-byte — a generated .tsx that changes between two identical runs is a
+    defect, always
+  - 'the two builds'' exit codes: two identical runs that end differently are non-deterministic whatever
+    the trees look like'
+  - it deliberately does NOT pin PYTHONHASHSEED, so a build that depends on the seed surfaces as a real
+    defect
+  cannot_see:
+  - whether the build is CORRECT. Two identically wrong builds pass — this gate measures reproducibility,
+    nothing else, and it says so by comparing the trees even when both runs exited non-zero
+  - 'intermittent non-determinism: it samples exactly two runs, so anything that varies less often than
+    one run in two can pass here and still be non-deterministic'
+  - anything written outside --output-root. SKILLS_DIR, BRIEFS_DIR and every Supabase write live in neither
+    scratch root and are compared by nothing
+  - 'the two differences it normalises away by construction: the output-root prefix and the loopback port
+    digits of the preview server'
+  - a difference that an allowlist entry wrongly justifies — the allowlist is a declaration, and a field
+    listed there is invisible to this gate forever after
+  - 'anything at all when a build dies early: fewer than 20 files exits 3 rather than comparing two near-empty
+    trees that would have read as a pass'
+  reachable_from: []
+  cost: two full builds back to back — minutes to tens of minutes, and roughly twice one build's disk
+  source_file: web-builder/scripts/quality/determinism-check.sh
+  language: sh
+  status: NOT_RUN
+  evidence: runs two full orchestrate.py builds back to back; minutes to tens of minutes
+- id: aurelix.gate.rails
+  name: Rails gate — the emitted CMS/email rails compile and their routes exist
+  kind: gate
+  invocation: python3 scripts/verify_rails_gate.py --site-dir <output/PROJECT/site> --output-dir <output/PROJECT>
+    [--timeout 900]
+  preconditions:
+  - the tenant declared `cms`, so rails were emitted — a non-declaring tenant has no rails-emission.json
+    and this gate must be ABSENT from the run, not run and skipped
+  - <output-dir>/rails-emission.json exists (written by rails_emit.py)
+  - node_modules installed in <site-dir> and npx on PATH, or the compile lane is NOT_MEASURED
+  inputs:
+  - <output-dir>/rails-emission.json — routes[], files[], puck_config, undeclared_fields
+  - <site-dir> — the emitted Next.js app, and its .next/ after the build
+  outputs:
+  - <output-dir>/rails-gate.json — {verdict, reasons, routes_claimed, routes_built, emitted_files, build_exit_code,
+    puck_config_verdict, undeclared_fields}
+  outcome: whether every file the emission claims is still on disk, whether `next build` succeeds, and
+    whether every route the emission claims exists in the build output
+  exit_contract:
+    '0': PASS — the build succeeded and every claimed route is in the build output
+    '1': FAIL — rails-emission.json absent, an emitted file is missing, `next build` exited non-zero,
+      or a claimed route is absent from the build output
+    '3': 'NOT_MEASURED — the compile could not be attempted or read: no node_modules, npx not on PATH,
+      the build exceeded --timeout, or the route manifest was unreadable. A measured missing FILE still
+      outranks this and returns 1'
+  measures:
+  - existence of each path in emission.files under <site-dir>
+  - the exit code of `npx --no-install next build` with NODE_ENV=production
+  - the built route set, from .next/app-path-routes-manifest.json, falling back to walking .next/server/app
+    for page.js / route.js
+  - 'set difference: emission.routes minus routes actually built'
+  cannot_see:
+  - whether a route that compiled actually WORKS — it compares route strings against a manifest, never
+    requests a page, so a built /api/contact that 500s at runtime passes
+  - 'any secret or runtime credential, deliberately: RESEND_API_KEY is declared-not-valued and the emitted
+    sender reports its own absence via notifyUnconfiguredReason'
+  - whether rails-emission.json describes the CURRENT source — it trusts the manifest an earlier stage
+    wrote; a re-emit that changed routes and a stale manifest agree silently
+  - 'database state: migrations under rails-templates/cms are emitted as files and never applied or checked
+    against a schema here'
+  - whether the compile lane ran at all, if you read only the exit code of a FAIL — a missing file returns
+    1 while node_modules was absent and nothing was compiled. Read rails-gate.json.reasons, not the summary
+    line
+  - 'content: whether the CMS pages render anything, and whether Puck''s config matches the emitted components
+    (it copies emission.puck_config.verdict through without re-deriving it)'
+  reachable_from:
+  - orchestrate.py:8960-8968 (run_gate + write_verdict imported as a module, inside stage_deploy)
+  - scripts/test_rails_emit.py:462-519
+  - standalone CLI (no chain stage invokes this file as a script)
+  cost: a full `next build` — minutes, default timeout 900s. Seconds when node_modules is absent and the
+    compile lane is NOT_MEASURED
+  source_file: web-builder/scripts/verify_rails_gate.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 scripts/verify_rails_gate.py --site-dir output/xago-exchange-mockup/site --output-dir
+    /tmp/rails` → exit 1. FAIL, no rails-emission.json - correct, that tenant declares no cms
+- id: aurelix.gate.template-tokens
+  name: Section-template token conversion check
+  kind: gate
+  invocation: 'node scripts/quality/check-template-tokens.js [dir]   (default: section-templates/)'
+  preconditions:
+  - a directory of .tsx section templates on disk; defaults to web-builder/section-templates
+  inputs:
+  - every .tsx under the target directory, recursively, skipping node_modules and dot-directories
+  outputs: []
+  outcome: which templates still hardcode an opaque palette literal, and which outer <section> does not
+    take its vertical rhythm from var(--section-py)
+  exit_contract:
+    '0': PASS — no violations in any template scanned
+    '1': 'FAIL — at least one violation. NOTE: a missing target directory ALSO returns 1, so "the directory
+      is not there" and "the templates are wrong" are the same exit code'
+  measures:
+  - opaque Tailwind palette literals (bg|text|border|ring|fill|stroke|divide|from|via|to)-(white|black|gray/grey/slate/zinc/neutral/stone-NNN)
+    outside comments and outside strings
+  - whether the outer <section> returned by the default export carries --section-py in its opening tag
+  - translucent overlays (bg-white/5 and kin) on a separate WARNING channel that never affects the exit
+    code
+  cannot_see:
+  - the database tier — it walks a filesystem directory, and the unconverted templates are the 74 rows
+    of section_archetypes.code_template, which never touch disk and are therefore never scanned
+  - 'a palette literal written as a hex or an arbitrary value: the regex names Tailwind colour FAMILIES,
+    so #ffffff, bg-[#0b0b0b] and style={{color:"white"}} all pass'
+  - rendered colour — it is a text scan, so a template reading var(--surface) passes even when that token
+    compiles to the wrong value, which is exactly what the conformance gate looks at instead
+  - 'rhythm on any root element other than <section>: a <header> or <footer> root is deliberately exempt,
+    so a footer with hardcoded py-24 is invisible here'
+  - whether the template renders at all — it never parses, compiles or executes the file
+  reachable_from:
+  - scripts/quality/check-template-tokens.test.js (imported as a module by the tests)
+  - standalone CLI
+  cost: under a second over the 15 local templates; no network, no build, no database
+  source_file: web-builder/scripts/quality/check-template-tokens.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/check-template-tokens.js` → exit 0. 15 templates, 0 violations
+- id: aurelix.gate.validate-build
+  name: Visual validation gate (screenshot diff, and a deployed-URL smoke check)
+  kind: gate
+  invocation: node scripts/quality/validate-build.js <project-dir> [--reference-dir <dir>] [--port <n>]
+    [--threshold <0-1>]   |   node scripts/quality/validate-build.js <preview-url>
+  preconditions:
+  - 'project-dir mode: reference screenshots exist, either at --reference-dir or under <project-dir>/.quality/references,
+    <project-dir>/references, or output/<name>/references'
+  - 'project-dir mode: the project can start a dev server on --port (default 4567), and pixelmatch/pngjs/playwright
+    are installed in scripts/quality/node_modules'
+  - 'url mode: the URL is already deployed and reachable — this instrument neither builds nor deploys'
+  inputs:
+  - 'project-dir mode: the project directory plus a directory of reference screenshots (.png/.jpg, ordered
+    by filename)'
+  - 'url mode: a single http(s) URL, read once with fetch()'
+  outputs:
+  - 'project-dir mode: <project-dir>/.quality-report.json — per-section diffPercentage, overallSimilarity,
+    iterations'
+  outcome: 'project-dir mode: which sections drifted from their reference screenshot, and by how much.
+    url mode: whether a deployed page returns 200 with real text and no crash/hydration marker in the
+    SSR HTML'
+  exit_contract:
+    '0': PASS — every section under the diff threshold; or url mode found no issues; or --help/no-args
+      printed usage
+    '1': FAIL — sections need regeneration, url-mode issues found, OR a precondition was missing (no references,
+      absent project dir, validator threw). This gate has no NOT_MEASURED code, so "could not measure"
+      is reported as FAIL
+  measures:
+  - per-section pixel difference against a reference screenshot, as a diff percentage, with a diff image
+    written per failing section
+  - 'url mode only: HTTP status, HTML length, the count of visible text elements, and the literal strings
+    "Application error" / "Internal Server Error" / "Hydration failed" in the SSR HTML'
+  cannot_see:
+  - whether the REFERENCE is right — it measures agreement with a prior screenshot, so a site that was
+    wrong when the references were captured passes at 100% similarity
+  - 'anything at all with no reference screenshots: it exits 1 rather than 3, so "never measured" and
+    "visually regressed" reach the caller as the same exit code'
+  - url mode sees only the SSR HTML fetched once with no browser — no client render, no hydration in practice,
+    no CSS, no images, no console errors. Its text-element count is a regex over raw HTML
+  - 'WHY a section drifted: a pixel diff cannot separate an intended redesign from a broken layout, so
+    every deliberate change reads as a failure until the references are recaptured'
+  - any route other than the ones the validator screenshots — there is no route list argument
+  reachable_from:
+  - scripts/quality/package.json → npm run validate
+  - standalone CLI
+  cost: 'project-dir mode: minutes — it starts a dev server and screenshots up to 2 iterations. url mode:
+    one HTTP fetch, under a second'
+  source_file: web-builder/scripts/quality/validate-build.js
+  language: js
+  status: VERIFIED
+  evidence: 'ran `node scripts/quality/validate-build.js https://example.com` → exit 1. url mode: FAIL,
+    only 3 visible text elements'
+- id: aurelix.gate.verify-c
+  name: Gate C — the generated app exists and compiles
+  kind: gate
+  invocation: python3 scripts/verify_gate_c.py --site-dir <output/PROJECT/site>
+  preconditions:
+  - a generated app directory produced by a build (orchestrate.py <project>)
+  - npm on PATH and node_modules installed inside that app dir — `npm run build` is run there directly,
+    this gate installs nothing
+  inputs:
+  - '--site-dir / --app-dir: the generated app directory'
+  - that dir's package.json and app/page.tsx or src/app/page.tsx
+  outputs: []
+  outcome: whether the generated Next.js app has the expected entry structure and whether `npm run build`
+    succeeds inside it
+  exit_contract:
+    '0': PASS — structure present and `npm run build` returned 0
+    '1': FAIL — no package.json, no app/page.tsx or src/app/page.tsx, or the build exited non-zero
+    '3': NOT_MEASURED — no --site-dir/--app-dir was given, so there is no generated app to verify. This
+      branch used to inspect the web-builder's OWN lib/shopify template files and print PASS; NOT_MEASURED
+      is not PASS
+  measures:
+  - presence of package.json in the app dir
+  - 'presence of an App Router entry: app/page.tsx or src/app/page.tsx'
+  - the exit code of `npm run build` with NODE_ENV=production, 180s timeout
+  cannot_see:
+  - anything at all without --site-dir/--app-dir — the no-argument branch measures nothing and returns
+    3; a chain that treats 3 as a pass has an unbuilt app
+  - WHY a build failed beyond the first 800 characters of stderr, which is all it prints
+  - whether the compiled output is correct — a build that succeeds while rendering an empty page passes
+    here; that is the render audit's and the conformance gate's job
+  - type errors that `next build` does not surface (a project with typescript.ignoreBuildErrors compiles
+    green); the compile gate reads tsc, this gate reads npm's exit code
+  - a build that exceeds the 180s timeout — subprocess.run raises TimeoutExpired and this gate crashes
+    with a traceback rather than returning a verdict
+  - the Pages Router, and any entry file other than the two paths hardcoded above
+  reachable_from:
+  - run_pipeline.py:612 (stage_gate_c, both the shopify and vercel chains)
+  - scripts/test_gate_outcomes.py:28
+  - standalone CLI
+  cost: seconds with no app dir; a full `npm run build` (tens of seconds to minutes) with one
+  source_file: web-builder/scripts/verify_gate_c.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 scripts/verify_gate_c.py` → exit 3. NOT_MEASURED branch, no generated app to
+    verify
+- id: aurelix.gate.verify-d
+  name: Gate D — the deployed store answers 200
+  kind: gate
+  invocation: python3 scripts/verify_gate_d.py --url <deployed-url> [--collection-handle <h>] [--product-handle
+    <h>]
+  preconditions:
+  - a deployed, publicly reachable URL, passed as --url or set in GATE_D_URL
+  - outbound network access from this machine
+  - 'for the default check to be meaningful, a Shopify-shaped store: the collection handle defaults to
+    `kaffee`, a leftover from one tenant'
+  inputs:
+  - --url (or $GATE_D_URL)
+  - --collection-handle
+  - --product-handle
+  outputs: []
+  outcome: whether the deployed site's home, one collection route and optionally one product route each
+    return HTTP 200
+  exit_contract:
+    '0': PASS — every requested route returned 200
+    '1': FAIL — at least one route returned something other than 200, or the request errored
+    '3': NOT_MEASURED — no --url and no GATE_D_URL, so no store was ever reached. This branch used to
+      assert that the web-builder's OWN cart.ts and CartDrawer.tsx exist on disk and print PASS — file
+      existence standing in for a live store
+  measures:
+  - the HTTP status of GET <url>/
+  - the HTTP status of GET <url>/collections/<collection-handle>
+  - the HTTP status of GET <url>/products/<product-handle>, only when --product-handle is given
+  cannot_see:
+  - a store it never reached — with no --url it measures nothing and returns 3; a chain that reads 3 as
+    a pass has verified nothing about the deployment
+  - 'anything below the status line: a 200 that renders an error page, an empty page or the previous deployment''s
+    content passes here. It never reads the body'
+  - whether the URL it was handed is the deployment this build produced — it is given a URL, not a deployment
+    id, so a stale or unrelated site passes
+  - any route beyond the three it constructs; a non-commerce site has no /collections/kaffee and fails
+    on a hardcoded default rather than on a real defect
+  - client-rendered failures, JS errors, auth walls and redirects — urlopen follows redirects and reports
+    the final code as if it were the requested route's
+  reachable_from:
+  - run_pipeline.py:671 (stage_gate_d — only when a deploy URL was resolved)
+  - scripts/test_gate_outcomes.py:29
+  - standalone CLI
+  cost: seconds; three HTTP GETs at a 15s default timeout. Requires a live deployment
+  source_file: web-builder/scripts/verify_gate_d.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 scripts/verify_gate_d.py` → exit 3. NOT_MEASURED branch, no deployed store was
+    reached
+- id: aurelix.gate.verify-e
+  name: Gate E — internal links resolve and declared redirects land
+  kind: gate
+  invocation: python3 scripts/verify_gate_e.py --url <deployed-url> [--redirect-map <csv>] [--max-links
+    <n>]
+  preconditions:
+  - a deployed, publicly reachable URL, passed as --url or set in GATE_E_URL
+  - outbound network access from this machine
+  - 'for the redirect lane: a CSV with from_path/to_path (or from/to/target) columns, AND a --url — a
+    redirect map on its own is a FAIL, not a measurement'
+  inputs:
+  - --url (or $GATE_E_URL)
+  - --redirect-map CSV
+  - --max-links
+  - --timeout
+  outputs: []
+  outcome: whether the deployed home page's internal links resolve, and whether each declared legacy path
+    still redirects to its declared target
+  exit_contract:
+    '0': PASS — at least one real check ran and every check passed
+    '1': FAIL — a link returned something outside 200/301/302, a redirect target did not match, or --redirect-map
+      was given without --url
+    '3': NOT_MEASURED — nothing was checked. Covers both 'no inputs at all' and '--redirect-map points
+      at a file that does not exist'; the latter previously fell through to PASS on an empty error list
+  measures:
+  - HTTP status of the home page
+  - HTTP status of up to --max-links (default 15) same-origin hrefs parsed out of the home page's HTML
+    by regex
+  - 'for the first 20 rows of a redirect map: the status of <base>/<from_path> and whether to_path appears
+    as a substring of the final URL'
+  cannot_see:
+  - anything when it reached nothing — no --url and no existing redirect map means the `measured` flag
+    stays False and it returns 3. 'No errors' there means 'no checks'
+  - 'links that are not literal href attributes in the home page''s served HTML: client-rendered nav,
+    JS routing, links on any page other than the home page'
+  - more than 20 redirect rows and more than 5 errors — both are hard slices, so a larger map is partially
+    measured while the verdict reads whole
+  - 'whether a redirect landed on the RIGHT page: the target test is a substring match against the final
+    URL, so to_path ''/a'' matches a redirect to ''/another-thing'''
+  - a 200 that is really a soft-404 or an error page — it reads status codes, never bodies (and 301/302
+    are accepted as healthy for a link)
+  - whether the redirect map it was handed describes this site at all
+  reachable_from:
+  - run_pipeline.py:692 (stage_gate_e — passes only --url; the redirect lane is unreachable from the chain)
+  - scripts/test_gate_outcomes.py:30
+  - standalone CLI
+  cost: 'seconds to a minute: 1 + up to 15 sequential HTTP GETs at a 15s default timeout, plus up to 20
+    redirect probes. Requires a live deployment'
+  source_file: web-builder/scripts/verify_gate_e.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 scripts/verify_gate_e.py` → exit 3. NOT_MEASURED branch
+- id: aurelix.generator.media-commission
+  name: Media commissioner — generate the pictures a build asked for
+  kind: generator
+  invocation: python3 scripts/quality/commission-media.py --jobs output/<project>/image-jobs.json --cache
+    tenants/<tenant>/assets/generated [--dry-run] [--only <hash,...>] [--json]
+  preconditions:
+  - 'image-jobs.json must hold LOWERED job specs ({jobs: [{job_hash, job, demands}]}); a bare gap list
+    is refused by name — rebuild with a stage_resolve_assets that calls to_job_v1'
+  - 'every entry''s recorded job_hash must equal job_hash(spec), or the run aborts: a cache keyed on a
+    stale hash is a cache keyed on a lie'
+  - 'for stills and generative motion: the image-pipeline checkout at $IMAGE_PIPELINE_ROOT (default ~/Developer/GitHub/services/image-pipeline),
+    and an AUTHENTICATED `higgsfield` CLI session — `hf auth login`. There is no API-key env var; the
+    credential is the CLI''s session'
+  - 'for remotion motion jobs: web-builder/motion/node_modules installed (`npm install`)'
+  - WITHOUT --dry-run this SPENDS GENERATION CREDITS, one charge per uncached job
+  inputs:
+  - output/<project>/image-jobs.json — the lowered job specs the build emitted
+  - the cache directory, checked before the provider is even looked at
+  outputs:
+  - one file per generated job at <cache>/<job_hash>.<ext> — exactly one legal name per hash, staged through
+    a tempdir so the runner's auto-incrementing versions never accumulate
+  - a per-job console ledger and, with --json, a machine-readable summary as the last line
+  outcome: how many of the build's demanded images/videos already exist in the cache, what the uncached
+    ones would cost (--dry-run), and — when told to spend — which were produced, which failed, and which
+    are UNRENDERED with a named reason
+  exit_contract:
+    '0': done — every job cached, generated, estimated or explicitly skipped
+    '1': 'at least one job FAILED (the provider errored or produced no file); also the refusals raised
+      as SystemExit: a bare gap list, or a job_hash mismatch'
+    '2': argparse usage error (a missing --jobs / --cache). argparse's own exit
+    '3': NOT_MEASURED — at least one job is UNRENDERED with a reason (missing remotion node_modules, a
+      missing entry, or generative motion, whose cost was never measured). Folding this into 0 would make
+      a missing toolchain read as a completed commission
+  measures:
+  - cache hit/miss per job_hash, before any provider is consulted — this is what makes a rerun after a
+    crash cost nothing
+  - a provider cost estimate per uncached job under --dry-run, reported verbatim, and as the raw line
+    when it does not parse
+  - which renderer each job belongs to, from media_type + motion.engine
+  cannot_see:
+  - whether the image it commissioned is any GOOD, on brief, or even depicts the subject. It moves exactly
+    one produced file to <hash>.<ext> and never looks at the pixels; a provider that returns a plausible
+    wrong picture is indistinguishable from success here
+  - whether the build will use what it generated. This file is deliberately OFF the build path — orchestrate.py
+    neither imports nor invokes it (asserted by a grep in scripts/test_media_cache.py) — so a commissioned
+    asset only lands if a later build reads the cache with the same hash
+  - 'the cost of generative MOTION. That path is NOT_MEASURED by declaration: the census could not obtain
+    a price (docs/census/2026-08-17-motion-engine.md §6), so it refuses rather than spend against an unmeasured
+    figure'
+  - that a palette change just invalidated every hash. job_hash digests the palette by design (lib/image_jobs.py:704),
+    so one token change cache-misses the entire set at once and this file will happily re-commission all
+    of it
+  - whether the higgsfield session is still authenticated until it fails — an expired login surfaces as
+    a FAILED job, not as a precondition error
+  reachable_from:
+  - hand-run only — by design
+  - scripts/test_media_cache.py:256 and scripts/test_motion_jobs.py:482 (as a subprocess, with MEDIA_COMMISSION_FAKE_PROVIDER=1)
+  cost: 'REAL MONEY without --dry-run: generation credits, one charge per uncached job, unbounded by the
+    number of jobs in the file (use --only to cap it). --dry-run spends nothing and takes ~1s per uncached
+    job. Remotion motion is compute-only, ~5s per 390 frames warm'
+  source_file: web-builder/scripts/quality/commission-media.py
+  language: py
+  status: NOT_RUN
+  evidence: spends generation credits via the higgsfield CLI (one charge per uncached job); no image-jobs.json
+    exists to dry-run against
+- id: aurelix.generator.url-to-brief
+  name: URL → brief generator (LLM)
+  kind: generator
+  invocation: node scripts/quality/url-to-brief.js <url> <project-name> [--extraction-dir <dir>]
+  preconditions:
+  - briefs/_template.md exists — it is read unconditionally and a missing file throws
+  - the `claude` CLI is installed and subscription-authenticated (callClaudeCli; no ANTHROPIC_API_KEY
+    is used)
+  - 'without --extraction-dir: playwright chromium installed and the URL reachable, because extractReference()
+    crawls it live'
+  - 'with --extraction-dir: that directory already holds extraction-data.json (written by url-to-preset.js)'
+  inputs:
+  - a live URL, or a prior extraction directory's extraction-data.json
+  - briefs/_template.md
+  outputs:
+  - briefs/<project-name>.md — OVERWRITTEN unconditionally, no backup, no confirmation
+  - 'without --extraction-dir also: output/extractions/<project-name>/ (whatever extractReference persists)'
+  outcome: a written client brief inferred by an LLM from one page of extracted headings, paragraphs,
+    CTAs, links, section labels and image alt text
+  exit_contract:
+    '0': the brief was written — or --help was passed
+    '1': usage error (url or project-name missing), --extraction-dir has no extraction-data.json, or any
+      exception (extraction failure, missing template, claude CLI failure) via the FATAL handler
+  measures:
+  - up to 20 headings, 15 paragraphs >30 chars, 10 interactive elements, 15 links, all section labels
+    and 10 image alts from the extraction
+  - a single page — the URL it was given, nothing followed from it
+  cannot_see:
+  - whether anything it wrote is TRUE — the brief is an LLM inference about business, audience and brand
+    personality from one page of markup, and nothing downstream distinguishes it from an operator-authored
+    brief
+  - 'more than one page: extractReference() crawls exactly the URL given, so a site whose purpose lives
+    on /about or /pricing is described from its home page alone'
+  - design tokens, colour, type or layout — it reads text and hrefs only; that half is url-to-preset.js
+  - 'that a --extraction-dir bundle is stale: it reads extraction-data.json with no freshness or source-URL
+    check, so a brief can be generated for one URL from another URL''s crawl'
+  - whether briefs/<project-name>.md already held hand-authored work — it overwrites, and only git recovers
+    it
+  - 'its own output quality: the CLI response is written to disk unparsed and unvalidated, so an error
+    message or a refusal becomes the brief'
+  reachable_from:
+  - scripts/orchestrate.py:889 (the --from-url path, step 0b)
+  cost: one live crawl (~30-90s) unless --extraction-dir is given, plus one `claude` sonnet call; 120s
+    timeout when invoked from orchestrate.py
+  source_file: web-builder/scripts/quality/url-to-brief.js
+  language: js
+  status: NOT_RUN
+  evidence: writes briefs/<project>.md into the tracked repo with no output-dir flag, and spends a live
+    claude call
+- id: aurelix.generator.url-to-preset
+  name: URL → preset generator (LLM over measured design tokens)
+  kind: generator
+  invocation: node scripts/quality/url-to-preset.js <url> <preset-name> [--output-dir <dir>] [--extraction-dir
+    <dir>]
+  preconditions:
+  - skills/presets/_template.md exists — read unconditionally, a missing file throws
+  - 'playwright chromium installed and the URL reachable: extractReference() ALWAYS crawls live here,
+    --extraction-dir only relocates where the crawl is written'
+  - the `claude` CLI is installed and subscription-authenticated (callClaudeCli; no ANTHROPIC_API_KEY
+    is used)
+  inputs:
+  - a live URL
+  - skills/presets/_template.md
+  outputs:
+  - skills/presets/<preset-name>.md by default — OVERWRITTEN unconditionally; --output-dir redirects it
+  - <extraction-dir>/extraction-data.json (the input url-to-brief.js reads)
+  - <extraction-dir>/mapped-sections.json
+  - <extraction-dir>/animation-analysis.json
+  - <extraction-dir>/archetype-gaps.json — only when a low-confidence mapping was flagged
+  outcome: a preset file naming fonts, colours, radii, colour system, animation intensity/engine and a
+    section sequence, written by an LLM from measured tokens
+  exit_contract:
+    '0': the preset and the extraction artifacts were written — or --help was passed
+    '1': usage error (url or preset-name missing), or any exception (crawl failure, missing template,
+      claude CLI failure) via the FATAL handler
+  measures:
+  - 'design tokens from the rendered DOM: fonts, background and text colours, border radii (collectTokens)'
+  - 'colour system: gradient colours, accent families, per-section accents (identifyColorSystem, profileSectionColors)'
+  - section → archetype mapping with a per-section confidence, and the low-confidence gaps
+  - 'animation evidence: libraries, intensity level/score/confidence, engine, CSS keyframes, scroll triggers,
+    GSAP plugins'
+  cannot_see:
+  - whether the preset it wrote is CORRECT — the measured tokens are real, but their translation into
+    bg_primary, colour_temperature, border_radius and the section sequence is an LLM judgement the file
+    records as fact
+  - 'more than one page: it crawls exactly the URL given, so a site whose interior pages carry the real
+    palette is characterised from its home page'
+  - the difference between a page background and a dark nav bar, modal, tooltip or cookie banner — the
+    prompt carries hand-written rules warning against exactly this because the extraction cannot distinguish
+    them
+  - 'that it is about to destroy a hand-authored preset: it overwrites skills/presets/<preset-name>.md
+    with no diff and no backup — the 294-line Cape Crypto preset was lost this way and only git recovered
+    it'
+  - 'its own output: the CLI response is written unparsed, so an error message or a refusal becomes the
+    preset'
+  - anything below the crawl's own reach — content behind auth, interaction, or a consent wall is simply
+    absent from the tokens
+  reachable_from:
+  - scripts/orchestrate.py:865 (the --from-url path, step 0a)
+  cost: one live playwright crawl with scroll-capture (~30-120s) plus one `claude` sonnet call; 300s timeout
+    when invoked from orchestrate.py
+  source_file: web-builder/scripts/quality/url-to-preset.js
+  language: js
+  status: NOT_RUN
+  evidence: performs a live external crawl AND a claude call; overwrites skills/presets/<name>.md
+- id: aurelix.harness.cvr-loop
+  name: CVR loop driver — build → audit the built site → verdicts → rebuild → diff
+  kind: harness
+  invocation: python3 scripts/cvr_loop.py <project> --output-root <scratch-dir> [--tenant <slug>] [--captures
+    <dir>] [--routes <csv>] [--benchmark <market>] [--preset <name>] [--max-iterations 1]
+  preconditions:
+  - --output-root must be OUTSIDE web-builder/output — the loop refuses to write there
+  - SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY exported; every build it drives needs them
+  - npm, node_modules and a production `next build` in the built site, or the audit lane is recorded NOT_MEASURED
+    with a reason and the loop continues on the funnel lane alone
+  - 'for the axe lane: axe.min.js (--axe-js or $AXE_JS) and an installed Playwright chromium'
+  - the aurelix-uiux-audit submodule initialised at ../aurelix-uiux-audit
+  inputs:
+  - 'the build''s own inputs: captures bundle, benchmark, preset, brief, extraction store'
+  - skills/funnel-rules.json (or --rules) — the funnel lane's rules-as-data
+  - the audit of the BUILT site it starts and serves itself, on a free local port
+  - K1 scripts/quality/findings-to-verdicts.py and K2 scripts/quality/funnel-verdicts.py
+  outputs:
+  - <output-root>/cvr-loop-report.json (or --report) — iterations[], merged verdict accounting, section_diff,
+    funnel_fail_fate, findings_fate, verdict_effect, not_measured_lanes[] and the control field non_verdict_inputs_unchanged
+  - the merged copy-findings.json each rebuild is driven with
+  - two full build trees under <output-root>
+  outcome: whether feeding audit- and funnel-derived verdicts back into a rebuild changed anything, with
+    the diff attributable to the verdicts file alone
+  exit_contract:
+    '0': the pass completed. FAIL verdicts are findings, not loop failures
+    '1': an accounting failure inside the verdict merge; also substituted when an aborting build exited
+      0 while reporting a fatal gate — the loop refuses to pass that 0 through
+    '3': NOT_MEASURED — neither the audit lane nor the funnel lane could measure anything
+    '64': usage — --output-root under web-builder/output, --max-iterations < 1, --tolerate-build-failure
+      compliance, an empty seam command, or a build command that is not executable
+  measures:
+  - the aborting build's exit code and the compliance verdict read off its stdout, cross-checked against
+    each other (record_gate_result only prints; GATE_RESULTS is never serialised)
+  - 'section-level diff between build A and build B: counts before/after and which changed'
+  - 'the fate of funnel FAILs and audit findings across the rebuild: closed / still failing / new'
+  - 'the control field: every non-verdict input is digested before both builds, so a diff that is not
+    attributable to the verdicts file is reported as invalid rather than hidden'
+  cannot_see:
+  - whether a changed section is BETTER. It measures that the verdict moved something; quality is not
+    in its instrument set
+  - 'gate verdicts as data — it scrapes stdout for ''GATE compliance: FAIL'' and ''BUILD FAILURE ['',
+    so a wording change in orchestrate.py blinds the compliance lane while the loop keeps reporting'
+  - 'anything about a lane it could not run: no built site, no axe.min.js, no Playwright browser or a
+    server that will not start ⇒ the audit lane is NOT_MEASURED with a reason and never inferred from
+    the funnel lane'
+  - source-level findings when the audit bundle describes the SOURCE site — axe selectors then name the
+    source theme's classes and match nothing the build owns (K1's real run compiled 562 findings into
+    one verdict for exactly this reason)
+  - 'an abort''s exit code as anything it declared: on abort it exits with the ABORTING BUILD''s own code
+    verbatim, which may be any value orchestrate.py can return (2 = review needed is the live example)
+    and is not in the contract above'
+  - whether the verdicts it merged are correct — it drives K1 and K2, it does not judge them
+  reachable_from:
+  - scripts/test_cvr_loop.py:37,215,456-506 — tests only, against stub build/audit scripts
+  - scripts/lib/copy_revision.py:4,52,334 — prose references, no invocation
+  - standalone CLI. No chain stage and no orchestrate.py path invokes this
+  cost: 'EXPENSIVE. Two full builds plus a served local audit: default --build-timeout 3600s each and
+    --audit-timeout 1800s, so tens of minutes to hours of wall clock, gigabytes of build output under
+    --output-root, and Supabase reads throughout'
+  source_file: web-builder/scripts/cvr_loop.py
+  language: py
+  status: NOT_RUN
+  evidence: two full builds plus a served local audit; build timeout defaults to 3600s each, audit 1800s
+- id: aurelix.probe.animation-detection
+  name: Animation-detection probe over live URLs
+  kind: probe
+  invocation: node scripts/quality/test-animation-detector.js [url ...]
+  preconditions:
+  - playwright chromium installed (`npx playwright install chromium`) — nothing checks it, and its absence
+    is printed per-URL and then exited 0
+  - outbound network access to every URL given; defaults to example.com, stripe.com, linear.app
+  inputs:
+  - URLs on argv, or three hardcoded default sites
+  - scripts/quality/lib/animation-detector.js
+  outputs: []
+  outcome: 'what motion a live site actually ships: detected libraries and how they were detected, @keyframes
+    count, animated/transition element counts, scroll triggers and IntersectionObservers, Lottie/Rive/3D
+    asset requests, and the intensity level + score + confidence the scorer derives'
+  exit_contract:
+    '0': the run completed — INCLUDING when every URL errored. Per-URL failures are caught, printed as
+      "ERROR:" and reported as success:false in a table; the process still exits 0
+    '1': main() itself rejected (a fault outside the per-URL try, e.g. the summary formatter)
+  measures:
+  - 'runtime animation evidence from a real browser: injected pre-navigation hooks, network interception,
+    a MutationObserver, and a full-page scroll that triggers lazy reveals'
+  - the intensity scorer end to end, on input no fixture can produce
+  cannot_see:
+  - whether the intensity it reports is RIGHT. There is no expected value and no assertion — stripe.com
+    scoring "none" and scoring "expressive" produce the same exit code
+  - 'section-level attribution: it passes [] for sections and [] for the DOM to analyzeAnimationEvidence,
+    so every per-section field is empty by construction, not by measurement'
+  - motion that needs interaction — hover, click, focus, form state, carousels on a timer past the fixed
+    1.5s-per-viewport scroll settle. It scrolls and waits, nothing more
+  - 'anything about an Aurelix build: it reads live third-party sites and no output/ directory, so it
+    can never tell you what the pipeline emitted'
+  - that it ran at all in CI or the chain — reachable_from is [], measured repo-wide
+  reachable_from: []
+  cost: 'a chromium launch and a full scroll per URL: ~30-60s each on the three defaults, plus network.
+    No credentials, no spend'
+  source_file: web-builder/scripts/quality/test-animation-detector.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/test-animation-detector.js https://example.com` → exit 0. Intensity
+    none, score 0, engine css
+- id: aurelix.probe.corpus-archetypes
+  name: Persisted-corpus archetype annotator
+  kind: probe
+  invocation: node scripts/quality/annotate-corpus-archetypes.js <corpus-dir> [--json] [--write] [--out
+    <dir>]
+  preconditions:
+  - a persisted capture corpus directory holding index.json plus <slug>/extraction.json per page
+  - nothing else — no network, no browser, no database. The corpus exists so the site is not re-measured
+    on a different day
+  inputs:
+  - <corpus-dir>/index.json
+  - <corpus-dir>/<slug>/extraction.json
+  outputs:
+  - 'stdout: the measured section sequence per page (or the whole result as JSON under --json)'
+  - 'under --write: <slug>/extraction.json rewritten with archetype fields — in place, or into --out after
+    copying the whole corpus there first'
+  outcome: the reference section sequence a corpus actually contains, per page, with a confidence and
+    method per section
+  exit_contract:
+    '0': every page classified. Sections below the mapper threshold are reported NOT_MEASURED — that is
+      a measurement, not a failure
+    '3': NOT_MEASURED — no page in the corpus carried any section at all
+    '64': 'usage error: no corpus directory, an unknown flag, --out without a value, or no index.json
+      at the given path'
+  measures:
+  - archetype and variant per section, with confidence and the method that produced it
+  - the measured/not-measured split per page, and the minimum confidence across the page
+  cannot_see:
+  - whether the archetype label is RIGHT. It is the same annotateSectionArchetypes() call extract-reference.js
+    makes, at the same threshold — it re-runs a classifier, it does not check one, so a systematic mapper
+    error is reproduced here with a confidence score attached to it
+  - whether the corpus is current. It reads persisted extraction.json and has no notion of when the site
+    was captured or whether it has since changed — that staleness is the deliberate trade for not re-crawling,
+    and it is invisible from inside this tool
+  - a page listed in index.json whose extraction.json is missing — it records NOT_MEASURED for that slug
+    and still exits 0 as long as one other page carried sections
+  - sections the capture never persisted. It classifies data.sections as found; a page whose extractor
+    dropped a section is indistinguishable here from a page that did not have one
+  - whether anything consumes the annotation. --write persists it into the corpus, and no gate reads the
+    archetype field back
+  reachable_from:
+  - scripts/test_corpus_archetypes.py:183,201,229
+  - standalone CLI
+  cost: <1s per corpus; filesystem only. --write --out copies the whole corpus first, so it costs its
+    size on disk
+  source_file: web-builder/scripts/quality/annotate-corpus-archetypes.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/annotate-corpus-archetypes.js benchmarks/corpora/enterprise-stablecoin-payments-measured
+    --json` → exit 0. 5 pages, 41 sections, 22 measured / 19 NOT_MEASURED
+- id: aurelix.probe.preset-enrichment
+  name: Preset claim vs live reference-site probe
+  kind: probe
+  invocation: node scripts/quality/enrich-preset.js <preset-name> [--output-dir <dir>] [--max-sites <n>]
+  preconditions:
+  - skills/presets/<preset-name>.md exists and lists reference sites
+  - playwright with chromium installed — extract-reference.js launches a headless browser and nothing
+    checks it first
+  - outbound network access to the reference sites
+  inputs:
+  - skills/presets/<preset-name>.md
+  - the live reference sites the preset names
+  outputs:
+  - <output-dir>/enrichment-report-<preset>.md — accuracy, confirmed claims, discrepancies, top fonts,
+    discoveries
+  - <output-dir>/<preset>/<host>/ — the raw per-site extraction from extract-reference.js
+  outcome: how much of what a preset claims about its reference sites is true of those sites today, per
+    claim, with the measured value beside the claimed one
+  exit_contract:
+    '0': the report was written. It exits 0 at ANY accuracy — 0% confirmed and 100% confirmed return the
+      same code, because this reports and does not judge
+    '1': no preset name given, the preset file does not exist, the preset lists no usable reference sites,
+      every site failed to extract, or a fatal throw
+  measures:
+  - rendered fonts, text colours, background colours and border radii per reference site, from computed
+    style in a real browser
+  - frequency across sites — a token on 5 of 5 sites is reported differently from one on 1 of 5
+  - match / mismatch / discovery against the preset's own claims, with a severity per mismatch
+  cannot_see:
+  - a site it failed to reach. Per-site failures are caught, pushed to failedSites and printed, and the
+    accuracy figure is then computed over the survivors alone — a report saying "5 sites analyzed" where
+    4 failed reads as a weaker claim, not as an unmeasured one, and still exits 0
+  - whether the reference site is the one the preset meant. nameToUrl() GUESSES a URL from a prose name
+    — it strips punctuation and appends .com — so a wrong-but-live domain is measured with full confidence
+    and never flagged
+  - whether the preset is wrong or the site changed. A discrepancy is reported as a discrepancy; which
+    side moved is outside what it reads
+  - 'anything a headless chromium at 1440x900 does not render: consent walls, geo-variant designs, A/B
+    arms, authed and hover states'
+  - whether anyone acts on it. It never edits the preset it grades, no caller invokes it beyond the npm
+    alias, and no gate reads the report
+  reachable_from:
+  - scripts/quality/package.json — `npm run enrich`
+  - standalone CLI
+  cost: 'browser-bound: roughly 10-40s per reference site, default 5 sites. Requires network and an installed
+    chromium'
+  source_file: web-builder/scripts/quality/enrich-preset.js
+  language: js
+  status: NOT_RUN
+  evidence: launches headless chromium against live third-party sites, 5 by default
+- id: aurelix.probe.render-audit
+  name: Post-build render audit (headless Chromium probe)
+  kind: probe
+  invocation: node scripts/quality/render-audit.js --base <url> (--routes <a,b,c> | --manifest <site-manifest.json>)
+    --out <dir> [--viewport 1440x900] [--settle 2500]
+  preconditions:
+  - the site is already SERVED at --base (a local `npm run start` or a deployed URL) — this probe neither
+    builds nor deploys
+  - playwright with a chromium browser installed (`npx playwright install chromium`); its absence is a
+    launch failure, not a measurement
+  inputs:
+  - every route reachable at <base><route>, from --routes or the non-dynamic pages of --manifest
+  outputs:
+  - <out>/render-audit.json — the DEFECT SUMMARY (counts by severity/category, per-page totals); `facts`
+    are discarded here
+  - <out>/report.json — schema aurelix.render_audit.v2, the raw per-route `facts` the summary throws away
+  - <out>/render-<route>.png — one full-page screenshot per route
+  - 'stdout: one JSON line {report, total_defects, by_severity} for the Python caller'
+  outcome: 'what the built site actually paints per route: section boxes, image load state, nav reachability,
+    measured contrast with a denominator, console errors and 4xx/5xx requests'
+  exit_contract:
+    '0': the audit RAN and both reports were written. It exits 0 whatever the defect count — this is a
+      probe, not a gate, and the exit code carries no verdict
+    '1': the probe itself failed (chromium would not launch, or an unhandled error)
+    '2': usage — --base or --out missing
+  measures:
+  - 'per-section geometry and paint: height/width, opacity, visibility, textLen, a djb2 text fingerprint,
+    own/child background image, per-section overflowX'
+  - 'page box: scrollWidth vs clientWidth with a 1px tolerance — the horizontal-overflow measurement'
+  - 'every <img>: naturalWidth/Height, rendered box, objectFit, load state; CSS background-image URLs
+    are listed but their load state is recorded as null'
+  - contrast on up to 400 text elements that own their text node, alpha-compositing every background layer
+    up to the first opaque ancestor, with measured/passed/failed counts so a failure count has a denominator
+  - header/nav hrefs against the known route set, console errors, and every response with status >= 400
+  cannot_see:
+  - 'any route it was not given: --manifest deliberately drops dynamic [handle] routes and not-found,
+    so a broken product page is outside its world'
+  - a permanently invisible reveal — before probing it injects `[style*="opacity"]{opacity:1!important}`
+    to settle framer entrance animations, which also forces a genuinely stuck-at-0 element visible
+  - 'zero-height sections as defects: blocks under 40px are recorded with belowThreshold=true and countedSections()
+    keeps them out of every count and check'
+  - whether a CSS background-image resolves — kind:'bg' records are pushed with loaded:null and nothing
+    ever fetches them
+  - 'contrast of text inside a fixed/sticky overlay whose backdrop resolves light: those elements are
+    SKIPPED, because the DOM-ancestor walk cannot see what is visually behind them'
+  - whether the content is TRUE. It measures paint, not provenance — a fabricated statistic renders perfectly
+    and scores zero defects
+  - 'anything that needs interaction: hover, modals, form states, authenticated pages. It loads, scrolls,
+    and measures'
+  reachable_from:
+  - orchestrate.py:10002 (Stage 6 resolves the path) and orchestrate.py:10090 (subprocess.run, 180s timeout)
+  - standalone CLI
+  cost: roughly 10-20s per route (45s navigation timeout, --settle 2500ms, a scroll pass at 250ms per
+    viewport, plus a full-page screenshot); requires a served site and a chromium download
+  source_file: web-builder/scripts/quality/render-audit.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/render-audit.js --base http://127.0.0.1:4791 --routes / --out /tmp/ra-out
+    --settle 1500` → exit 0. exit 0 WITH total_defects 2 (1 critical, 1 high) - confirms the exit code
+    carries no verdict
+- id: aurelix.probe.shot-aa
+  name: Full-page screenshot of a local HTML FILE, reveal-state neutralised
+  kind: probe
+  invocation: node scripts/quality/shot-aa.js <path-to-local.html> <out.png>
+  preconditions:
+  - playwright chromium installed
+  - the FIRST argument is a filesystem path, not a URL — the script prefixes it with file:// itself, so
+    passing an http(s) URL produces file://https://… and captures nothing useful
+  - 'a single self-contained HTML file: file:// gives it no dev server, so a Next.js route cannot be shot
+    this way'
+  - the parent directory of <out.png> exists — it is not created
+  inputs:
+  - a local HTML file path
+  outputs:
+  - <out.png> — one full-page PNG at 1440x900, deviceScaleFactor 1
+  outcome: a stitched full-page image of a local HTML file with GSAP/ScrollTrigger reveal state forced
+    to its end position, so nothing is captured mid-fade
+  exit_contract:
+    '0': the PNG was written (see cannot_see — this includes a page that failed to load)
+    '2': the browser launch, the screenshot, or the close threw
+  measures:
+  - the hydrated, reveal-completed rendering of one document at one viewport width (1440), full page height
+  cannot_see:
+  - 'ANY failure to load: the goto() rejection is swallowed by .catch(()=>{}), so a missing file, a broken
+    path or a blank document is screenshotted and exits 0 — a written PNG is not evidence the page rendered'
+  - more than one viewport — 1440x900 is hardcoded; it cannot answer whether the mobile breakpoint holds
+    (that is shot-width.js)
+  - 'the difference between server-rendered and client-inserted content: it captures the hydrated DOM
+    after 2.5s, so JS-injected markup is indistinguishable from HTML that shipped'
+  - anything behind an interaction — no click, hover, focus or menu-open state is exercised
+  - 'lazy content that needs scrolling: unlike shot-live.js and shot-width.js it never scrolls, so an
+    IntersectionObserver-loaded image below the fold is captured empty'
+  - reveal machinery other than GSAP/ScrollTrigger and the `.rv` class — a Framer Motion or CSS-only reveal
+    is not neutralised and can be caught mid-animation
+  - 'anything about the image it wrote: it renders NO verdict, compares nothing, and asserts no dimension,
+    colour or overflow property'
+  reachable_from: []
+  cost: one browser launch plus ~3s of fixed waits — roughly 5-15s
+  source_file: web-builder/scripts/quality/shot-aa.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/shot-aa.js /tmp/probe.html /tmp/aa.png` → exit 0. 48KB PNG
+- id: aurelix.probe.shot-hero
+  name: Above-the-fold screenshot of a local HTML FILE
+  kind: probe
+  invocation: node scripts/quality/shot-hero.js <path-to-local.html> <out.png>
+  preconditions:
+  - playwright chromium installed
+  - the FIRST argument is a filesystem path, not a URL — the script prefixes it with file:// itself
+  - 'a single self-contained HTML file: file:// gives it no dev server'
+  - the parent directory of <out.png> exists — it is not created
+  inputs:
+  - a local HTML file path
+  outputs:
+  - <out.png> — one viewport-sized PNG, 1440x860, NOT full page
+  outcome: what the first screenful of a local HTML file looks like 3 seconds after load
+  exit_contract:
+    '0': the PNG was written (see cannot_see — this includes a page that failed to load)
+    '2': the browser launch, the screenshot, or the close threw
+  measures:
+  - the hydrated rendering of the top 860px of one document at 1440 wide
+  cannot_see:
+  - 'ANY failure to load: the goto() rejection is swallowed by .catch(()=>{}), so a missing file or a
+    blank document is screenshotted and exits 0'
+  - ANYTHING BELOW 860px — this is the only one of the shot-* family that does not pass fullPage, by design;
+    the rest of the page does not exist to it
+  - more than one viewport — 1440x860 is hardcoded
+  - 'the difference between server-rendered and client-inserted content: it captures the hydrated DOM
+    after a flat 3s wait'
+  - 'reveal state: unlike shot-aa/shot-live/shot-width it does NOT neutralise GSAP/ScrollTrigger or `.rv`,
+    so an element still fading in is captured mid-animation and reads as a missing or faint element'
+  - anything behind an interaction — no click, hover, focus or menu-open state
+  - 'anything about the image it wrote: it renders no verdict and asserts nothing'
+  reachable_from: []
+  cost: one browser launch plus a flat 3s wait — roughly 5-12s
+  source_file: web-builder/scripts/quality/shot-hero.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/shot-hero.js /tmp/probe.html /tmp/hero.png` → exit 0. 22KB PNG
+- id: aurelix.probe.shot-live
+  name: Full-page screenshot of a served URL at 1440, scrolled and reveal-neutralised
+  kind: probe
+  invocation: node scripts/quality/shot-live.js <url> <out.png>
+  preconditions:
+  - playwright chromium installed
+  - the FIRST argument is an http(s) URL — unlike shot-aa/shot-hero it is passed to goto() verbatim, so
+    a local build must already be served (e.g. npm run start in output/<project>/site)
+  - the parent directory of <out.png> exists — it is not created
+  inputs:
+  - a served URL
+  outputs:
+  - <out.png> — one full-page PNG at 1440x900, deviceScaleFactor 1
+  outcome: a stitched full-page image of a served page after the whole document has been scrolled through
+    and reveal state forced to its end position
+  exit_contract:
+    '0': the PNG was written (see cannot_see — this includes a page that failed to load)
+    '2': the browser launch, the in-page evaluate, the screenshot, or the close threw
+  measures:
+  - the hydrated, scrolled-through, reveal-completed rendering of one route at 1440 wide, full page height
+  - lazy content triggered by the 600px-step scroll pass
+  cannot_see:
+  - 'ANY failure to load: the goto() rejection is swallowed by .catch(()=>{}), so a 404, a 500, a connection
+    refusal or a stale dev server is screenshotted and exits 0 — a written PNG is not evidence the route
+    rendered'
+  - more than one viewport — 1440x900 is hardcoded, which is exactly the gap shot-width.js exists to fill
+  - 'the difference between server-rendered and client-inserted content: it captures the hydrated DOM,
+    so an empty SSR payload filled in by JS is indistinguishable from correct server rendering'
+  - anything behind an interaction — no click, hover, focus, menu-open or form state is exercised
+  - reveal machinery other than GSAP/ScrollTrigger and the `.rv` class; a Framer Motion or CSS-only reveal
+    can still be caught mid-animation
+  - 'one route: it shoots the URL it was given and follows no link'
+  - 'anything about the image it wrote: it renders NO verdict, compares nothing against a benchmark, and
+    asserts no dimension, colour or overflow property. A human or a separate gate must look at the PNG'
+  reachable_from: []
+  cost: one browser launch, a full scroll pass and ~5.3s of fixed waits — roughly 15-45s depending on
+    page length
+  source_file: web-builder/scripts/quality/shot-live.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/shot-live.js http://127.0.0.1:8791/probe.html /tmp/live.png` → exit
+    0
+- id: aurelix.probe.shot-width
+  name: Full-page screenshot of a served URL at an arbitrary viewport width
+  kind: probe
+  invocation: node scripts/quality/shot-width.js <url> <out.png> [width=1440] [height=900]
+  preconditions:
+  - playwright chromium installed
+  - an http(s) URL that is already being served — a local build needs npm run start first
+  - the parent directory of <out.png> exists — it is not created
+  inputs:
+  - a served URL
+  - an optional viewport width and height
+  outputs:
+  - <out.png> — one full-page PNG at the requested width
+  outcome: what a route looks like end-to-end at a chosen breakpoint, with mobile flags set below 600px
+    so a UA-sniffing site serves its phone layout
+  exit_contract:
+    '0': the PNG was written (see cannot_see — this includes a page that failed to load)
+    '2': the browser launch, the in-page evaluate, the screenshot, or the close threw. The caller records
+      NOT_MEASURED
+    '64': usage error — <url> or <out.png> missing
+  measures:
+  - the hydrated, scrolled-through, reveal-completed rendering of one route at ONE chosen width, full
+    page height
+  - the mobile-vs-desktop layout fork, by setting isMobile and hasTouch below 600px width
+  cannot_see:
+  - 'ANY failure to load: the goto() rejection is swallowed by .catch(()=>{}), so a 404, a 500 or a refused
+    connection is screenshotted and exits 0 — a written PNG is not evidence the route rendered'
+  - more than the ONE width it was given per run — answering "does the responsive range hold" needs several
+    invocations and something to compare them
+  - 'the difference between server-rendered and client-inserted content: it captures the hydrated DOM'
+  - anything behind an interaction — a hamburger menu that only exists when opened is invisible to it,
+    which is precisely the failure mode a narrow capture is usually run to find
+  - reveal machinery other than GSAP/ScrollTrigger and the `.rv` class
+  - 'anything about the image it wrote: it renders NO verdict. Horizontal overflow, a clipped table or
+    a broken grid are visible in the PNG and asserted by nothing here'
+  reachable_from: []
+  cost: one browser launch, a full scroll pass and ~5.3s of fixed waits — roughly 15-45s per width
+  source_file: web-builder/scripts/quality/shot-width.js
+  language: js
+  status: VERIFIED
+  evidence: ran `node scripts/quality/shot-width.js http://127.0.0.1:8791/probe.html /tmp/w390.png 390
+    844` → exit 0

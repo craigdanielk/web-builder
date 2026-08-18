@@ -35,9 +35,76 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib.capability import describe  # noqa: E402
+
 EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_NOT_MEASURED = 3
+
+# What this gate is, in its own words. Compiled into the capability register by
+# `scripts/capability_register.py`; see that file for why it lives here.
+CAPABILITY = {
+    "id": "aurelix.gate.rails",
+    "name": "Rails gate — the emitted CMS/email rails compile and their routes exist",
+    "kind": "gate",
+    "invocation": "python3 scripts/verify_rails_gate.py --site-dir <output/PROJECT/site> "
+                  "--output-dir <output/PROJECT> [--timeout 900]",
+    "preconditions": [
+        "the tenant declared `cms`, so rails were emitted — a non-declaring tenant has no "
+        "rails-emission.json and this gate must be ABSENT from the run, not run and skipped",
+        "<output-dir>/rails-emission.json exists (written by rails_emit.py)",
+        "node_modules installed in <site-dir> and npx on PATH, or the compile lane is NOT_MEASURED",
+    ],
+    "inputs": [
+        "<output-dir>/rails-emission.json — routes[], files[], puck_config, undeclared_fields",
+        "<site-dir> — the emitted Next.js app, and its .next/ after the build",
+    ],
+    "outputs": [
+        "<output-dir>/rails-gate.json — {verdict, reasons, routes_claimed, routes_built, "
+        "emitted_files, build_exit_code, puck_config_verdict, undeclared_fields}",
+    ],
+    "outcome": "whether every file the emission claims is still on disk, whether `next build` "
+               "succeeds, and whether every route the emission claims exists in the build output",
+    "exit_contract": {
+        0: "PASS — the build succeeded and every claimed route is in the build output",
+        1: "FAIL — rails-emission.json absent, an emitted file is missing, `next build` exited "
+           "non-zero, or a claimed route is absent from the build output",
+        3: "NOT_MEASURED — the compile could not be attempted or read: no node_modules, npx not "
+           "on PATH, the build exceeded --timeout, or the route manifest was unreadable. "
+           "A measured missing FILE still outranks this and returns 1",
+    },
+    "measures": [
+        "existence of each path in emission.files under <site-dir>",
+        "the exit code of `npx --no-install next build` with NODE_ENV=production",
+        "the built route set, from .next/app-path-routes-manifest.json, falling back to "
+        "walking .next/server/app for page.js / route.js",
+        "set difference: emission.routes minus routes actually built",
+    ],
+    "cannot_see": [
+        "whether a route that compiled actually WORKS — it compares route strings against a "
+        "manifest, never requests a page, so a built /api/contact that 500s at runtime passes",
+        "any secret or runtime credential, deliberately: RESEND_API_KEY is declared-not-valued "
+        "and the emitted sender reports its own absence via notifyUnconfiguredReason",
+        "whether rails-emission.json describes the CURRENT source — it trusts the manifest an "
+        "earlier stage wrote; a re-emit that changed routes and a stale manifest agree silently",
+        "database state: migrations under rails-templates/cms are emitted as files and never applied "
+        "or checked against a schema here",
+        "whether the compile lane ran at all, if you read only the exit code of a FAIL — a "
+        "missing file returns 1 while node_modules was absent and nothing was compiled. "
+        "Read rails-gate.json.reasons, not the summary line",
+        "content: whether the CMS pages render anything, and whether Puck's config matches the "
+        "emitted components (it copies emission.puck_config.verdict through without re-deriving it)",
+    ],
+    "reachable_from": [
+        "orchestrate.py:8960-8968 (run_gate + write_verdict imported as a module, inside stage_deploy)",
+        "scripts/test_rails_emit.py:462-519",
+        "standalone CLI (no chain stage invokes this file as a script)",
+    ],
+    "cost": "a full `next build` — minutes, default timeout 900s. Seconds when node_modules is "
+            "absent and the compile lane is NOT_MEASURED",
+}
 
 
 def _routes_in_build(site_dir: Path) -> set[str] | None:
@@ -167,6 +234,10 @@ def write_verdict(output_dir: Path, verdict: dict) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Before parse_args: --site-dir/--output-dir are required, so a --describe
+    # that had to parse would exit 2 on a usage error instead of describing.
+    if describe(CAPABILITY, argv):
+        return EXIT_PASS
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site-dir", required=True, type=Path)
     ap.add_argument("--output-dir", required=True, type=Path)

@@ -18,9 +18,68 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 WEB_BUILDER_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib.capability import describe  # noqa: E402
 
 # Exit codes: 0 PASS - 1 FAIL - 3 NOT_MEASURED. NOT_MEASURED is not PASS.
 NOT_MEASURED = 3
+
+# What this gate is, in its own words. Compiled into the capability register by
+# `scripts/capability_register.py`; see that file for why it lives here.
+CAPABILITY = {
+    "id": "aurelix.gate.verify-e",
+    "name": "Gate E — internal links resolve and declared redirects land",
+    "kind": "gate",
+    "invocation": "python3 scripts/verify_gate_e.py --url <deployed-url> "
+                  "[--redirect-map <csv>] [--max-links <n>]",
+    "preconditions": [
+        "a deployed, publicly reachable URL, passed as --url or set in GATE_E_URL",
+        "outbound network access from this machine",
+        "for the redirect lane: a CSV with from_path/to_path (or from/to/target) columns, "
+        "AND a --url — a redirect map on its own is a FAIL, not a measurement",
+    ],
+    "inputs": ["--url (or $GATE_E_URL)", "--redirect-map CSV", "--max-links", "--timeout"],
+    "outputs": [],
+    "outcome": "whether the deployed home page's internal links resolve, and whether each "
+               "declared legacy path still redirects to its declared target",
+    "exit_contract": {
+        0: "PASS — at least one real check ran and every check passed",
+        1: "FAIL — a link returned something outside 200/301/302, a redirect target did not "
+           "match, or --redirect-map was given without --url",
+        3: "NOT_MEASURED — nothing was checked. Covers both 'no inputs at all' and "
+           "'--redirect-map points at a file that does not exist'; the latter previously "
+           "fell through to PASS on an empty error list",
+    },
+    "measures": [
+        "HTTP status of the home page",
+        "HTTP status of up to --max-links (default 15) same-origin hrefs parsed out of the "
+        "home page's HTML by regex",
+        "for the first 20 rows of a redirect map: the status of <base>/<from_path> and whether "
+        "to_path appears as a substring of the final URL",
+    ],
+    "cannot_see": [
+        "anything when it reached nothing — no --url and no existing redirect map means the "
+        "`measured` flag stays False and it returns 3. 'No errors' there means 'no checks'",
+        "links that are not literal href attributes in the home page's served HTML: "
+        "client-rendered nav, JS routing, links on any page other than the home page",
+        "more than 20 redirect rows and more than 5 errors — both are hard slices, so a "
+        "larger map is partially measured while the verdict reads whole",
+        "whether a redirect landed on the RIGHT page: the target test is a substring match "
+        "against the final URL, so to_path '/a' matches a redirect to '/another-thing'",
+        "a 200 that is really a soft-404 or an error page — it reads status codes, never bodies "
+        "(and 301/302 are accepted as healthy for a link)",
+        "whether the redirect map it was handed describes this site at all",
+    ],
+    "reachable_from": [
+        "run_pipeline.py:692 (stage_gate_e — passes only --url; the redirect lane is "
+        "unreachable from the chain)",
+        "scripts/test_gate_outcomes.py:30",
+        "standalone CLI",
+    ],
+    "cost": "seconds to a minute: 1 + up to 15 sequential HTTP GETs at a 15s default timeout, "
+            "plus up to 20 redirect probes. Requires a live deployment",
+}
 
 
 def fetch(url: str, timeout: int = 15, follow_redirect: bool = True) -> tuple[int, str, str]:
@@ -62,6 +121,8 @@ def extract_internal_links(base_url: str, html: str, max_links: int = 20) -> lis
 
 
 def main() -> int:
+    if describe(CAPABILITY):
+        return 0
     parser = argparse.ArgumentParser(description="VERIFY GATE E: redirects and nav links")
     parser.add_argument("--url", type=str, default=os.environ.get("GATE_E_URL"), help="Deployed store URL")
     parser.add_argument("--redirect-map", type=Path, default=None, help="CSV: from_path,to_path[,status]. Skip if not provided.")

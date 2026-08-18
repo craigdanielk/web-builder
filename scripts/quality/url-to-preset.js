@@ -26,9 +26,54 @@ const {
 } = require('./lib/design-tokens');
 const { mapSectionsToArchetypes } = require('./lib/archetype-mapper');
 const { analyzeAnimationEvidence } = require('./lib/animation-detector');
+const { describe } = require('./lib/capability');
 
 const PRESETS_DIR = path.resolve(__dirname, '../../skills/presets');
 const TEMPLATE_PATH = path.join(PRESETS_DIR, '_template.md');
+
+/** What this instrument is, in its own words. Compiled into the capability
+ *  register by `scripts/capability_register.py`; see that file for why it
+ *  lives here. */
+const CAPABILITY = {
+  id: 'aurelix.generator.url-to-preset',
+  name: 'URL → preset generator (LLM over measured design tokens)',
+  kind: 'generator',
+  invocation: 'node scripts/quality/url-to-preset.js <url> <preset-name> [--output-dir <dir>] [--extraction-dir <dir>]',
+  preconditions: [
+    'skills/presets/_template.md exists — read unconditionally, a missing file throws',
+    'playwright chromium installed and the URL reachable: extractReference() ALWAYS crawls live here, --extraction-dir only relocates where the crawl is written',
+    'the `claude` CLI is installed and subscription-authenticated (callClaudeCli; no ANTHROPIC_API_KEY is used)',
+  ],
+  inputs: ['a live URL', 'skills/presets/_template.md'],
+  outputs: [
+    'skills/presets/<preset-name>.md by default — OVERWRITTEN unconditionally; --output-dir redirects it',
+    '<extraction-dir>/extraction-data.json (the input url-to-brief.js reads)',
+    '<extraction-dir>/mapped-sections.json',
+    '<extraction-dir>/animation-analysis.json',
+    '<extraction-dir>/archetype-gaps.json — only when a low-confidence mapping was flagged',
+  ],
+  outcome: 'a preset file naming fonts, colours, radii, colour system, animation intensity/engine and a section sequence, written by an LLM from measured tokens',
+  exit_contract: {
+    0: 'the preset and the extraction artifacts were written — or --help was passed',
+    1: 'usage error (url or preset-name missing), or any exception (crawl failure, missing template, claude CLI failure) via the FATAL handler',
+  },
+  measures: [
+    'design tokens from the rendered DOM: fonts, background and text colours, border radii (collectTokens)',
+    'colour system: gradient colours, accent families, per-section accents (identifyColorSystem, profileSectionColors)',
+    'section → archetype mapping with a per-section confidence, and the low-confidence gaps',
+    'animation evidence: libraries, intensity level/score/confidence, engine, CSS keyframes, scroll triggers, GSAP plugins',
+  ],
+  cannot_see: [
+    'whether the preset it wrote is CORRECT — the measured tokens are real, but their translation into bg_primary, colour_temperature, border_radius and the section sequence is an LLM judgement the file records as fact',
+    'more than one page: it crawls exactly the URL given, so a site whose interior pages carry the real palette is characterised from its home page',
+    'the difference between a page background and a dark nav bar, modal, tooltip or cookie banner — the prompt carries hand-written rules warning against exactly this because the extraction cannot distinguish them',
+    'that it is about to destroy a hand-authored preset: it overwrites skills/presets/<preset-name>.md with no diff and no backup — the 294-line Cape Crypto preset was lost this way and only git recovered it',
+    'its own output: the CLI response is written unparsed, so an error message or a refusal becomes the preset',
+    'anything below the crawl\'s own reach — content behind auth, interaction, or a consent wall is simply absent from the tokens',
+  ],
+  reachable_from: ['scripts/orchestrate.py:865 (the --from-url path, step 0a)'],
+  cost: 'one live playwright crawl with scroll-capture (~30-120s) plus one `claude` sonnet call; 300s timeout when invoked from orchestrate.py',
+};
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -219,6 +264,7 @@ Output ONLY the complete preset markdown. No explanation, no code fences around 
 // ---------------------------------------------------------------------------
 
 async function main() {
+  if (describe(CAPABILITY)) return 0;
   const config = parseArgs();
 
   console.log('\n  URL → PRESET GENERATOR');

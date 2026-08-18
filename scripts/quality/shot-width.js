@@ -8,7 +8,46 @@
 // Usage: node shot-width.js <url> <out.png> [width=1440] [height=900]
 // Exit 0 on a written file, 2 on any failure (the caller records NOT_MEASURED).
 const { chromium } = require('playwright');
+const { describe } = require('./lib/capability');
+
+/** What this instrument is, in its own words. Compiled into the capability
+ *  register by `scripts/capability_register.py`. */
+const CAPABILITY = {
+  id: 'aurelix.probe.shot-width',
+  name: 'Full-page screenshot of a served URL at an arbitrary viewport width',
+  kind: 'probe',
+  invocation: 'node scripts/quality/shot-width.js <url> <out.png> [width=1440] [height=900]',
+  preconditions: [
+    'playwright chromium installed',
+    'an http(s) URL that is already being served — a local build needs npm run start first',
+    'the parent directory of <out.png> exists — it is not created',
+  ],
+  inputs: ['a served URL', 'an optional viewport width and height'],
+  outputs: ['<out.png> — one full-page PNG at the requested width'],
+  outcome: 'what a route looks like end-to-end at a chosen breakpoint, with mobile flags set below 600px so a UA-sniffing site serves its phone layout',
+  exit_contract: {
+    0: 'the PNG was written (see cannot_see — this includes a page that failed to load)',
+    2: 'the browser launch, the in-page evaluate, the screenshot, or the close threw. The caller records NOT_MEASURED',
+    64: 'usage error — <url> or <out.png> missing',
+  },
+  measures: [
+    'the hydrated, scrolled-through, reveal-completed rendering of one route at ONE chosen width, full page height',
+    'the mobile-vs-desktop layout fork, by setting isMobile and hasTouch below 600px width',
+  ],
+  cannot_see: [
+    'ANY failure to load: the goto() rejection is swallowed by .catch(()=>{}), so a 404, a 500 or a refused connection is screenshotted and exits 0 — a written PNG is not evidence the route rendered',
+    'more than the ONE width it was given per run — answering "does the responsive range hold" needs several invocations and something to compare them',
+    'the difference between server-rendered and client-inserted content: it captures the hydrated DOM',
+    'anything behind an interaction — a hamburger menu that only exists when opened is invisible to it, which is precisely the failure mode a narrow capture is usually run to find',
+    'reveal machinery other than GSAP/ScrollTrigger and the `.rv` class',
+    'anything about the image it wrote: it renders NO verdict. Horizontal overflow, a clipped table or a broken grid are visible in the PNG and asserted by nothing here',
+  ],
+  reachable_from: [],
+  cost: 'one browser launch, a full scroll pass and ~5.3s of fixed waits — roughly 15-45s per width',
+};
+
 (async () => {
+  if (describe(CAPABILITY)) return;
   const url = process.argv[2];
   const out = process.argv[3];
   const width = parseInt(process.argv[4] || '1440', 10);

@@ -34,6 +34,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+from lib.capability import describe  # noqa: E402
 from lib.benchmark_gate import (  # noqa: E402
     EXIT_NOT_MEASURED,
     INDEX_FILENAME,
@@ -50,6 +51,73 @@ ROOT = HERE.parent
 EXIT_OK = 0
 EXIT_USAGE = 64
 TOOL = "benchmark_library.py"
+
+# What this instrument is, in its own words. Compiled into the capability
+# register by `scripts/capability_register.py`; see that file for why it lives here.
+CAPABILITY = {
+    "id": "aurelix.compiler.benchmark-library",
+    "name": "Benchmark library CLI — index the library, ratify a benchmark",
+    "kind": "compiler",
+    "invocation": "python3 scripts/benchmark_library.py index [--check] | "
+                  "python3 scripts/benchmark_library.py ratify <slug> --ratified-at YYYY-MM-DD "
+                  "--ratify-accent <hex> --ratify-on-accent <hex> --ratify-density <d> "
+                  "--ratify-motion-intensity <i>",
+    "preconditions": [
+        "benchmarks/ exists and holds the benchmark JSON files",
+        "for ratify: the named benchmarks/<slug>.json exists, and the operator supplies the "
+        "four fields no tool can measure (accent, on_accent, density, motion.intensity)",
+        "for ratify: --ratified-at is mandatory — a ratification with no date is not a record "
+        "of an operator act",
+    ],
+    "inputs": [
+        "benchmarks/*.json — each file's declared market identity and aliases",
+        "benchmarks/index.json when --check compares it against those files",
+    ],
+    "outputs": [
+        "benchmarks/index.json (index, without --check) — GENERATED, timestamp-free so an "
+        "unchanged library recompiles to identical bytes",
+        "the ratified benchmark file's _meta.ratification block (ratify), written by "
+        "lib/benchmark_gate.resolve_benchmark",
+    ],
+    "outcome": "index: whether the persisted index still agrees with the files on disk, plus "
+               "any market claimed by two files. ratify: whether an operator declaration was "
+               "recorded, or the gate's refusal",
+    "exit_contract": {
+        0: "the act succeeded — index written, index agrees under --check, or the benchmark ratified",
+        1: "index --check only: the persisted index disagrees with the files on disk. "
+           "NOTE the module docstring omits this code; the code (cmd_index) returns it",
+        3: "NOT_MEASURED — benchmarks/ does not exist, or the ratification gate refused and "
+           "nothing was written",
+        64: "usage — ratify without --ratified-at, or --reference-url passed here instead of "
+            "to scripts/commission_benchmark.py",
+    },
+    "measures": [
+        "the market identity each benchmark file declares, and its filename alias",
+        "collisions: two files claiming one market, which the gate then refuses for ambiguity",
+        "whether benchmarks/index.json is byte-identical to what the files on disk imply",
+        "whether the four unmeasurable ratification fields have been declared by an operator",
+    ],
+    "cannot_see": [
+        "whether a benchmark's NUMBERS are right. It indexes and ratifies identity and "
+        "declarations; enterprise-payments-bvnk carries basis 'inference' and corpus null, so "
+        "its measured half is not re-derivable and this tool cannot tell you that by looking",
+        "whether the corpus a benchmark claims to be compiled from still reproduces it — that "
+        "is scripts/test_benchmark_corpus.py, a separate instrument",
+        "who actually ratified: --ratified-by is free text and is never authenticated",
+        "which tenants or builds depend on the benchmark it is about to overwrite — ratify "
+        "mutates a file that live builds read",
+        "a benchmark file that is malformed but uniquely named: index reads identity, not the "
+        "loader's eight palette_roles / four rhythm / four type_scale requirements",
+    ],
+    "reachable_from": [
+        "scripts/lib/benchmark_gate.py:281,366-423 — every refusal and the generated index "
+        "name this command as the remedy; no code path executes it",
+        "scripts/test_benchmark_index.py:38 (runs the CLI)",
+        "standalone CLI",
+    ],
+    "cost": "index: under a second over a four-market library, no network, no database. "
+            "ratify: sub-second, but it WRITES a tracked benchmark file",
+}
 
 
 def cmd_ratify(args: argparse.Namespace) -> int:
@@ -104,6 +172,10 @@ def cmd_index(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Before parse_args: the subparser is required=True, so `--describe` alone
+    # would die on a usage error rather than describe.
+    if describe(CAPABILITY, argv):
+        return EXIT_OK
     ap = argparse.ArgumentParser(
         prog=TOOL,
         description="Operate the benchmark library without running a build.")

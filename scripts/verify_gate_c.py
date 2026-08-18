@@ -15,12 +15,69 @@ import sys
 from pathlib import Path
 
 WEB_BUILDER_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib.capability import describe  # noqa: E402
 
 # Exit codes: 0 PASS - 1 FAIL - 3 NOT_MEASURED. NOT_MEASURED is not PASS.
 NOT_MEASURED = 3
 
+# What this gate is, in its own words. Compiled into the capability register by
+# `scripts/capability_register.py`; see that file for why it lives here.
+CAPABILITY = {
+    "id": "aurelix.gate.verify-c",
+    "name": "Gate C — the generated app exists and compiles",
+    "kind": "gate",
+    "invocation": "python3 scripts/verify_gate_c.py --site-dir <output/PROJECT/site>",
+    "preconditions": [
+        "a generated app directory produced by a build (orchestrate.py <project>)",
+        "npm on PATH and node_modules installed inside that app dir — `npm run build` "
+        "is run there directly, this gate installs nothing",
+    ],
+    "inputs": [
+        "--site-dir / --app-dir: the generated app directory",
+        "that dir's package.json and app/page.tsx or src/app/page.tsx",
+    ],
+    "outputs": [],
+    "outcome": "whether the generated Next.js app has the expected entry structure and "
+               "whether `npm run build` succeeds inside it",
+    "exit_contract": {
+        0: "PASS — structure present and `npm run build` returned 0",
+        1: "FAIL — no package.json, no app/page.tsx or src/app/page.tsx, or the build exited non-zero",
+        3: "NOT_MEASURED — no --site-dir/--app-dir was given, so there is no generated app to "
+           "verify. This branch used to inspect the web-builder's OWN lib/shopify template "
+           "files and print PASS; NOT_MEASURED is not PASS",
+    },
+    "measures": [
+        "presence of package.json in the app dir",
+        "presence of an App Router entry: app/page.tsx or src/app/page.tsx",
+        "the exit code of `npm run build` with NODE_ENV=production, 180s timeout",
+    ],
+    "cannot_see": [
+        "anything at all without --site-dir/--app-dir — the no-argument branch measures "
+        "nothing and returns 3; a chain that treats 3 as a pass has an unbuilt app",
+        "WHY a build failed beyond the first 800 characters of stderr, which is all it prints",
+        "whether the compiled output is correct — a build that succeeds while rendering an "
+        "empty page passes here; that is the render audit's and the conformance gate's job",
+        "type errors that `next build` does not surface (a project with typescript.ignoreBuildErrors "
+        "compiles green); the compile gate reads tsc, this gate reads npm's exit code",
+        "a build that exceeds the 180s timeout — subprocess.run raises TimeoutExpired and this "
+        "gate crashes with a traceback rather than returning a verdict",
+        "the Pages Router, and any entry file other than the two paths hardcoded above",
+    ],
+    "reachable_from": [
+        "run_pipeline.py:612 (stage_gate_c, both the shopify and vercel chains)",
+        "scripts/test_gate_outcomes.py:28",
+        "standalone CLI",
+    ],
+    "cost": "seconds with no app dir; a full `npm run build` (tens of seconds to minutes) with one",
+}
+
 
 def main() -> int:
+    if describe(CAPABILITY):
+        return 0
+
     parser = argparse.ArgumentParser(description="VERIFY GATE C: generated app structure + build")
     parser.add_argument("--site-dir", type=Path, default=None, help="Generated app dir (output/PROJECT/site)")
     parser.add_argument("--app-dir", type=Path, default=None, help="Alias for --site-dir")
