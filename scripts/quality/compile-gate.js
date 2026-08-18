@@ -32,6 +32,43 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
+const { describe } = require('./lib/capability');
+
+/** What this gate is, in its own words. Compiled into the capability register by
+ *  `scripts/capability_register.py`; see that file for why it lives here. */
+const CAPABILITY = {
+  id: 'aurelix.gate.compile',
+  name: 'TypeScript compile gate',
+  kind: 'gate',
+  invocation: 'node scripts/quality/compile-gate.js <site-dir> [--out <dir>]',
+  preconditions: [
+    'a generated site directory containing .ts/.tsx sources',
+    'a resolvable TypeScript compiler — local tsc, or one reachable from the site',
+  ],
+  inputs: ['the generated site directory'],
+  outputs: ['<out>/compile-gate.json (default: the parent of <site-dir>)'],
+  outcome: 'whether the generated TypeScript actually parses, partitioned so a missing install cannot mask a syntax error',
+  exit_contract: {
+    0: 'PASS — no structural errors',
+    1: 'FAIL — TS1xxx structural (parse/syntax) errors present',
+    3: 'NOT_MEASURED — no TypeScript compiler could be resolved, or tsc produced no diagnostics',
+  },
+  measures: [
+    'TS1xxx structural errors — the class that `key=` (a token substitution that ate its value) belongs to',
+    'module-not-found (TS2307 and friends) and everything else, reported but never fatal',
+  ],
+  cannot_see: [
+    'type CORRECTNESS — the partition deliberately treats non-structural diagnostics as noise, ' +
+      'so a site that parses but is deeply mistyped passes here',
+    'runtime behaviour: a file that compiles can still render nothing',
+    'anything at all when it globs sources itself without a tsconfig.json and finds none — ' +
+      'it returns "no .ts/.tsx sources found" and exits 3. Read compile-gate.json, not the summary line',
+    'whether the site was built; it type-checks source, and a stale .next is invisible to it',
+  ],
+  reachable_from: ['orchestrate.py:9370', 'run_pipeline.py:951', 'npm run compile-gate', 'standalone CLI'],
+  cost: '~10-60s depending on site size; tsc timeout is 300s',
+};
+
 const TSC_TIMEOUT_MS = 300_000;
 
 /** Codes that mean "the module graph is incomplete", not "the code is broken". */
@@ -271,6 +308,7 @@ async function compileGate(siteDirArg, opts = {}) {
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
 async function main(argv) {
+  if (describe(CAPABILITY, argv.slice(2))) return 0;
   const args = argv.slice(2);
   const positional = [];
   let outputDir;

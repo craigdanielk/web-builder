@@ -1,0 +1,16 @@
+{
+  "records": [
+    {
+      "argv": "node scripts/quality/compile-gate.js output/xago-exchange-mockup/site --out /tmp/cg-out",
+      "exit": 0,
+      "id": "aurelix.gate.compile",
+      "note": "2026-08-18 xago-exchange-mockup: PASS, 0 structural errors; resolved tsc from the site's own node_modules"
+    },
+    {
+      "argv": "node scripts/quality/conformance-gate.js --build-dir output/xago-exchange-mockup/site --benchmark benchmarks/enterprise-payments-bvnk.json --output /tmp/conf-out",
+      "exit": 1,
+      "id": "aurelix.gate.conformance",
+      "note": "2026-08-18 xago-exchange-mockup: FAIL, 9 violations / 1 conform over 13 routes. A dark site measured against a light benchmark, so the palette-role failures are a benchmark mismatch, not gate error; type-scale, shadow-layers and palette-size are real"
+    }
+  ]
+}

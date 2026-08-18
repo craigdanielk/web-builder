@@ -53,10 +53,48 @@ const net = require('net');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
+const { describe } = require('./lib/capability');
+
 const SCRIPTS = path.resolve(__dirname, '..');
 const WEB_BUILDER = path.resolve(SCRIPTS, '..');
 const RUNNER = path.join(__dirname, 'conformance_runner.py');
 const DEFAULT_BENCHMARK = path.join(WEB_BUILDER, 'benchmarks', 'enterprise-payments-bvnk.json');
+
+/** What this gate is, in its own words. Compiled into the capability register by
+ *  `scripts/capability_register.py`; see that file for why it lives here. */
+const CAPABILITY = {
+  id: 'aurelix.gate.conformance',
+  name: 'Design conformance gate',
+  kind: 'gate',
+  invocation: 'node scripts/quality/conformance-gate.js --build-dir <site-dir> --benchmark <file> --output <dir>',
+  preconditions: [
+    'a production build exists (.next/ with a prerender-manifest) — this gate does not build',
+    'a ratified benchmark file; defaults to benchmarks/enterprise-payments-bvnk.json',
+    'python3 with the aurelix-uiux-audit analyser importable (conformance_runner.py drives it)',
+  ],
+  inputs: ['the built site directory', 'a benchmark json'],
+  outputs: ['<output>/conformance.json — violations carry {layer, rule, measured, expected, route, section}'],
+  outcome: 'per-rule PASS/FAIL with measured vs expected, over every prerendered route of the built site',
+  exit_contract: {
+    0: 'PASS — every measured rule conforms',
+    1: 'FAIL — at least one rule failed WITH a measured value behind it',
+    3: 'NOT_MEASURED — nothing could be measured, or the only failures had no measurement. NOT_MEASURED is not a pass',
+  },
+  measures: [
+    'computed style of the rendered page: type scale, shadow layers, palette size, spacing rhythm',
+    'the whole prerendered route set, not a sampled page',
+  ],
+  cannot_see: [
+    'source-level token drift — it reads computed style, so a template that hardcodes a literal ' +
+      'matching the benchmark passes here while still being unmaintainable',
+    'anything not rendered on a prerendered route: client-only states, hover, modals, authed pages',
+    'WHERE an offence is. The dna_* rules are site-level aggregates; evaluate() flattens per_page ' +
+      'and stamps pages[0] onto every record, so route and section are reported null rather than invented',
+    'whether the benchmark itself is right — a wrong ratified benchmark produces confident conformance',
+  ],
+  reachable_from: ['orchestrate.py:9867', 'run_pipeline.py:992', 'standalone CLI'],
+  cost: '~30s on a 65-route site, plus the production build it requires',
+};
 
 const EXIT = { pass: 0, fail: 1, not_measured: 3 };
 
@@ -251,6 +289,7 @@ function discoverRoutes(buildDir) {
 // ── main ──────────────────────────────────────────────────────────────────
 
 async function main() {
+  if (describe(CAPABILITY)) return 0;
   const args = parseArgs(process.argv.slice(2));
   if (args.help || process.argv.length === 2) { process.stdout.write(USAGE); return 0; }
   if (args.error) { process.stderr.write(`${args.error}\n\n${USAGE}`); return EXIT.not_measured; }
