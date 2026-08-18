@@ -72,6 +72,14 @@ ROOT = HERE.parent
 REGISTRY_DIR = ROOT / "registry"
 REGISTER_PATH = REGISTRY_DIR / "capability-register.yaml"
 EVIDENCE_PATH = REGISTRY_DIR / "capability-evidence.json"
+SCENARIOS_PATH = REGISTRY_DIR / "scenarios.yaml"
+
+# A scenario step must say what it costs and what skipping it ships. A sequence
+# that lists tools without stating the consequence of omitting one is a list, and
+# a list is what failed on 2026-08-18 — the instruments were already listed in
+# their own directory.
+SCENARIO_STEP_REQUIRED = ("capability", "why", "cost", "skipping_ships")
+SCENARIO_REQUIRED = ("id", "question", "steps")
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -337,6 +345,87 @@ def check_register(entries: list[dict[str, Any]], path: Path = REGISTER_PATH) ->
 
 
 # --------------------------------------------------------------------------
+# scenarios — the part that makes the register usable
+# --------------------------------------------------------------------------
+
+def validate_scenarios(doc: Any, entries: list[dict[str, Any]]) -> list[str]:
+    """Every problem with `scenarios.yaml`, against the register that exists.
+
+    WHY THIS IS VALIDATED AND NOT MERELY WRITTEN
+    A scenario naming a tool that does not exist is worse than no scenario: it
+    sends an operator looking for an instrument, and when they cannot find it
+    they build a worse one. That is the exact failure this register exists to
+    prevent, so a dangling reference is a hard error.
+    """
+    known = {str(e["id"]): e for e in entries if e.get("id")}
+    problems: list[str] = []
+    if not isinstance(doc, dict):
+        return [f"{SCENARIOS_PATH.name}: expected a mapping at the top level"]
+    scenarios = doc.get("scenarios")
+    if not isinstance(scenarios, list) or not scenarios:
+        return [f"{SCENARIOS_PATH.name}: `scenarios` must be a non-empty list"]
+
+    seen: set[str] = set()
+    for index, scenario in enumerate(scenarios):
+        label = f"scenario[{index}]"
+        if not isinstance(scenario, dict):
+            problems.append(f"{label}: expected a mapping")
+            continue
+        label = str(scenario.get("id") or label)
+        for field in SCENARIO_REQUIRED:
+            if not scenario.get(field):
+                problems.append(f"{label}: missing `{field}`")
+        if scenario.get("id") in seen:
+            problems.append(f"{label}: duplicate scenario id")
+        seen.add(str(scenario.get("id")))
+
+        steps = scenario.get("steps")
+        if not isinstance(steps, list) or not steps:
+            problems.append(f"{label}: `steps` must be a non-empty ordered list")
+            continue
+        for position, step in enumerate(steps, start=1):
+            where = f"{label} step {position}"
+            if not isinstance(step, dict):
+                problems.append(f"{where}: expected a mapping")
+                continue
+            for field in SCENARIO_STEP_REQUIRED:
+                value = step.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    problems.append(f"{where}: `{field}` must be a non-empty string")
+            capability = step.get("capability")
+            if isinstance(capability, str) and capability not in known:
+                problems.append(
+                    f"{where}: capability {capability!r} is not in the register. "
+                    f"A sequence may not name an instrument that does not exist"
+                )
+            elif isinstance(capability, str):
+                status = str(known[capability].get("status"))
+                if status == "BROKEN":
+                    problems.append(
+                        f"{where}: capability {capability!r} is BROKEN — a scenario "
+                        f"may not route an operator to a tool known not to work"
+                    )
+    return problems
+
+
+def check_scenarios(entries: list[dict[str, Any]], path: Path = SCENARIOS_PATH) -> tuple[bool, str]:
+    """`(ok, detail)`. A missing scenarios file is NOT an error — the register is
+    useful before the sequences are written. A malformed one is."""
+    if not path.exists():
+        return True, f"{path.name} not present (no scenarios declared)"
+    try:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        return False, f"{path.name} is not readable YAML ({exc})"
+    problems = validate_scenarios(doc, entries)
+    if problems:
+        return False, f"{path.name} is invalid:\n    - " + "\n    - ".join(problems)
+    count = len(doc.get("scenarios") or [])
+    steps = sum(len(s.get("steps") or []) for s in doc.get("scenarios") or [])
+    return True, f"{path.name}: {count} scenario(s), {steps} step(s), every capability resolves"
+
+
+# --------------------------------------------------------------------------
 # commands
 # --------------------------------------------------------------------------
 
@@ -357,8 +446,10 @@ def cmd_compile(args: argparse.Namespace) -> int:
 
     if args.check:
         agrees, detail = check_register(entries)
-        ok = agrees and not problems
-        print(f"{TOOL}: {detail}", file=sys.stdout if ok else sys.stderr)
+        scen_ok, scen_detail = check_scenarios(entries)
+        ok = agrees and scen_ok and not problems
+        print(f"{TOOL}: {detail}", file=sys.stdout if agrees else sys.stderr)
+        print(f"{TOOL}: {scen_detail}", file=sys.stdout if scen_ok else sys.stderr)
         if problems and agrees:
             print(f"{TOOL}: {len(problems)} declaration(s) refused", file=sys.stderr)
         return EXIT_OK if ok else EXIT_FAILED
@@ -430,6 +521,50 @@ def cmd_record(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_scenarios(args: argparse.Namespace) -> int:
+    """Answer "what should I run before X?" without reading orchestrate.py."""
+    if not SCENARIOS_PATH.exists():
+        print(f"NOT_MEASURED: {SCENARIOS_PATH.name} does not exist", file=sys.stderr)
+        return EXIT_NOT_MEASURED
+    entries, _problems, _paths = _collect()
+    ok, detail = check_scenarios(entries)
+    if args.check:
+        print(f"{TOOL}: {detail}", file=sys.stdout if ok else sys.stderr)
+        return EXIT_OK if ok else EXIT_FAILED
+    if not ok:
+        print(f"{TOOL}: {detail}", file=sys.stderr)
+        return EXIT_FAILED
+
+    by_id = {str(e["id"]): e for e in entries}
+    doc = yaml.safe_load(SCENARIOS_PATH.read_text(encoding="utf-8")) or {}
+    wanted = (args.question or "").lower()
+    shown = 0
+    for scenario in doc.get("scenarios") or []:
+        text = f"{scenario.get('id')} {scenario.get('question')}".lower()
+        if wanted and wanted not in text:
+            continue
+        shown += 1
+        print(f"\n\"{scenario['question']}\"   [{scenario['id']}]")
+        if scenario.get("note"):
+            print(f"  {scenario['note']}")
+        for position, step in enumerate(scenario["steps"], start=1):
+            entry = by_id.get(step["capability"], {})
+            print(f"\n  {position}. {entry.get('name', step['capability'])}"
+                  f"   [{entry.get('status', '?')}]")
+            print(f"     $ {entry.get('invocation', '—')}")
+            print(f"     why      {step['why']}")
+            print(f"     cost     {step['cost']}")
+            print(f"     skipping {step['skipping_ships']}")
+        for excluded in scenario.get("not_applicable") or []:
+            print(f"\n  NOT APPLICABLE  {excluded.get('capability')}"
+                  f"\n     {excluded.get('why')}")
+    if not shown:
+        print(f"NOT_MEASURED: no scenario matches {args.question!r}", file=sys.stderr)
+        return EXIT_NOT_MEASURED
+    print()
+    return EXIT_OK
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     if not REGISTER_PATH.exists():
         print(f"NOT_MEASURED: {REGISTER_PATH.name} does not exist. "
@@ -468,6 +603,11 @@ def main(argv: list[str] | None = None) -> int:
     p_record.add_argument("--not-run", help="reason this cannot be run (costs money, mutates a live store)")
     p_record.add_argument("--note", help="one line of context for a human")
     p_record.set_defaults(func=cmd_record)
+
+    p_scen = sub.add_parser("scenarios", help="print or validate the scenario sequences")
+    p_scen.add_argument("--check", action="store_true", help="validate only; print nothing on success")
+    p_scen.add_argument("--question", help="substring match on a scenario's question or id")
+    p_scen.set_defaults(func=cmd_scenarios)
 
     p_list = sub.add_parser("list", help="print the register")
     p_list.add_argument("--status", help="filter: VERIFIED | BROKEN | NOT_RUN | NOT_VERIFIED")

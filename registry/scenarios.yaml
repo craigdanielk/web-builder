@@ -1,0 +1,236 @@
+# Scenario sequences — the register keyed by SITUATION rather than by tool.
+#
+# WHY THIS FILE EXISTS
+# A list of instruments does not prevent the failure. On 2026-08-18 every
+# instrument named below was already sitting in scripts/quality/, and five
+# worse checkers were hand-written anyway, because nobody could answer "what
+# should I run before showing this to a client?" without reading a
+# 12,261-line orchestrate.py.
+#
+# HOW IT IS KEPT HONEST
+# `capability_register.py compile --check` validates this file on every test
+# run. A step naming a capability that is not in the register is a hard error,
+# as is a step that omits `skipping_ships`. A scenario may not route an
+# operator to a BROKEN instrument.
+#
+# EVERY `skipping_ships` BELOW IS A DEFECT THAT ACTUALLY SHIPPED OR WAS
+# ACTUALLY MEASURED. Where a consequence is inferred rather than observed, it
+# says so. Do not add a hypothetical.
+#
+#     python3 scripts/capability_register.py scenarios
+#     python3 scripts/capability_register.py scenarios --question client
+
+version: 1
+
+scenarios:
+
+  # ────────────────────────────────────────────────────────────────────────
+  - id: changed-a-template
+    question: I changed a template
+    note: >-
+      Cheapest sequence here, and the one whose omission is least visible: a
+      broken template still writes files and still exits 0.
+    steps:
+      - capability: aurelix.gate.template-tokens
+        why: >-
+          Confirms every template declares its slots as `// Tokens: {a} {b}`.
+          A prose `Slots:` header is not a declaration, and without one the slot
+          contract falls back to a permissive brace sweep.
+        cost: seconds; no build required
+        skipping_ships: >-
+          `key={copy}` rewritten to `key=` — a template using {copy} as a loop
+          variable had its value eaten by token substitution, producing an SWC
+          parse error in a file the author wrote correctly.
+
+      - capability: aurelix.gate.compile
+        why: >-
+          The first thing in the pipeline that actually compiles. Its diagnostic
+          partition means a missing node_modules cannot mask a syntax error.
+        cost: ~10-60s, needs a generated site
+        skipping_ships: >-
+          Exactly the `key=` class of defect above, undetected — stage_validate
+          matches strings and counts braces, and braces balance in a file that
+          is syntactically dead.
+
+      - capability: aurelix.gate.conformance
+        why: >-
+          Reads computed style over every prerendered route, so it catches a
+          template that compiles and renders but ignores the design system.
+        cost: ~30s plus the production build it requires
+        skipping_ships: >-
+          A 5-layer shadow and a 23-colour palette shipped on 2026-08-18. The
+          hand-written source-grep checker called the same site clean, because
+          all three violations are properties of computed style.
+
+  # ────────────────────────────────────────────────────────────────────────
+  - id: about-to-show-a-client
+    question: I'm about to show this to a client
+    note: >-
+      Order matters. Rendered truth first: there is no point measuring the
+      style of a page whose CONTENT is false.
+    steps:
+      - capability: aurelix.probe.render-audit
+        why: >-
+          Measures the rendered DOM rather than the source. Read the report —
+          `total_defects` is in the artifact, not in the exit code.
+        cost: ~1-3min, needs the site served locally
+        skipping_ships: >-
+          "0+ Years operating" served on the /about page of an FSCA-licensed
+          FSP whose own content file declared "5+". Source review had passed it.
+
+      - capability: aurelix.gate.conformance
+        why: Type scale, shadow layers, palette size and spacing, over every route.
+        cost: ~30s plus a production build
+        skipping_ships: >-
+          The 2026-08-18 conformance run found 3 violations on a site two
+          hand-written checkers had passed.
+
+      - capability: aurelix.probe.shot-width
+        why: >-
+          The only multi-viewport instrument here. Takes an explicit width and
+          height, so a mobile break is visible rather than inferred.
+        cost: seconds per route; needs chromium
+        skipping_ships: >-
+          Mobile layout breaks are invisible to every other instrument in this
+          sequence — all of them measure one default viewport.
+
+      - capability: aurelix.gate.validate-build
+        why: Catches a page that rendered structurally but is substantively empty.
+        cost: seconds
+        skipping_ships: >-
+          A route that serves a shell. Measured on this gate's own verification
+          run against example.com: "Only 3 visible text elements", exit 1.
+    not_applicable:
+      - capability: aurelix.gate.verify-d
+        why: >-
+          Gate D checks a deployed Shopify storefront's cart. For a Vercel
+          tenant it returns NOT_MEASURED, and a NOT_MEASURED in a status list
+          reads as a pass.
+
+  # ────────────────────────────────────────────────────────────────────────
+  - id: content-from-a-new-source
+    question: Content came from a new source
+    note: >-
+      The capture bundle is the universal source interchange format. Do not
+      invent a second one — emit capture records and you are finished.
+    steps:
+      - capability: aurelix.builder.site-spec
+        why: >-
+          Loads the capture bundle and harvests it into a spec. This is where a
+          bundle that cannot be harvested must fail the run rather than
+          degrading to a single-page build.
+        cost: seconds
+        skipping_ships: >-
+          Measured on its own verification run: buildPages() silently `continue`s
+          past 0-block pages and page_id collisions with no counter, so five
+          requested routes and one captured route both exit 0.
+
+      - capability: aurelix.compiler.copy-findings
+        why: >-
+          Turns audit findings into per-slot verdicts, so flagged copy switches
+          from "reproduce verbatim" to "revise from source".
+        cost: seconds
+        skipping_ships: >-
+          Measured: 266 findings in, 0 verdicts out, 266 unroutable. Skipping it
+          is currently indistinguishable from running it — which is itself the
+          finding, and why this step is listed rather than omitted.
+
+      - capability: aurelix.gate.conformance
+        why: Confirms the harvested content did not drag foreign styling in with it.
+        cost: ~30s plus a production build
+        skipping_ships: >-
+          Inferred, not observed - harvested markup carrying its source's
+          inline styles would land in the palette count.
+    not_applicable:
+      - capability: aurelix.generator.url-to-preset
+        why: >-
+          It overwrites skills/presets/<name>.md in the tracked repo. It once
+          replaced a hand-authored 294-line Cape Crypto preset with a 121-line
+          generated file; only git recovered it.
+
+  # ────────────────────────────────────────────────────────────────────────
+  - id: about-to-deploy
+    question: I'm about to deploy
+    note: >-
+      For a NON-Shopify tenant. Seven of the eleven Shopify chain stages do not
+      apply, and a stage that cannot apply must be ABSENT rather than skipped —
+      a skipped stage in a status list reads as passed.
+    steps:
+      - capability: aurelix.gate.compile
+        why: Structural errors before anything more expensive runs.
+        cost: ~10-60s
+        skipping_ships: >-
+          A syntactically dead file that balances its braces. Read
+          compile-gate.json, not the summary line — without a tsconfig.json the
+          gate globs sources itself and can return "no .ts/.tsx sources found".
+
+      - capability: aurelix.gate.conformance
+        why: The last point at which the design authority is enforced.
+        cost: ~30s plus a production build
+        skipping_ships: 3 violations over 65 routes, 2026-08-18.
+
+      - capability: aurelix.probe.render-audit
+        why: Rendered truth over the route set.
+        cost: ~1-3min
+        skipping_ships: >-
+          "0+ Years operating" on a licensed FSP, and ~100 blocks across five
+          pages serialising opacity:0 as their resting state — invisible
+          without JS.
+
+      - capability: aurelix.gate.verify-c
+        why: >-
+          Verifies the generated app. With no --app-dir it now returns
+          NOT_MEASURED rather than the PASS it used to print off the presence
+          of lib/shopify in the template repo.
+        cost: seconds to minutes
+        skipping_ships: >-
+          Historically this gate PASSED having compiled nothing. Running it and
+          reading a 3 is the difference between "verified" and "not looked at".
+    not_applicable:
+      - capability: aurelix.gate.verify-d
+        why: Storefront cart check; Shopify-only, and its --collection-handle defaults to one tenant's leftover value.
+      - capability: aurelix.gate.verify-e
+        why: Redirect-map check; needs a --redirect-map the Vercel chain never passes.
+      - capability: aurelix.gate.rails
+        why: Only applies when the tenant declares a cms module. "none" is a declaration, not silence.
+
+  # ────────────────────────────────────────────────────────────────────────
+  - id: evidence-contradicts-itself
+    question: The evidence contradicts itself
+    note: >-
+      Before believing ANY instrument, establish that they are all reading the
+      same build. On 2026-08-18 two agents retracted evidence because both had
+      read the same stale server and mistaken it for two witnesses.
+    steps:
+      - capability: aurelix.gate.determinism
+        why: >-
+          Runs the build twice and diffs. If two runs of one input disagree, no
+          downstream measurement means anything and every other step here is
+          wasted.
+        cost: expensive — two full orchestrate.py builds, minutes to tens of minutes
+        skipping_ships: >-
+          Chasing a defect that is nondeterminism rather than a bug in the
+          thing being measured.
+
+      - capability: aurelix.gate.compile
+        why: >-
+          Compiles from SOURCE, so it is immune to a stale .next. Disagreement
+          between this and a served-page measurement localises the staleness.
+        cost: ~10-60s
+        skipping_ships: >-
+          For ~20 minutes on 2026-08-18, curl and tsc both reported on a build
+          that no longer matched source — including a 500 from a cached parse
+          error against a deleted version of a file. Delete .next and restart
+          before trusting any served measurement.
+
+      - capability: aurelix.probe.render-audit
+        why: >-
+          Re-measures the rendered DOM after the build is known good. Runs last
+          on purpose: it is the measurement most easily poisoned by a stale
+          server.
+        cost: ~1-3min
+        skipping_ships: >-
+          Concluding from source alone. A class name in source is not evidence
+          the style applied — tailwind-merge classifies a custom text-* step as
+          a text COLOUR and deletes it next to a colour class, so every 13px
+          element rendered at 16px with no error anywhere.

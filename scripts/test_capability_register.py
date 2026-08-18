@@ -270,6 +270,84 @@ def test_every_registered_instrument_declares_a_blindness():
         assert entry.get("cannot_see"), f"{entry.get('id')} declares no blindness"
 
 
+# ── scenarios: a sequence may not name a tool that does not exist ─────────
+
+def _entries():
+    return [dict(VALID, status="VERIFIED", evidence="ran", source_file="x.js", language="js")]
+
+
+def _scenario(**overrides):
+    step = {"capability": VALID["id"], "why": "because", "cost": "seconds",
+            "skipping_ships": "a defect that actually shipped"}
+    step.update(overrides.pop("step", {}))
+    scenario = {"id": "some-situation", "question": "I did a thing", "steps": [step]}
+    scenario.update(overrides)
+    return {"scenarios": [scenario]}
+
+
+def test_a_valid_scenario_passes():
+    from capability_register import validate_scenarios
+    assert validate_scenarios(_scenario(), _entries()) == []
+
+
+def test_a_scenario_may_not_name_an_unknown_capability():
+    """The failure this whole register exists to prevent: an operator is sent
+    looking for an instrument, cannot find it, and builds a worse one."""
+    from capability_register import validate_scenarios
+    problems = validate_scenarios(
+        _scenario(step={"capability": "aurelix.gate.imaginary"}), _entries())
+    assert any("not in the register" in p for p in problems)
+
+
+def test_a_scenario_may_not_route_to_a_broken_instrument():
+    from capability_register import validate_scenarios
+    broken = [dict(VALID, status="BROKEN", evidence="exit 2", source_file="x.js", language="js")]
+    problems = validate_scenarios(_scenario(), broken)
+    assert any("BROKEN" in p for p in problems)
+
+
+@pytest.mark.parametrize("field", ["capability", "why", "cost", "skipping_ships"])
+def test_every_step_field_is_required(field):
+    """`skipping_ships` especially. A sequence that lists tools without stating
+    the consequence of omitting one is a list — and a list is what failed."""
+    from capability_register import validate_scenarios
+    doc = _scenario()
+    del doc["scenarios"][0]["steps"][0][field]
+    problems = validate_scenarios(doc, _entries())
+    assert any(field in p for p in problems)
+
+
+def test_a_scenario_needs_at_least_one_step():
+    from capability_register import validate_scenarios
+    doc = _scenario()
+    doc["scenarios"][0]["steps"] = []
+    assert any("non-empty ordered list" in p for p in validate_scenarios(doc, _entries()))
+
+
+def test_duplicate_scenario_ids_are_refused():
+    from capability_register import validate_scenarios
+    doc = _scenario()
+    doc["scenarios"].append(dict(doc["scenarios"][0]))
+    assert any("duplicate" in p for p in validate_scenarios(doc, _entries()))
+
+
+def test_a_missing_scenarios_file_is_not_an_error(tmp_path):
+    """The register is useful before the sequences are written. A malformed
+    file is an error; an absent one is not."""
+    from capability_register import check_scenarios
+    ok, detail = check_scenarios(_entries(), tmp_path / "nope.yaml")
+    assert ok is True
+    assert "not present" in detail
+
+
+def test_the_committed_scenarios_resolve_against_the_committed_register():
+    from capability_register import check_scenarios
+    entries, problems = build_entries(_declaring_files(), _evidence())
+    assert not problems
+    ok, detail = check_scenarios(entries)
+    assert ok, detail
+
+
 def _declaring_files():
     from capability_register import candidate_files
     return candidate_files()
