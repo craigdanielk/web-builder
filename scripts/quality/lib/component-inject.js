@@ -535,13 +535,98 @@ function backedRowCount() {
   return loadBackedLibrary().length;
 }
 
+// ---------------------------------------------------------------------------
+// Benchmark motion — the input selection did not have
+// ---------------------------------------------------------------------------
+
+/**
+ * Until now NOTHING in animation selection could read a benchmark. Traced and
+ * re-measured 2026-08-18:
+ *
+ *   * candidate role order is `ROLE_BY_ARCHETYPE`, a hardcoded JS dict above;
+ *   * `affinity` is populated on 0 of 53 rows of component-registry.json and
+ *     read by 0 lines of code — `grep affinity` in this file returns one hit,
+ *     in a comment;
+ *   * `archetypes` is likewise [] on 53/53, and `intensity` is the literal
+ *     string "moderate" on 53/53;
+ *   * the intensity that DOES reach selection comes from a preset field read,
+ *     deliberately (orchestrate.py `parse_preset_intensity`) — a tenant
+ *     decision, not silent inheritance from how animated the source site was.
+ *
+ * So the benchmark's motion block reached `SectionArtifact.intensity` and
+ * stopped. Census row 3 filled `libraries / keyframes / durations / easings`
+ * from the corpus; with no input on this side they had nowhere to land.
+ *
+ * THIS IS THE INPUT, AND ONLY THE INPUT.
+ *
+ * No rule reads it. `affinity` is NOT populated with guesses to give it
+ * something to score against, and no role order is derived from the measured
+ * libraries — "the reference used GSAP, so prefer gsap rows" is a scoring
+ * heuristic nobody has measured, and inventing one here would be exactly the
+ * fabrication this system keeps having to undo. An unpopulated field stays
+ * unpopulated and is reported as such: every decision now carries
+ * `motion_input`, including `consumed_by: []`, so a wire with no consumer is a
+ * recorded fact rather than an invisible one.
+ *
+ * The shape is whatever `design_system.compile_style()` puts at
+ * `site-spec.json -> style.animation`, so the producer and the consumer cannot
+ * disagree about a schema.
+ */
+function normaliseMotionInput(motion) {
+  if (!motion || typeof motion !== 'object') {
+    return {
+      present: false,
+      source: 'NOT_MEASURED: no benchmark motion was supplied to selection',
+      consumed_by: [],
+    };
+  }
+  const libs = Array.isArray(motion.libraries) ? motion.libraries : null;
+  return {
+    present: true,
+    // `evidence_source` is design_system's own provenance string: the corpus
+    // path, or a NOT_MEASURED sentence. Carried through, never rewritten.
+    source: motion.evidence_source || 'benchmark motion (no evidence_source declared)',
+    intensity: motion.intensity === undefined ? null : motion.intensity,
+    duration_ms: motion.duration_ms === undefined ? null : motion.duration_ms,
+    // Absent (null) and measured-empty ([]) are different states and stay so.
+    libraries: libs ? libs.map((l) => (l && l.name) || String(l)).sort() : null,
+    keyframe_count: Array.isArray(motion.keyframes) ? motion.keyframes.length : null,
+    duration_count: Array.isArray(motion.durations) ? motion.durations.length : null,
+    easing_count: Array.isArray(motion.easings) ? motion.easings.length : null,
+    // The honest part. When a rule starts reading this, it names itself here.
+    consumed_by: [],
+  };
+}
+
+/**
+ * Read the motion input from a build's own `site-spec.json`.
+ *
+ * `style.animation` is written by `design_system.compile_style()`, so this
+ * reads the artefact the build already produced rather than re-deriving a
+ * benchmark. Returns null when the file or the block is absent — which
+ * `normaliseMotionInput` then reports as NOT_MEASURED.
+ */
+function readMotionInputFromSiteSpec(siteSpecPath) {
+  try {
+    const spec = JSON.parse(fs.readFileSync(siteSpecPath, 'utf8'));
+    return ((spec || {}).style || {}).animation || null;
+  } catch (err) {
+    return null;
+  }
+}
+
 /**
  * Pick the first unused, on-disk, framer-motion, safely-wrappable component
  * for a section's archetype, trying its preferred roles before falling back
  * across all roles. Returns a resolved component (see resolveComponent) or
  * null if nothing qualifies.
+ *
+ * `motion` is accepted and deliberately unused — see `normaliseMotionInput`.
+ * It is a parameter rather than a global so that the day a rule does read it,
+ * the rule is written here and nothing else has to move.
  */
-function selectComponentForSection(archetype, usedAnimationIds, presetIntensity) {
+// eslint-disable-next-line no-unused-vars
+function selectComponentForSection(archetype, usedAnimationIds, presetIntensity, motion) {
   // The LIBRARY, never the catalogue: an unbacked row can never be a candidate.
   const registry = loadBackedLibrary();
   const roles = roleOrderForArchetype(archetype);
@@ -601,9 +686,14 @@ function selectComponentForSection(archetype, usedAnimationIds, presetIntensity)
  * `status` is the machine-readable form; `reason` carries the same verdict in
  * prose for the by_reason tally that orchestrate.py writes to
  * animation-coverage.json.
+ *
+ * `motion` is the benchmark-shaped motion input (site-spec `style.animation`).
+ * Every decision reports what reached it under `motion_input`, INCLUDING
+ * `consumed_by: []` — no rule reads it yet. See `normaliseMotionInput`.
  */
-function decideComponentForSection(archetype, usedAnimationIds, presetIntensity) {
-  const resolved = selectComponentForSection(archetype, usedAnimationIds, presetIntensity);
+function decideComponentForSection(archetype, usedAnimationIds, presetIntensity, motion) {
+  const motionInput = normaliseMotionInput(motion);
+  const resolved = selectComponentForSection(archetype, usedAnimationIds, presetIntensity, motion);
   const ceiling = String(presetIntensity == null ? '' : presetIntensity);
   if (!resolved) {
     const pool = componentPoolForIntensity(presetIntensity);
@@ -613,6 +703,7 @@ function decideComponentForSection(archetype, usedAnimationIds, presetIntensity)
         status: 'not_measured',
         intensity_ceiling: ceiling,
         pool_size: 0,
+        motion_input: motionInput,
         reason:
           `NOT_MEASURED: animation_intensity ceiling '${ceiling}' admits 0 of ` +
           `${backedRowCount()} file-backed components — no pool to select from, ` +
@@ -625,6 +716,7 @@ function decideComponentForSection(archetype, usedAnimationIds, presetIntensity)
       status: 'no_supply',
       intensity_ceiling: ceiling,
       pool_size: pool.length,
+      motion_input: motionInput,
       reason:
         `no backed component for role (ceiling '${ceiling}' admits a pool of ` +
         `${pool.length}; none fit this role or all were already used)`,
@@ -635,6 +727,7 @@ function decideComponentForSection(archetype, usedAnimationIds, presetIntensity)
     injected: true,
     status: 'selected',
     intensity_ceiling: ceiling,
+    motion_input: motionInput,
     reason: `selected ${resolved.animationId}`,
     component: resolved,
   };
@@ -652,6 +745,8 @@ module.exports = {
   decideComponentForSection,
   componentPoolForIntensity,
   backedRowCount,
+  normaliseMotionInput,
+  readMotionInputFromSiteSpec,
   roleOrderForArchetype,
   ROLE_BY_ARCHETYPE,
   ALL_ROLES,

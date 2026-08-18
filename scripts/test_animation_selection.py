@@ -43,10 +43,11 @@ const {{ decideComponentForSection }} = require('./lib/component-inject');
 const calls = {calls};
 const out = [];
 for (const c of calls) {{
-  const r = decideComponentForSection(c.archetype, c.used, c.intensity);
+  const r = decideComponentForSection(c.archetype, c.used, c.intensity, c.motion);
   out.push({{
     archetype: c.archetype,
     injected: r.injected,
+    motion_input: r.motion_input,
     status: r.status,
     intensity_ceiling: r.intensity_ceiling,
     pool_size: r.pool_size === undefined ? null : r.pool_size,
@@ -73,7 +74,9 @@ def _decide(calls: list[dict]) -> list[dict]:
     return json.loads(proc.stdout.strip())
 
 
-def _drain_pool(archetype: str, intensity: str = PRESET_INTENSITY) -> list[str]:
+def _drain_pool(
+    archetype: str, intensity: str = PRESET_INTENSITY, motion: dict | None = None
+) -> list[str]:
     """Every distinct component the selector will give this archetype, in order.
 
     Drains by feeding each selection back as `used`, which is exactly how
@@ -81,7 +84,9 @@ def _drain_pool(archetype: str, intensity: str = PRESET_INTENSITY) -> list[str]:
     """
     pool: list[str] = []
     while True:
-        got = _decide([{"archetype": archetype, "used": pool, "intensity": intensity}])[0]
+        got = _decide([
+            {"archetype": archetype, "used": pool, "intensity": intensity, "motion": motion}
+        ])[0]
         if not got["injected"]:
             break
         assert got["animationId"] not in pool, "selector returned a used id"
@@ -280,6 +285,102 @@ def test_components_converted_for_wrappability_are_reachable():
         reachable.update(_drain_pool(archetype, intensity="dramatic"))
     missing = expected - reachable
     assert not missing, f"converted components no longer selectable: {sorted(missing)}"
+
+
+# ---------------------------------------------------------------------------
+# The benchmark-shaped input — which exists, and which nothing reads
+# ---------------------------------------------------------------------------
+
+UNIFIED_REGISTRY = COMPONENTS_DIR / "component-registry.json"
+MEASURED_BENCHMARK = WEB_BUILDER / "benchmarks" / "enterprise-stablecoin-payments-measured.json"
+
+
+def _real_motion_block() -> dict:
+    """The motion input as a build would actually produce it.
+
+    Not a hand-written fixture: this is `design_system.compile_style()`'s
+    `style.animation`, the same object written to site-spec.json. A fixture
+    would let the producer and the consumer drift apart silently.
+    """
+    if not MEASURED_BENCHMARK.exists():
+        pytest.skip(f"no benchmark at {MEASURED_BENCHMARK}")
+    import sys
+
+    sys.path.insert(0, str(WEB_BUILDER / "scripts"))
+    from lib.design_system import compile_style, load_benchmark
+
+    return compile_style(load_benchmark(MEASURED_BENCHMARK))["animation"]
+
+
+def test_the_benchmark_motion_block_reaches_selection():
+    """Before this, NOTHING in animation selection could read a benchmark."""
+    motion = _real_motion_block()
+    got = _decide([
+        {"archetype": "HERO", "used": [], "intensity": PRESET_INTENSITY, "motion": motion}
+    ])[0]
+    mi = got["motion_input"]
+    assert mi["present"] is True
+    assert mi["source"] == motion["evidence_source"]
+    assert mi["intensity"] == motion["intensity"]
+    assert mi["libraries"] == sorted(l["name"] for l in motion["libraries"])
+    assert mi["keyframe_count"] == len(motion["keyframes"])
+
+
+def test_no_motion_input_is_reported_not_measured_not_as_an_empty_benchmark():
+    got = _decide([{"archetype": "HERO", "used": [], "intensity": PRESET_INTENSITY}])[0]
+    mi = got["motion_input"]
+    assert mi["present"] is False
+    assert mi["source"].startswith("NOT_MEASURED")
+    # Absent is not the same as measured-empty: no zero counts are invented.
+    assert "libraries" not in mi
+
+
+def test_the_input_currently_has_no_consumer_and_says_so():
+    """The honest half of this change, pinned so it cannot become a silent lie.
+
+    A rule that starts reading the motion input must name itself in
+    `consumed_by`. Until one does, every decision states that the wire exists
+    and nothing is on the other end of it.
+    """
+    for motion in (_real_motion_block(), None):
+        got = _decide([
+            {"archetype": "HERO", "used": [], "intensity": PRESET_INTENSITY, "motion": motion}
+        ])[0]
+        assert got["motion_input"]["consumed_by"] == []
+
+
+def test_affinity_was_not_populated_with_guesses():
+    """`affinity` is 0/53 and stays 0/53.
+
+    Filling it to give the new input something to score against would be
+    inventing a design rule nobody measured — the exact fabrication class this
+    system keeps having to undo. It stays unpopulated and is reported as such.
+    """
+    rows = json.loads(UNIFIED_REGISTRY.read_text(encoding="utf-8"))["components"]
+    assert len(rows) == 53
+    assert sum(1 for r in rows.values() if r.get("affinity")) == 0
+    assert sum(1 for r in rows.values() if r.get("archetypes")) == 0
+
+
+def test_selection_is_unchanged_by_the_motion_input():
+    """REGRESSION GATE. Cape Crypto's animation decisions must not move.
+
+    An input with no consumer must have no effect. Every archetype the build
+    emits is drained three ways — no motion, the real benchmark motion, and a
+    benchmark motion declaring `dramatic` — and all three must be identical.
+
+    The third case is the specific trap: the benchmark's intensity is derived
+    from how animated the SOURCE site happened to be, and the preset's
+    `animation_intensity` is a deliberate tenant decision. If the benchmark
+    ever silently became the ceiling, a tenant asking for restraint would get
+    17 components instead of 7 and nobody would have declared it.
+    """
+    real = _real_motion_block()
+    loud = dict(real, intensity="dramatic")
+    for archetype in sorted({a for page in _cape_pages().values() for a in page}):
+        baseline = _drain_pool(archetype)
+        assert _drain_pool(archetype, motion=real) == baseline, archetype
+        assert _drain_pool(archetype, motion=loud) == baseline, archetype
 
 
 # ---------------------------------------------------------------------------
