@@ -124,6 +124,136 @@ def load_benchmark(path: str | Path) -> dict[str, Any]:
     return data
 
 
+#: web-builder/ — `_meta.corpus` is recorded repo-relative to it.
+_WEB_BUILDER_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _walk_gsap_nodes(evidence: dict[str, Any]):
+    """Every GSAP call in a page's evidence, including timeline steps."""
+    for call in evidence.get("gsapCalls") or []:
+        if not isinstance(call, dict):
+            continue
+        yield call
+        for step in call.get("steps") or []:
+            if isinstance(step, dict):
+                yield step
+
+
+def lower_motion_evidence(benchmark: dict[str, Any]) -> dict[str, Any]:
+    """Lower the corpus's ALREADY-MEASURED animation evidence into the style.
+
+    `compile_style` used to emit `libraries: [], keyframes: [], durations: [],
+    easings: []` — four hardcoded empty lists. The corpus behind the benchmark
+    carries all four, per page, and has since it was captured: `libraries[]`
+    with confidence and `detectedVia`, `cssKeyframes[]` with bodies, and every
+    intercepted GSAP call's `duration` and `ease`. The commissioner lowered
+    `motion.intensity` and discarded the rest.
+
+    This is a LOWERING, not a measurement. Nothing here computes a new fact,
+    infers a rule, or invents a field the corpus does not carry — it copies
+    what was measured, deduplicates it, and records which pages it came from.
+
+    Three-state, like every other surface here:
+      * a benchmark with no `_meta.corpus` -> the four keys are ABSENT and
+        `evidence_source` says NOT_MEASURED and why. They are not emitted as
+        empty lists, because an empty list reads as "measured, found none".
+      * a corpus with no page extractions -> the same, naming the directory.
+      * a corpus present -> the four keys, and the pages they were read from.
+
+    Deterministic by construction: every collection is sorted on a total key,
+    so the same corpus always produces byte-identical output.
+    """
+    corpus_rel = (benchmark.get("_meta") or {}).get("corpus")
+    if not corpus_rel:
+        return {
+            "evidence_source": "NOT_MEASURED: benchmark declares no _meta.corpus, "
+                               "so its animation evidence cannot be re-read"
+        }
+
+    corpus_dir = _WEB_BUILDER_ROOT / str(corpus_rel)
+    pages = sorted(corpus_dir.glob("*/extraction.json"))
+    if not pages:
+        return {
+            "evidence_source": f"NOT_MEASURED: no */extraction.json under {corpus_rel}"
+        }
+
+    libraries: dict[str, dict[str, Any]] = {}
+    keyframes: dict[tuple[str, str], dict[str, Any]] = {}
+    durations: dict[int, int] = {}
+    easings: dict[str, int] = {}
+    pages_read: list[str] = []
+
+    for page_file in pages:
+        page_id = page_file.parent.name
+        try:
+            evidence = (json.loads(page_file.read_text(encoding="utf-8"))
+                        .get("animations") or {}).get("evidence") or {}
+        except (OSError, json.JSONDecodeError):
+            # A page that cannot be read is not evidence of an absent library.
+            continue
+        pages_read.append(page_id)
+
+        for lib in evidence.get("libraries") or []:
+            name = lib.get("name")
+            if not name:
+                continue
+            entry = libraries.setdefault(
+                name, {"name": name, "confidence": 0, "detected_via": set(), "pages": set()}
+            )
+            conf = lib.get("confidence")
+            if isinstance(conf, (int, float)):
+                entry["confidence"] = max(entry["confidence"], conf)
+            if lib.get("detectedVia"):
+                entry["detected_via"].add(lib["detectedVia"])
+            entry["pages"].add(page_id)
+
+        for kf in evidence.get("cssKeyframes") or []:
+            name, body = kf.get("name"), kf.get("body")
+            if not name or not body:
+                continue
+            entry = keyframes.setdefault((name, body), {"name": name, "body": body, "pages": set()})
+            entry["pages"].add(page_id)
+
+        for node in _walk_gsap_nodes(evidence):
+            secs = node.get("duration")
+            if isinstance(secs, (int, float)) and not isinstance(secs, bool):
+                ms = int(round(secs * 1000))
+                durations[ms] = durations.get(ms, 0) + 1
+            ease = node.get("ease")
+            if isinstance(ease, str) and ease:
+                easings[ease] = easings.get(ease, 0) + 1
+
+    return {
+        "evidence_source": str(corpus_rel),
+        "evidence_pages": sorted(pages_read),
+        "libraries": [
+            {
+                "name": e["name"],
+                "confidence": e["confidence"],
+                "detected_via": sorted(e["detected_via"]),
+                "pages": sorted(e["pages"]),
+            }
+            for e in sorted(libraries.values(), key=lambda x: x["name"])
+        ],
+        "keyframes": [
+            {"name": e["name"], "body": e["body"], "pages": sorted(e["pages"])}
+            for e in sorted(keyframes.values(), key=lambda x: (x["name"], x["body"]))
+        ],
+        # Recorded with counts, not averaged. An average of 300ms and 60000ms
+        # (a 60-second marquee) is a number that describes nothing on the page.
+        "durations": [{"ms": ms, "count": durations[ms]} for ms in sorted(durations)],
+        # Emitted verbatim, INCLUDING `e.ease||` — a fragment of minified
+        # source the extractor captured as an easing name. It is not filtered
+        # here: hiding an extractor defect inside a lowering is how a measured
+        # artefact becomes an invisible one. The fix belongs in
+        # scripts/quality/lib/animation-detector.js.
+        "easings": [
+            {"name": name, "count": easings[name]}
+            for name in sorted(easings, key=lambda n: (-easings[n], n))
+        ],
+    }
+
+
 def compile_style(
     benchmark: dict[str, Any],
     brand_accent: str | None = None,
@@ -262,10 +392,11 @@ def compile_style(
             "engine": "framer-motion",
             "intensity": benchmark["motion"]["intensity"],
             "duration_ms": benchmark["motion"].get("duration_ms", 400),
-            "libraries": [],
-            "keyframes": [],
-            "durations": [],
-            "easings": [],
+            # libraries / keyframes / durations / easings — lowered from the
+            # corpus when the benchmark declares one, ABSENT with a
+            # NOT_MEASURED `evidence_source` when it does not. They were four
+            # hardcoded empty lists until 2026-08-18.
+            **lower_motion_evidence(benchmark),
         },
         "density": benchmark["density"],
         "adjustments": adjustments,
