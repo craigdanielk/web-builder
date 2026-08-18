@@ -1239,22 +1239,29 @@ capabilities:
   - <site-dir> — the emitted Next.js app, and its .next/ after the build
   outputs:
   - <output-dir>/rails-gate.json — {verdict, reasons, routes_claimed, routes_built, emitted_files, build_exit_code,
-    puck_config_verdict, undeclared_fields}
-  outcome: whether every file the emission claims is still on disk, whether `next build` succeeds, and
-    whether every route the emission claims exists in the build output
+    puck_config_verdict, undeclared_fields}. The output directory is created if absent; if the write itself
+    fails the run exits 3 with the reason rather than a traceback
+  outcome: whether every file the emission claims is still on disk, whether `next build` succeeds, whether
+    every route the emission claims exists in the build output, and whether that verdict reached disk
   exit_contract:
-    '0': PASS — the build succeeded and every claimed route is in the build output
+    '0': PASS — the build succeeded, every claimed route is in the build output, and rails-gate.json was
+      written
     '1': FAIL — rails-emission.json absent, an emitted file is missing, `next build` exited non-zero,
-      or a claimed route is absent from the build output
+      or a claimed route is absent from the build output; and the verdict was written
     '3': 'NOT_MEASURED — the compile could not be attempted or read: no node_modules, npx not on PATH,
-      the build exceeded --timeout, or the route manifest was unreadable. A measured missing FILE still
-      outranks this and returns 1'
+      the build exceeded --timeout, or the route manifest was unreadable. ALSO returned when a PASS or
+      FAIL was measured but rails-gate.json could not be written (permissions, a file where the output
+      dir should be) — the reason is printed and the measured verdict is printed above it, because a verdict
+      no consumer can read is not a verdict. A missing --output-dir is created, not a failure. A measured
+      missing FILE still outranks a compile that could not run and returns 1'
   measures:
   - existence of each path in emission.files under <site-dir>
   - the exit code of `npx --no-install next build` with NODE_ENV=production
   - the built route set, from .next/app-path-routes-manifest.json, falling back to walking .next/server/app
     for page.js / route.js
   - 'set difference: emission.routes minus routes actually built'
+  - whether the verdict itself reached disk — a write that fails downgrades a measured PASS or FAIL to
+    NOT_MEASURED with the OSError stated
   cannot_see:
   - whether a route that compiled actually WORKS — it compares route strings against a manifest, never
     requests a page, so a built /api/contact that 500s at runtime passes
@@ -1286,65 +1293,83 @@ capabilities:
   invocation: python3 verify_gate_b.py [--output-dir DIR] [--compiled-dir DIR] [--env PATH] [--skip-head]
     [--dry-run]
   preconditions:
-  - at least one of --output-dir or --compiled-dir; with neither it appends 'Provide --output-dir and/or
-    --compiled-dir' and FAILs
-  - --output-dir must contain shopify_config.json (written by layer4_store_setup.py)
+  - at least one of --output-dir or --compiled-dir; with neither NOTHING can be measured and it returns
+    NOT_MEASURED (3), not FAIL
+  - --output-dir must contain shopify_config.json (written by layer4_store_setup.py); its absence is NOT_MEASURED,
+    because a store that was never set up was not verified and was not broken either
   - 'a storefront token: shopify_config.json.storefront_access_token, or SHOPIFY_STOREFRONT_ACCESS_TOKEN
     / PUBLIC_ACCESS_TOKEN in the environment. The checked-in shopify_config.json carries the literal placeholder
-    ''[set SHOPIFY_STOREFRONT_ACCESS_TOKEN or ...]'', which the leading-''['' test rejects'
-  - network reach to https://<store_domain>/api/2024-01/graphql.json unless --dry-run
-  - SHOPIFY_STORE_DOMAIN + SHOPIFY_ADMIN_ACCESS_TOKEN only for the optional --compiled-dir count comparison
+    ''[set SHOPIFY_STOREFRONT_ACCESS_TOKEN or ...]'', which the leading-''['' test rejects. An absent
+    token is NOT_MEASURED'
+  - network reach to https://<store_domain>/api/2024-01/graphql.json unless --dry-run; a transport failure
+    is NOT_MEASURED, an HTTP response that comes back and is wrong is FAIL
+  - SHOPIFY_STORE_DOMAIN + SHOPIFY_ADMIN_ACCESS_TOKEN only for the optional --compiled-dir count comparison;
+    without them that check is NOT_MEASURED and, by the partial-measurement rule, so is the gate
   - --env defaults to <repo-root>/.env, which DOES NOT EXIST in this checkout; load_dotenv returns {}
     silently, so every credential must already be in the environment
   inputs:
   - <output-dir>/shopify_config.json — store_domain and storefront_access_token
-  - <output-dir>/cdn_url_map.json — OPTIONAL; its absence silently disables the entire B-CDN half
+  - <output-dir>/cdn_url_map.json — OPTIONAL; its absence now records B-CDN as NOT_MEASURED and says so
+    on stdout
   - <compiled-dir>/architecture.json — collections[] and summary.estimated_products, for a printed comparison
     only
   - the --env file, if it exists; values are only applied to keys not already in os.environ
   outputs:
-  - 'stdout: ''VERIFY GATE B: PASS'' on success, nothing otherwise'
-  - 'stderr: one ''FAIL: <reason>'' line per error, and an informational store-vs-compiled count line'
+  - 'stdout: a ''GATE B — checks:'' block, one line per sub-check, each PASS / FAIL / NOT_MEASURED with
+    its reason'
+  - 'stdout: a final ''VERIFY GATE B: PASS|FAIL|NOT_MEASURED'' verdict line'
+  - 'stderr: one ''FAIL: <reason>'' line per measured failure, and an informational store-vs-compiled
+    count line'
   outcome: whether the Shopify storefront the site build is about to target is reachable with a working
-    Storefront API token, and (only when a CDN map exists) whether its uploaded media URLs still resolve
+    Storefront API token, and whether its uploaded media URLs still resolve — and, when either could not
+    be checked at all, that fact stated rather than absorbed into a pass
   exit_contract:
-    '0': 'PASS — no errors accumulated. NOTE: this is also what a run with cdn_url_map.json absent returns,
-      having checked no media at all'
-    '1': FAIL — one or more errors, each printed to stderr
+    '0': PASS — every sub-check that was attempted RAN and conformed, and at least one ran. A run that
+      checked no media at all can no longer reach this code
+    '1': 'FAIL — a sub-check ran and the store failed it: the Storefront API answered without data.shop,
+      or one or more CDN URLs did not respond to HEAD. Every failure is listed; the count is the real
+      count'
+    '3': 'NOT_MEASURED — a sub-check could not run at all: no --output-dir and no --compiled-dir, no shopify_config.json,
+      an absent or placeholder storefront token, an unreachable store, an absent cdn_url_map.json, --skip-head,
+      --dry-run, absent Admin credentials, or an unreadable input file. Also returned when one half measured
+      and passed while another could not be measured — a partially-measured gate is not a passed gate'
     '2': usage error from argparse (unrecognised flag, unparseable --output-dir)
   measures:
   - presence of shopify_config.json under --output-dir
   - that a storefront token exists and is not the bracketed placeholder
   - a live Storefront API POST { shop { name } } and that the response carries data.shop
-  - HEAD reachability of every cdn_url_map.json section_media URL — but only when that file exists and
-    --skip-head was not passed
-  - the store's live collection and product counts against architecture.json — printed, never asserted
+  - HEAD reachability of EVERY cdn_url_map.json section_media URL, up to HEAD_URL_CAP=200, reporting the
+    total failure count and reporting the cap when it truncates
+  - the store's live collection and product counts against architecture.json — printed, never asserted,
+    but an Admin API error there is now recorded as NOT_MEASURED with the exception message instead of
+    being swallowed
+  - which halves of itself ran, printed per sub-check, so 'passed' and 'never attempted' are distinguishable
+    from the output alone
   cannot_see:
-  - 'IT CANNOT SEE THAT B-CDN DID NOT RUN. When <output-dir>/cdn_url_map.json is absent the whole CDN
-    branch — the `if cdn_path.exists():` block, lines 184-203 in this file, cited as 120-139 in the parent
-    CLAUDE.md against the pre-declaration numbering — is skipped and NOTHING is printed about it. The
-    only trace is a source comment on line 203, which no operator reads. The gate then prints ''VERIFY
-    GATE B: PASS'' and exits 0, so a run that verified zero media URLs is indistinguishable from one that
-    verified all of them'
-  - 'it has no NOT_MEASURED outcome at all: absent credentials, an unreachable store and a genuinely broken
-    storefront all land on exit 1, so ''we could not measure'' and ''we measured and it is broken'' are
-    the same code'
-  - the HEAD sweep `break`s after the FIRST failing CDN URL, so the error count is never the failure count
-    — one 'CDN URL HEAD failed' line can stand for any number of dead URLs
-  - 'the --compiled-dir count comparison is wrapped in `except Exception: pass`; an expired Admin token
-    there is swallowed entirely and the gate still passes'
+  - whether an HTTP error status from the Storefront API means a bad token or a broken store — it treats
+    any response that came back as measured, and only transport-level failures (DNS, timeout, connection
+    refused) as NOT_MEASURED; a 401 from a live store is therefore FAIL, not NOT_MEASURED
+  - any CDN URL past HEAD_URL_CAP=200 — those are counted as NOT_MEASURED and the cap is printed, but
+    they are not checked
+  - whether a HEAD failure is a dead asset or a transient network fault; every HEAD error is counted as
+    a measured failure, so a local network outage during the sweep reads as dead media
   - it never reads the Admin API for anything the site build actually consumes — it does not check that
     products or collections are published to the Headless sales channel, which is the failure that makes
     a Storefront query return an empty catalogue against a store full of products
   - it does not verify the Storefront API VERSION the generated app uses; it pins 2024-01 here regardless
     of what orchestrate.py emits
+  - 'whether the store it verified is the store layer4 mutated: it reads shopify_config.json.store_domain
+    while gate B-0 reads SHOPIFY_STORE_DOMAIN from the environment, and nothing reconciles the two'
+  - cdn_url_map.json summary.failed — it is printed as a note and never contributes to the verdict, so
+    a Layer 5 run that failed half its uploads can still pass B-CDN on the URLs that did upload
   reachable_from:
-  - run_pipeline.py:604 — stage_gate_b(), the `gate_b` stage of the Shopify chain (absent from the Vercel
+  - run_pipeline.py:732 — stage_gate_b(), the `gate_b` stage of the Shopify chain (absent from the Vercel
     chain)
   cost: seconds. One Storefront GraphQL POST (15s timeout) plus one HEAD per CDN URL (10s timeout each,
-    stopping at the first failure), plus two Admin REST GETs (30s timeout) when --compiled-dir is given.
-    Read-only against the store; it mutates nothing. --dry-run reduces it to file-presence checks with
-    no network at all.
+    up to 200 URLs — the sweep no longer stops at the first failure, so a fully dead map costs 200 timeouts),
+    plus two Admin REST GETs (30s timeout) when --compiled-dir is given. Read-only against the store;
+    it mutates nothing. --dry-run reduces it to file-presence checks with no network at all, and therefore
+    to NOT_MEASURED.
   source_file: shopify-integration-layer/verify_gate_b.py
   language: py
   status: NOT_RUN
@@ -1513,13 +1538,16 @@ capabilities:
   exit_contract:
     '0': PASS — structure present and `npm run build` returned 0
     '1': FAIL — no package.json, no app/page.tsx or src/app/page.tsx, or the build exited non-zero
-    '3': NOT_MEASURED — no --site-dir/--app-dir was given, so there is no generated app to verify. This
-      branch used to inspect the web-builder's OWN lib/shopify template files and print PASS; NOT_MEASURED
-      is not PASS
+    '3': 'NOT_MEASURED — no --site-dir/--app-dir was given, so there is no generated app to verify. This
+      branch used to inspect the web-builder''s OWN lib/shopify template files and print PASS; NOT_MEASURED
+      is not PASS. ALSO returned when the app dir was given but the build could not be measured: `npm
+      run build` exceeded the 180s timeout and was killed, or npm is not on PATH. Both used to escape
+      main() as a traceback, which a status list reads as FAIL'
   measures:
   - presence of package.json in the app dir
   - 'presence of an App Router entry: app/page.tsx or src/app/page.tsx'
-  - the exit code of `npm run build` with NODE_ENV=production, 180s timeout
+  - the exit code of `npm run build` with NODE_ENV=production, 180s timeout — a build that exceeds it
+    is killed and reported as NOT_MEASURED, never as FAIL
   cannot_see:
   - anything at all without --site-dir/--app-dir — the no-argument branch measures nothing and returns
     3; a chain that treats 3 as a pass has an unbuilt app
@@ -1528,8 +1556,8 @@ capabilities:
     here; that is the render audit's and the conformance gate's job
   - type errors that `next build` does not surface (a project with typescript.ignoreBuildErrors compiles
     green); the compile gate reads tsc, this gate reads npm's exit code
-  - a build that exceeds the 180s timeout — subprocess.run raises TimeoutExpired and this gate crashes
-    with a traceback rather than returning a verdict
+  - WHY a build exceeded the timeout — it is killed and reported NOT_MEASURED with the limit stated, and
+    the partial stdout/stderr of the killed process is discarded
   - the Pages Router, and any entry file other than the two paths hardcoded above
   reachable_from:
   - run_pipeline.py:612 (stage_gate_c, both the shopify and vercel chains)
@@ -2058,10 +2086,10 @@ capabilities:
     bill-of-sale.json, site-manifest.json, site-spec.json — carries argv, a flag set or a command line.
     A run cannot be reconstructed from its output, so two builds that differ only by a flag are indistinguishable
     afterwards
-  - 'that it recorded nothing. log_build() sends `db_template_count` unconditionally (lib/supabase_client.py:331)
-    and build_log has no such column — measured 2026-08-18, 28 columns, neither db_template_count nor
-    token_ledger among them. Every write 400s, the retry pops only token_ledger, and neither call site
-    checks the return value: the build exits 0 having logged nothing'
+  - whether two build-time diagnostics were recorded. build_log writes now SUCCEED (fixed 2026-08-18;
+    verified by a real HTTP 201 with the row read back), but `db_template_count` and `token_ledger` have
+    no column and are dropped by an explicit allowlist. token_ledger survives in output/<project>/token-ledger.json;
+    db_template_count is not persisted anywhere
   - whether the benchmark it compiled from is CORRECT. The gate checks that the required fields are present
     and declared, not that the numbers are right — and the ratified enterprise-payments-bvnk.json has
     basis 'inference' with corpus null, so its measurements cannot be re-derived at all
@@ -2908,26 +2936,42 @@ capabilities:
   - 'src/app/globals.css (argv[3], default) — scanned only for `--token: initial;` declarations'
   - every .ts/.tsx/.js/.jsx file under argv[2] (default src/), skipping node_modules, .next and dotfiles
   outputs:
-  - 'stdout only: one file:line per violation with the rule id, the matched class and a why line, then
-    a scanned/collapsed summary. It writes no artifact'
+  - 'stdout only: findings partitioned into SITE and VENDORED (src/components/animations/) blocks, one
+    file:line per finding with the rule id(s), the matched class and a why line, then a scanned/collapsed/partition
+    summary. It writes no artifact'
   outcome: whether any Tailwind class in source bypasses the compiled theme — arbitrary hex, arbitrary
-    px rhythm, off-4px-grid px, fractional spacing steps, or a class whose backing token is `initial`
+    px rhythm, off-4px-grid px on a rhythm property, fractional spacing steps, or a class whose backing
+    token is `initial`
   exit_contract:
     '0': PASS — no source-level drift matched by the five rules
-    '1': FAIL — at least one match
-    '2': 'NOT_MEASURED — globals.css could not be read. NOTE: this is exit 2, not the Aurelix exit 3.
-      In the chain contract 2 is EXIT_REVIEW_NEEDED and 3 is EXIT_NOT_MEASURED, so a chain reading this
-      gate''s code would mis-read its ''cannot measure'' branch as ''review needed'''
+    '1': FAIL — at least one match, in SITE or VENDORED source alike
+    '3': NOT_MEASURED — globals.css could not be read. This is the Aurelix EXIT_NOT_MEASURED code (2 is
+      EXIT_REVIEW_NEEDED and is never returned by this gate)
   measures:
   - 'arbitrary colour utilities: text-[#hex], bg-[#hex], border-[#hex], ring/fill/stroke/from/via/to/shadow/accent/caret/decoration,
     3-8 hex digits, either case'
   - 'arbitrary rhythm utilities: p/m/gap/space/inset/top/right/bottom/left with a [Npx] value'
-  - any arbitrary [Npx] not divisible by 4, excluding text-/leading-/tracking- (the measured type scale
-    is deliberately off-grid at 13px and 18px)
+  - 'off-grid rhythm: an arbitrary [Npx] not divisible by 4 on a RHYTHM property only — the padding/margin/gap/inset
+    set plus scroll-padding, scroll-margin, translate and indent. Dimensions (w/h/min-*/max-*/size/basis/border/rounded/ring/blur)
+    are excluded by construction, matching the sibling arbitrary-rhythm rule: a 450px illustration or
+    a 1px hairline is not rhythm and can never sit on a 4px grid. Type (text-/leading-/tracking-) is excluded
+    for the same structural reason — the measured scale is deliberately 13px and 18px'
   - Tailwind fractional spacing steps (py-1.5 = 10px), which are off the 4px grid by construction
   - 'collapsed tokens: a class whose backing custom property is `--x: initial` in the compiled theme,
     which renders as INHERITED and is silent everywhere else. This is the one measurement no aurelix-ag
     instrument makes, and the reason this file is not purely redundant'
+  - 'where each finding lives: findings are partitioned into SITE and VENDORED (src/components/animations/,
+    the 48 ported animation components) and both counts are printed, so a FAIL states its own blast radius
+    instead of reading as a page defect. Vendored components are IN SCOPE, not excluded — two of them
+    (hover-lift, marquee) are imported by src/components/site/motion.tsx and do render on shipped pages,
+    so a directory-level exclusion would open exactly the blind spot this gate exists to close'
+  - 'measured 2026-08-18, 12 findings before the rescope and 9 after. The 5 dimension false positives
+    are gone and all 7 pre-existing real findings survive (5 collapsed-token, 2 fractional-step, all VENDORED).
+    The 2 additions are true positives the old rule could not express: the fractional-step and arbitrary-rhythm
+    patterns wrote the axis suffix as `[xytrbl]?` directly after the property, which matches `py-2.5`
+    but never `space-y-2.5` or `gap-x-[10px]`, so every axis-suffixed space-/gap- utility was silently
+    unmatched. Rebuilding both rules from the shared property list caught space-y-2.5 (10px) in src/app/support/CategoryBrowser.tsx:86
+    and src/app/support/[slug]/page.tsx:163 — the gate''s first SITE findings'
   cannot_see:
   - 'everything the rendered page actually is. This greps class-name literals in source. Run on the same
     site on 2026-08-18, aurelix.gate.conformance (aurelix-ag/web-builder/scripts/quality/conformance-gate.js)
@@ -2942,14 +2986,12 @@ capabilities:
     it. globals.css could compile every role to the same colour and every rule here still passes
   - composition. A page built entirely from tokens can still be off-benchmark in rhythm, density and hierarchy;
     none of that is a class-name property
-  - 'its own false positives, which are the practical risk of it being switched off. The `off-grid` rule
-    matches ANY <prefix>-[Npx] with N%4 — including width, height, radius and border, which the sibling
-    `arbitrary-rhythm` rule deliberately excludes as ''dimensions, not rhythm''. Measured 2026-08-18:
-    12 findings, 5 of them dimensions (h-[450px], w-[450px], min-h-[1px], min-w-[1px], h-[2px]); a 1px
-    hairline can never be on a 4px grid. 5/12 = 42% unactionable'
-  - 'the difference between the site and its scaffolding: all 12 of those findings are in src/components/animations/,
-    none in a page. A gate that only ever FAILs on vendored demo components trains its operator to ignore
-    it'
+  - 'off-grid px on a NON-rhythm property. This is now a deliberate blind spot, not an oversight: w-[450px]
+    and h-[2px] are dimensions with no token equivalent, and flagging them produced a 42% unactionable
+    rate (5 of 12 findings, 2026-08-18) — the measured reason gates get switched off. A genuinely wrong
+    dimension is invisible here and needs a computed-style instrument'
+  - whether a VENDORED component is reachable from a page. It reports the partition, not the import graph;
+    measured by hand 2026-08-18, 0 of the 7 flagged files are imported outside src/components/animations/
   - a violation inside a multi-line comment whose continuation lines do not start with `*` — the comment
     skip is a first-non-space test on each line, not a parse
   - anything at all about content, links, compilation or accessibility
@@ -2958,9 +3000,10 @@ capabilities:
   source_file: tenants/cape-crypto/site/scripts/check-benchmark-conformance.mjs
   language: mjs
   status: VERIFIED
-  evidence: ran `node scripts/check-benchmark-conformance.mjs` → exit 1. FAIL, 12 violations - but 5 of
-    12 are false positives from an off-grid regex that matches width/height/radius, and all 12 are in
-    src/components/animations/, zero in any page
+  evidence: 'ran `node scripts/check-benchmark-conformance.mjs` → exit 1. 2026-08-18 post-fix: 12 findings
+    -> 9. The 5 dimension false positives are gone; rebuilding the rules from a shared property allowlist
+    found 2 genuine violations the old regex could not express (space-y-2.5 on two support pages) - the
+    gate''s first SITE findings'
 - id: capecrypto.gate.check-links
   name: Cape Crypto internal link checker (tenant-local)
   kind: gate
@@ -2974,33 +3017,37 @@ capabilities:
     part of the route list
   inputs:
   - the running server at $BASE_URL
-  - src/content/support.ts — supportArticles slugs
-  - src/content/legal.ts — legalDocuments slugs (absent degrades to 'fewer routes', never to a crash)
-  - STATIC_ROUTES — a hardcoded 10-entry literal in this file
+  - src/app — walked for page.tsx to enumerate every route pattern that exists; nothing is hardcoded
+  - src/content/support.ts — supportArticles slugs, expanding /support/[slug]
+  - src/content/legal.ts — legalDocuments slugs, expanding /legal/[slug] (absent degrades to 'fewer routes',
+    reported, never to a crash)
+  - src/content/blog.ts — blogPosts slugs, expanding /blog/[slug]
   outputs:
-  - 'stdout only: crawl counts, an external-host histogram, and the failing route/link tables. It writes
-    no file, so its verdict exists only on a console someone captured'
+  - 'stdout only: a route-coverage table (every discovered pattern, its derivation source and its route
+    count, plus crawled-of-known), crawl counts, an external-host histogram, and the failing route/link
+    tables. It writes no file, so its verdict exists only on a console someone captured'
   outcome: whether every distinct same-origin href found in the server-rendered HTML of the enumerated
-    routes returns 200
+    routes returns 200, and whether the enumerated routes are all the routes that exist
   exit_contract:
-    '0': PASS — every crawled page returned 200 and every distinct internal link returned 200
-    '1': FAIL — at least one internal link or page did not return 200; ALSO the code node returns when
-      route derivation throws (a content file with no `export const`, or an export yielding 0 slugs)
+    '0': PASS — every route pattern under src/app was derivable, every crawled page returned 200 and every
+      distinct internal link returned 200
+    '1': FAIL — at least one internal link or page did not return 200, OR a dynamic route pattern exists
+      under src/app with no registered derivation source (an unknown route class is a hole in the measurement,
+      not a pass); ALSO the code node returns when route derivation throws (a content file with no `export
+      const`, or an export yielding 0 slugs)
     '3': NOT_MEASURED — $BASE_URL was unreachable or returned >=500, so nothing was checked. Not a pass
   measures:
+  - 'route coverage: every route pattern discovered by walking src/app for page.tsx, how many concrete
+    routes each expanded to, and crawled-of-known as an explicit ratio in the output'
   - every href in the server-rendered HTML of each enumerated route, both quote styles, HTML entities
     decoded
   - every DISTINCT internal target requested once, with the set of pages it was found on
   - external hosts tallied but deliberately never requested — this tool must not hammer third parties
-  - 'measured 2026-08-18 against a fresh local production build: 59 routes, 2788 hrefs, 74 distinct internal
-    links, all 200'
+  - 'measured 2026-08-18 against a fresh local production build: 59 routes before this change, 65 after
+    — the 6 additions are /blog/<slug> for the 6 entries of blogPosts. 65 is also the true total: blogExternalPosts
+    carries 4 further slugs but they are OFF-SITE links, not routes; /blog/[slug] sets dynamicParams=false
+    and generateStaticParams maps blogPosts only, so crawling those 4 would manufacture 4 false 404s'
   cannot_see:
-  - 'the 10 blog article routes. The header claims the route list is ''DERIVED, never hardcoded'', but
-    only support and legal slugs are derived — STATIC_ROUTES is a literal, and /blog/[slug] exists with
-    10 slugs in src/content/blog.ts. Measured 2026-08-18: 59 routes crawled, 69 routes exist. A broken
-    blog post is invisible to this gate'
-  - any route added under src/app that nobody remembers to add to STATIC_ROUTES — the gate cannot fail
-    for a route it does not know about
   - 'external links, by design: 103 distinct external targets and 55 hrefs to support.capecrypto.com are
     listed and never requested, so a dead help-centre article ships green'
   - images. Every img src in the generated content points at support.capecrypto.com and no checker requests
@@ -3016,8 +3063,14 @@ capabilities:
     are properties of computed style; aurelix.gate.conformance (aurelix-ag/web-builder/scripts/quality/conformance-gate.js)
     measures those over the prerendered route set and this gate cannot
   - whether the served bytes came from the current source — it trusts whatever is on the port
+  - the CONTENT of a dynamic route class it cannot derive. It now detects one — an unregistered [slug]
+    pattern under src/app is named in the output and fails the gate — but it still cannot guess where
+    that pattern's slugs live; someone must add it to DYNAMIC_SOURCES
+  - 'route segments that are not plain directories or a single [slug]: catch-alls ([...x]), optional catch-alls
+    ([[...x]]), parallel (@x) and intercepting ((.)x) routes are enumerated as patterns and reported as
+    underivable rather than expanded'
   reachable_from: []
-  cost: '~20s over 59 routes plus 74 link requests, once a server is up. Getting a trustworthy server
+  cost: '~22s over 65 routes plus 74 link requests, once a server is up. Getting a trustworthy server
     up is the real cost: rm -rf .next && npm run build (~60s) && npx next start. No credentials, no third-party
     requests, no writes.'
   source_file: tenants/cape-crypto/site/scripts/check-links.mjs

@@ -75,6 +75,63 @@ def _post(path: str, data: Any) -> Any:
     return resp.status
 
 
+def _post_returning(path: str, data: Any) -> tuple[int, list[dict]]:
+    """
+    POST to Supabase REST API asking for the inserted row(s) back.
+
+    Unlike _post(), this surfaces the response body so a caller can report the
+    row it actually created. HTTPError bodies are NOT swallowed here — the
+    PostgREST error payload (e.g. PGRST204 "column ... does not exist") is the
+    only thing that names the real cause, and urllib's str(HTTPError) reduces it
+    to "HTTP Error 400: Bad Request". That reduction is why an unknown-column
+    insert failed unnoticed on every build.
+    """
+    url = f"{SUPABASE_URL}/rest/v1/{path}"
+    body = json.dumps(data).encode("utf-8")
+    headers = dict(_HEADERS)
+    headers["Prefer"] = "return=representation"
+    req = urllib.request.Request(url, data=body, method="POST", headers=headers)
+    resp = urllib.request.urlopen(req, context=_SSL_CTX, timeout=15)
+    raw = resp.read().decode("utf-8")
+    return resp.status, (json.loads(raw) if raw.strip() else [])
+
+
+def _http_error_detail(exc: Exception) -> str:
+    """Render an exception, unwrapping a PostgREST HTTPError body when present."""
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            payload = exc.read().decode("utf-8")
+        except Exception:
+            payload = ""
+        return f"HTTP {exc.code} {exc.reason}: {payload or '<empty body>'}"
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _delete(path: str, filters: str) -> int:
+    """DELETE from Supabase REST API. Used by tests to clean up rows they wrote."""
+    url = f"{SUPABASE_URL}/rest/v1/{path}?{filters}"
+    req = urllib.request.Request(url, method="DELETE", headers=_HEADERS)
+    resp = urllib.request.urlopen(req, context=_SSL_CTX, timeout=15)
+    return resp.status
+
+
+def table_columns(table: str) -> list[str]:
+    """
+    The live column list for `table`, read from PostgREST's OpenAPI document.
+
+    This is the schema itself, not a guess. Tests use it to assert that the
+    build_log payload contains only columns that exist, so the assertion keeps
+    working when the schema changes. Raises on any transport or parse failure —
+    an unreachable database must read as NOT_MEASURED at the call site, never as
+    an empty column list (which would make every payload look wrong).
+    """
+    url = f"{SUPABASE_URL}/rest/v1/"
+    req = urllib.request.Request(url, headers=_HEADERS, method="GET")
+    resp = urllib.request.urlopen(req, context=_SSL_CTX, timeout=20)
+    spec = json.loads(resp.read().decode("utf-8"))
+    return list(spec["definitions"][table]["properties"].keys())
+
+
 def _patch(path: str, filters: str, data: Any) -> Any:
     """PATCH to Supabase REST API."""
     url = f"{SUPABASE_URL}/rest/v1/{path}?{filters}"
@@ -267,6 +324,33 @@ def get_slot_schema(
     return cache.slot_schema_cache.get((archetype, variant))
 
 
+# ─── build_log schema ─────────────────────────────────────────────
+
+# The columns build_log actually has, read from PostgREST's OpenAPI document on
+# 2026-08-18 (28 columns; `id` and `build_timestamp` are database-assigned and
+# are therefore never sent). Re-measure with table_columns("build_log").
+#
+# This is a declared allowlist, not a retry heuristic. The previous code sent
+# two columns that do not exist (`db_template_count`, `token_ledger`), got a 400
+# PGRST204, and retried having stripped only one of them — so the retry 400'd
+# identically and every build recorded nothing while exiting 0. Guessing one
+# name at a time cannot converge; filtering against the schema can.
+_BUILD_LOG_COLUMNS = frozenset({
+    "project_name", "industry", "page_type", "build_duration_ms", "api_cost_usd",
+    "sections_from_template", "sections_from_llm", "total_sections",
+    "was_customized", "status", "target_platform", "tenant_id", "brand_ci_ref",
+    "sections_reconciled", "asset_count", "bos_line_items", "benchmark_grade",
+    "page_count", "assets_bound", "app_routes_scaffolded", "deploy_url",
+    "contrast_defect_count", "broken_image_count", "harvested_copy_ratio",
+    "render_audit_status", "published_sha",
+})
+
+# Last log_build() failure, as a human-readable string; None after a success.
+# Exposed so a caller that wants to surface "this build recorded nothing" can,
+# without log_build() needing to raise.
+LAST_BUILD_LOG_ERROR: str | None = None
+
+
 def log_build(
     project_name: str,
     industry: str,
@@ -295,7 +379,27 @@ def log_build(
 ) -> bool:
     """
     Write a build log entry to the build_log table.
-    sections_from_template = local .tsx file count; db_template_count = Supabase code_template count.
+
+    TWO PARAMETERS ARE ACCEPTED AND DELIBERATELY NOT PERSISTED, because
+    build_log has no column for either and this code may not add one to a shared
+    database:
+
+      * db_template_count (Supabase code_template count) — there is no column
+        for it and no honest home for it. sections_from_template means something
+        else (local .tsx count), and sections_reconciled is a typed jsonb record
+        of section reconciliation, not a metadata bag; smuggling an unrelated
+        integer into it would make that column mean two things. Dropped. The
+        figure is a build-time diagnostic, recoverable from the build console
+        and from output/<project>/ artifacts.
+      * token_ledger (LLM token totals, see orchestrate.token_ledger_summary) —
+        likewise no column. It is already persisted in full to
+        output/<project>/token-ledger.json, which is the record of record.
+        Dropped here rather than costing the whole row.
+
+    If either is ever given a real column, add its name to _BUILD_LOG_COLUMNS
+    and pass it through; nothing else needs to change.
+
+    sections_from_template = local .tsx file count.
     target_platform records the deploy adapter used ('shopify' or 'vercel').
     bos_line_items records the number of Bill of Sale line items addressed in this build.
     tenant_id records the tenant coordinate (UUID) when the build was driven by a
@@ -316,19 +420,20 @@ def log_build(
     render_audit_status records the post-build render audit outcome ('passed',
     'review_needed', 'failed', 'skipped') from stage_render_audit. Omitted
     when no audit ran so pre-existing builds are unchanged (no regression).
-    token_ledger records the build's LLM token totals (see
-    orchestrate.token_ledger_summary). Omitted when no LLM calls were made.
-    Because the column is newer than some deployed databases, an insert that
-    fails is retried once WITHOUT it — losing the cost figure is acceptable,
-    losing the whole build_log row over it is not.
-    Returns True on success, False on failure.
+    Returns True on success, False on failure. A failure prints a loud,
+    distinctive line carrying the PostgREST error body and records it in
+    LAST_BUILD_LOG_ERROR. It deliberately does NOT raise: recording a build is
+    not the build's purpose, and a logging outage must not fail a good build.
+    Returning False silently is what let this defect live for days, so the
+    failure is now unmissable in the console and inspectable in-process.
     """
+    global LAST_BUILD_LOG_ERROR
+
     row = {
         "project_name": project_name,
         "industry": industry,
         "page_type": page_type,
         "sections_from_template": sections_from_template,
-        "db_template_count": db_template_count,
         "sections_from_llm": sections_from_llm,
         "total_sections": total_sections,
         "status": status,
@@ -363,27 +468,33 @@ def log_build(
         row["broken_image_count"] = broken_image_count
     if published_sha is not None:
         row["published_sha"] = published_sha
-    if token_ledger is not None:
-        row["token_ledger"] = token_ledger
+
+    # Safety net for schema drift. The two known orphans are handled above by
+    # never entering the row, so this should never fire; if it does, something
+    # newly added here has no column and saying so beats a 400 nobody reads.
+    unknown = sorted(k for k in row if k not in _BUILD_LOG_COLUMNS)
+    if unknown:
+        print(
+            "  ⚠ BUILD LOG: dropping field(s) with no build_log column: "
+            + ", ".join(unknown)
+            + " — add them to _BUILD_LOG_COLUMNS if the column now exists"
+        )
+        for k in unknown:
+            row.pop(k)
 
     try:
-        _post("build_log", [row])
-        return True
+        status, created = _post_returning("build_log", [row])
     except Exception as e:
-        if "token_ledger" in row:
-            # Most likely an un-migrated database. Retry without the new column
-            # rather than discard the entire build record over a cost figure
-            # that is also written to disk as output/<project>/token-ledger.json.
-            print(f"  ⚠ Build log insert failed ({e}); retrying without token_ledger")
-            row.pop("token_ledger")
-            try:
-                _post("build_log", [row])
-                return True
-            except Exception as e2:
-                print(f"  ⚠ Failed to write build log: {e2}")
-                return False
-        print(f"  ⚠ Failed to write build log: {e}")
+        LAST_BUILD_LOG_ERROR = _http_error_detail(e)
+        print("  ✗ BUILD LOG WRITE FAILED — this build recorded nothing.")
+        print(f"    {LAST_BUILD_LOG_ERROR}")
+        print(f"    payload keys: {sorted(row)}")
         return False
+
+    LAST_BUILD_LOG_ERROR = None
+    row_id = created[0].get("id") if created else None
+    print(f"  ✓ build_log row written (HTTP {status}, id={row_id})")
+    return True
 
 
 # ─── Build Cache ──────────────────────────────────────────────────

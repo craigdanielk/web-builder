@@ -63,17 +63,27 @@ CAPABILITY = {
     ],
     "outputs": [
         "<output-dir>/rails-gate.json — {verdict, reasons, routes_claimed, routes_built, "
-        "emitted_files, build_exit_code, puck_config_verdict, undeclared_fields}",
+        "emitted_files, build_exit_code, puck_config_verdict, undeclared_fields}. The output "
+        "directory is created if absent; if the write itself fails the run exits 3 with the "
+        "reason rather than a traceback",
     ],
     "outcome": "whether every file the emission claims is still on disk, whether `next build` "
-               "succeeds, and whether every route the emission claims exists in the build output",
+               "succeeds, whether every route the emission claims exists in the build output, "
+               "and whether that verdict reached disk",
     "exit_contract": {
-        0: "PASS — the build succeeded and every claimed route is in the build output",
+        0: "PASS — the build succeeded, every claimed route is in the build output, and "
+           "rails-gate.json was written",
         1: "FAIL — rails-emission.json absent, an emitted file is missing, `next build` exited "
-           "non-zero, or a claimed route is absent from the build output",
+           "non-zero, or a claimed route is absent from the build output; and the verdict was "
+           "written",
         3: "NOT_MEASURED — the compile could not be attempted or read: no node_modules, npx not "
            "on PATH, the build exceeded --timeout, or the route manifest was unreadable. "
-           "A measured missing FILE still outranks this and returns 1",
+           "ALSO returned when a PASS or FAIL was measured but rails-gate.json could not be "
+           "written (permissions, a file where the output dir should be) — the reason is "
+           "printed and the measured verdict is printed above it, because a verdict no "
+           "consumer can read is not a verdict. A missing --output-dir is created, not a "
+           "failure. A measured missing FILE still outranks a compile that could not run "
+           "and returns 1",
     },
     "measures": [
         "existence of each path in emission.files under <site-dir>",
@@ -81,6 +91,8 @@ CAPABILITY = {
         "the built route set, from .next/app-path-routes-manifest.json, falling back to "
         "walking .next/server/app for page.js / route.js",
         "set difference: emission.routes minus routes actually built",
+        "whether the verdict itself reached disk — a write that fails downgrades a measured "
+        "PASS or FAIL to NOT_MEASURED with the OSError stated",
     ],
     "cannot_see": [
         "whether a route that compiled actually WORKS — it compares route strings against a "
@@ -227,10 +239,25 @@ def run_gate(site_dir: Path, output_dir: Path, *, timeout: int = 900) -> dict:
     }
 
 
-def write_verdict(output_dir: Path, verdict: dict) -> Path:
+def write_verdict(output_dir: Path, verdict: dict) -> tuple[Path | None, str | None]:
+    """Persist the verdict. Returns `(path, None)`, or `(None, why)` on failure.
+
+    WHY THIS DOES NOT RAISE
+    A verdict that was measured and then thrown away by a `FileNotFoundError` is
+    the worst outcome this gate has: the measurement succeeded, the answer was
+    correct, and the process died with a traceback and exit 1 — indistinguishable
+    from FAIL. The directory is created (an output dir that does not exist yet is
+    not a measurement failure), and a genuine write failure — a permissions
+    denial, a file where the directory should be — becomes a stated reason and
+    NOT_MEASURED, because the verdict exists nowhere a consumer can read it.
+    """
     path = output_dir / "rails-gate.json"
-    path.write_text(json.dumps(verdict, indent=2) + "\n")
-    return path
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(verdict, indent=2) + "\n")
+    except OSError as exc:
+        return None, f"the verdict could not be written to {path}: {exc}"
+    return path, None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -245,14 +272,21 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     verdict = run_gate(args.site_dir, args.output_dir, timeout=args.timeout)
-    path = write_verdict(args.output_dir, verdict)
+    path, write_error = write_verdict(args.output_dir, verdict)
     print(f"VERIFY RAILS GATE: {verdict['verdict']}")
     for reason in verdict.get("reasons", []):
         print(f"  - {reason}")
-    print(f"  verdict written to {path}")
-    return {"PASS": EXIT_PASS, "FAIL": EXIT_FAIL}.get(
-        verdict["verdict"], EXIT_NOT_MEASURED
-    )
+    if path is not None:
+        print(f"  verdict written to {path}")
+        return {"PASS": EXIT_PASS, "FAIL": EXIT_FAIL}.get(
+            verdict["verdict"], EXIT_NOT_MEASURED
+        )
+    # The measurement above stands and is printed; it is simply not recorded
+    # anywhere. Reporting the measured code would tell a chain that reads
+    # rails-gate.json to go read a file that is not there.
+    print(f"  - {write_error}")
+    print("VERIFY RAILS GATE: NOT_MEASURED - the verdict above was measured but not persisted")
+    return EXIT_NOT_MEASURED
 
 
 if __name__ == "__main__":

@@ -124,6 +124,12 @@
       "note": "FAIL, no rails-emission.json - correct, that tenant declares no cms"
     },
     {
+      "argv": "python3 scripts/verify_rails_gate.py --site-dir output/xago-exchange-mockup/site --output-dir /tmp/railsfix/nested",
+      "exit": 1,
+      "id": "aurelix.gate.rails",
+      "note": "2026-08-18 post-fix: measured FAIL and rails-gate.json WAS created in a nested non-existent dir. Before the fix this died with FileNotFoundError after measuring, losing the verdict to a traceback that still exited 1"
+    },
+    {
       "id": "aurelix.gate.shopify-b",
       "not_run": "needs an --output-dir shopify_config.json whose storefront_access_token is real; the checked-in one holds a literal placeholder and SHOPIFY_STOREFRONT_ACCESS_TOKEN is unset"
     },
@@ -263,13 +269,19 @@
       "argv": "node scripts/check-benchmark-conformance.mjs",
       "exit": 1,
       "id": "capecrypto.gate.benchmark-conformance",
-      "note": "FAIL, 12 violations - but 5 of 12 are false positives from an off-grid regex that matches width/height/radius, and all 12 are in src/components/animations/, zero in any page"
+      "note": "2026-08-18 post-fix: 12 findings -> 9. The 5 dimension false positives are gone; rebuilding the rules from a shared property allowlist found 2 genuine violations the old regex could not express (space-y-2.5 on two support pages) - the gate's first SITE findings"
     },
     {
       "argv": "BASE_URL=http://localhost:3111 node scripts/check-links.mjs",
       "exit": 0,
       "id": "capecrypto.gate.check-links",
       "note": "PASS: 59 routes, 2788 hrefs, 74 internal links all 200. Measured after rm -rf .next + rebuild. Exit 3 also proved with no server"
+    },
+    {
+      "argv": "BASE_URL=http://localhost:3987 node scripts/check-links.mjs",
+      "exit": 0,
+      "id": "capecrypto.gate.check-links",
+      "note": "2026-08-18 post-fix: 65/65 routes crawled (was 59), 3120 hrefs, 74 internal links all 200, after rm -rf .next and a clean rebuild. Route list is now walked from src/app; an unregistered dynamic pattern FAILS rather than being skipped"
     },
     {
       "argv": "node scripts/generate-blog-content.mjs",

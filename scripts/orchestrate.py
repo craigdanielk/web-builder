@@ -10974,11 +10974,11 @@ CAPABILITY = {
         "checkpoint.json, bill-of-sale.json, site-manifest.json, site-spec.json — carries argv, a "
         "flag set or a command line. A run cannot be reconstructed from its output, so two builds "
         "that differ only by a flag are indistinguishable afterwards",
-        "that it recorded nothing. log_build() sends `db_template_count` unconditionally "
-        "(lib/supabase_client.py:331) and build_log has no such column — measured 2026-08-18, 28 "
-        "columns, neither db_template_count nor token_ledger among them. Every write 400s, the "
-        "retry pops only token_ledger, and neither call site checks the return value: the build "
-        "exits 0 having logged nothing",
+        "whether two build-time diagnostics were recorded. build_log writes now SUCCEED "
+        "(fixed 2026-08-18; verified by a real HTTP 201 with the row read back), but "
+        "`db_template_count` and `token_ledger` have no column and are dropped by an explicit "
+        "allowlist. token_ledger survives in output/<project>/token-ledger.json; "
+        "db_template_count is not persisted anywhere",
         "whether the benchmark it compiled from is CORRECT. The gate checks that the required "
         "fields are present and declared, not that the numbers are right — and the ratified "
         "enterprise-payments-bvnk.json has basis 'inference' with corpus null, so its measurements "
