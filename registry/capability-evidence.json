@@ -49,10 +49,28 @@
       "note": "NOT_MEASURED: no built sections under section-artifacts - the honest branch"
     },
     {
+      "argv": "python3 core/compile_job.py jobs/_example.job.json --compile-dir /tmp/imgjob",
+      "exit": 0,
+      "id": "aurelix.compiler.image-job",
+      "note": "offline and free. Repo suite: 122 passed"
+    },
+    {
       "argv": "node scripts/quality/capture-benchmark-pages.js --market scratch-probe --page 'probe|http://127.0.0.1:8791/probe.html|smoke test' --out /tmp/corpus",
       "exit": 0,
       "id": "aurelix.extractor.benchmark-corpus-capture",
       "note": "1/1 captured"
+    },
+    {
+      "argv": ".venv/bin/aurelix-calculator analyze https://example.com --max-pages 3 -o /tmp/calc",
+      "exit": 0,
+      "id": "aurelix.extractor.calculator",
+      "note": "all six output files written; 0 collections / 0 pages / 0 products and 'Complexity: low' - the silent-empty-result shape, exit 0. Suite: 126 passed"
+    },
+    {
+      "argv": "python3 run_calculator_live.py",
+      "exit": 1,
+      "id": "aurelix.extractor.calculator-live-api2cart",
+      "note": "Missing API2CART_API_KEY. No argument parsing at all; output path hardcoded to testing/compiled/opencart-demo, which is a DIFFERENT directory from the chain's --from-compiled default (run_pipeline.py:1425)"
     },
     {
       "argv": "python3 scripts/quality/conformance_runner.py --benchmark benchmarks/enterprise-payments-bvnk.json --url http://127.0.0.1:4999/ --out /tmp/conf2.json",
@@ -144,6 +162,10 @@
       "note": "NOT_MEASURED branch"
     },
     {
+      "id": "aurelix.generator.image-pipeline",
+      "not_run": "spends Higgsfield credits per uncached job. Even --dry-run is not local: engine_higgsfield.cost() shells `higgsfield generate cost` to a billed provider's API"
+    },
+    {
       "id": "aurelix.generator.media-commission",
       "not_run": "spends generation credits via the higgsfield CLI (one charge per uncached job); no image-jobs.json exists to dry-run against"
     },
@@ -160,6 +182,18 @@
       "not_run": "two full builds plus a served local audit; build timeout defaults to 3600s each, audit 1800s"
     },
     {
+      "id": "aurelix.harness.image-graph-runtime",
+      "not_run": "same billed provider path as aurelix.generator.image-pipeline"
+    },
+    {
+      "id": "aurelix.harness.orchestrate",
+      "not_run": "a full build is minutes and needs a captures bundle, Supabase, node_modules and a production next build; --deploy additionally serves the site"
+    },
+    {
+      "id": "aurelix.harness.pipeline-chain",
+      "not_run": "a chain run drives orchestrate.py and the gates end to end; the shopify route mutates a live store at layer4 and there are no Shopify credentials on this machine"
+    },
+    {
       "id": "aurelix.migration.shopify-cdn-media",
       "not_run": "needs write_files + Admin token; every run creates permanent Files via fileCreate with no idempotency check, so re-runs duplicate"
     },
@@ -170,6 +204,12 @@
     {
       "id": "aurelix.migration.shopify-store-setup",
       "not_run": "needs a write-scoped Admin token; creates smart collections, products, Headless-channel publications, menus and redirects on a LIVE store, irreversibly, with no rollback"
+    },
+    {
+      "argv": ".venv/bin/migrate init --name scratch-probe --output /tmp/redir",
+      "exit": 0,
+      "id": "aurelix.migration.url-redirects",
+      "note": "scaffolded config.yaml + 6 dirs. Nine commands confirmed. Suite: 105 passed. upload/verify/rollback/pipeline NOT run - live store"
     },
     {
       "argv": "node scripts/quality/test-animation-detector.js https://example.com",
@@ -218,6 +258,36 @@
       "argv": "node scripts/quality/shot-width.js http://127.0.0.1:8791/probe.html /tmp/w390.png 390 844",
       "exit": 0,
       "id": "aurelix.probe.shot-width"
+    },
+    {
+      "argv": "node scripts/check-benchmark-conformance.mjs",
+      "exit": 1,
+      "id": "capecrypto.gate.benchmark-conformance",
+      "note": "FAIL, 12 violations - but 5 of 12 are false positives from an off-grid regex that matches width/height/radius, and all 12 are in src/components/animations/, zero in any page"
+    },
+    {
+      "argv": "BASE_URL=http://localhost:3111 node scripts/check-links.mjs",
+      "exit": 0,
+      "id": "capecrypto.gate.check-links",
+      "note": "PASS: 59 routes, 2788 hrefs, 74 internal links all 200. Measured after rm -rf .next + rebuild. Exit 3 also proved with no server"
+    },
+    {
+      "argv": "node scripts/generate-blog-content.mjs",
+      "exit": 0,
+      "id": "capecrypto.generator.blog-content",
+      "note": "output byte-identical to the committed file"
+    },
+    {
+      "argv": "node scripts/generate-legal-content.mjs",
+      "exit": 0,
+      "id": "capecrypto.generator.legal-content",
+      "note": "output byte-identical to the committed file"
+    },
+    {
+      "argv": "node scripts/generate-support-content.mjs",
+      "exit": 0,
+      "id": "capecrypto.generator.support-content",
+      "note": "output byte-identical to the committed file"
     }
   ]
 }

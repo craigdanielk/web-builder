@@ -52,6 +52,12 @@ from lib.slot_contract import (
     BARE_FIELD as _BARE_FIELD,
 )
 
+# What this node IS, in its own words (see lib/capability.py for why the
+# declaration lives beside the code rather than in a document that goes stale).
+# Not optional and not degradable: a node that cannot declare itself has no
+# business declaring a build.
+from lib.capability import describe as _describe_capability
+
 # Nav/footer links, sourced from the harvest or empty — never a canned table.
 # See lib/nav_harvest.py for why: shipping "Shop / New Arrivals" on a real
 # client's site (e.g. a licensed FSP) is a regulatory liability, not a
@@ -9982,7 +9988,132 @@ def run_compliance_gate(site_dir, tenant: str | None, tenant_context: dict | Non
     return result
 
 
-def stage_render_audit(project_name: str, site_manifest: dict | None = None) -> str:
+def run_contrast_fixer(project_name: str, audit_out, site_dir) -> dict:
+    """`--fix-contrast` only. Token-layer contrast remediation, recorded as INFORMATION.
+
+    `scripts/quality/render-fix-contrast.js` is a complete, unit-tested fixer that
+    had `reachable_from: []` — nothing invoked it. Its input contract is already
+    satisfied: `render-audit.js:126` emits contrast fg/bg as `#rrggbb` precisely
+    because this file's `hexToRgb` parses nothing else. Only the caller was missing.
+
+    WHY IT IS OPT-IN AND DEFAULT OFF, and why that is not timidity:
+      it MUTATES SOURCE (globals.css + site-spec.json) and RE-MEASURES NOTHING.
+      Its own verification run "repaired" text_muted #9aa0a6 -> #0b0d10
+      (2.6:1 -> 19.46:1) — arithmetically correct, and it made the muted text
+      DARKER THAN THE PRIMARY TEXT. Running that on every build would be a gate
+      that can only say yes, pointed backwards. An operator asks for it by name.
+
+    WHY IT IS NOT A GATE, mechanically: it does not touch `GATE_RESULTS`, does
+    not call `record_build_failure`, and its return value is discarded by
+    `stage_render_audit`. `unmeasured_gates()` therefore cannot see it and
+    `resolve_build_outcome()` is computed from exactly the same inputs with the
+    flag on as with it off. A fixer that repaired something is information about
+    a build, never a verdict on one — and it must not be able to lift a failing
+    build to success by having succeeded at arithmetic.
+
+    Also true and not fixable here: it rewrites globals.css AFTER the production
+    build compiled, so the repair is in the SOURCE and not in the `.next` output
+    the render audit just measured. Only a fresh build+audit can confirm it.
+
+    Exit contract, read off the script (its own header omits 2):
+      0 PASS or REPAIRED · 1 FAIL · 2 usage · 3 NOT_MEASURED.
+    """
+    print("\n─── CONTRAST REMEDIATION (--fix-contrast) ───\n")
+    audit_out = Path(audit_out)
+    site_dir = Path(site_dir)
+    fixer = ROOT / "scripts" / "quality" / "render-fix-contrast.js"
+    report_path = audit_out / "report.json"
+    spec_path = OUTPUT_DIR / project_name / "site-spec.json"
+    globals_path = site_dir / "src" / "app" / "globals.css"
+    artifact = audit_out / "contrast-fix.json"
+
+    def _record(verdict: dict) -> dict:
+        # The compliance gate's defect (CLAUDE.md §14.1 #2) is that its verdict
+        # exists only on a console nobody captured. This one lands on disk.
+        try:
+            audit_out.mkdir(parents=True, exist_ok=True)
+            artifact.write_text(json.dumps(verdict, indent=2), encoding="utf-8")
+            print(f"  → Wrote: {audit_out.name}/contrast-fix.json")
+        except OSError as exc:
+            print(f"  ⚠ Could not write contrast-fix.json: {exc}")
+        print(
+            f"  → Contrast fixer: {verdict.get('status')} "
+            f"(exit {verdict.get('exit_code')}) — recorded, not a build verdict"
+        )
+        return verdict
+
+    for label, path in (
+        ("render-fix-contrast.js", fixer),
+        ("report.json", report_path),
+        ("site-spec.json", spec_path),
+        ("globals.css", globals_path),
+    ):
+        if not path.exists():
+            return _record({
+                "status": "NOT_MEASURED", "exit_code": 3,
+                "reason": f"{label} not found at {path}",
+                "applied": False, "affects_build_outcome": False,
+            })
+
+    cmd = [
+        "node", str(fixer),
+        "--report", str(report_path),
+        "--site-spec", str(spec_path),
+        "--globals", str(globals_path),
+        "--apply",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=str(ROOT))
+    except FileNotFoundError:
+        return _record({
+            "status": "NOT_MEASURED", "exit_code": 3,
+            "reason": "node is not on PATH", "applied": False,
+            "affects_build_outcome": False,
+        })
+    except subprocess.TimeoutExpired:
+        return _record({
+            "status": "NOT_MEASURED", "exit_code": 3,
+            "reason": "render-fix-contrast.js timed out after 120s", "applied": False,
+            "affects_build_outcome": False,
+        })
+
+    for line in (proc.stderr or "").strip().splitlines():
+        print(f"  {line}")
+
+    verdict = None
+    for line in (proc.stdout or "").strip().splitlines():
+        try:
+            verdict = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+    if not isinstance(verdict, dict):
+        # Exit 2 is a usage error the fixer prints to stderr with no JSON at all.
+        return _record({
+            "status": "NOT_MEASURED", "exit_code": 3,
+            "reason": (
+                f"render-fix-contrast.js exited {proc.returncode} with no JSON verdict: "
+                + (proc.stderr or "").strip()[:300]
+            ),
+            "process_exit_code": proc.returncode,
+            "applied": False, "affects_build_outcome": False,
+        })
+
+    verdict["exit_code"] = proc.returncode
+    verdict["affects_build_outcome"] = False
+    if verdict.get("status") == "REPAIRED":
+        print(
+            "  ⚠ globals.css and site-spec.json were REWRITTEN after the production "
+            "build compiled — the repair is in the source, not in the audited output. "
+            "Rebuild and re-audit before believing it."
+        )
+    return _record(verdict)
+
+
+def stage_render_audit(
+    project_name: str,
+    site_manifest: dict | None = None,
+    fix_contrast: bool = False,
+) -> str:
     """
     Stage 6: Post-build render audit — invoke render-audit.js against the
     built site and record the outcome.
@@ -10168,6 +10299,14 @@ def stage_render_audit(project_name: str, site_manifest: dict | None = None) -> 
             print(f"  → Wrote: {audit_out.name}/render-facts.json")
         except OSError as _e:
             print(f"  ⚠ Could not write render-facts.json: {_e}")
+
+        # ── --fix-contrast: opt-in, default OFF ────────────────────
+        # AFTER the probe, because report.json is this fixer's input. Its
+        # verdict is deliberately DISCARDED here: `status` above is the render
+        # audit's, and a source fixer must not be able to move it in either
+        # direction. See run_contrast_fixer's docstring.
+        if fix_contrast:
+            run_contrast_fixer(project_name, audit_out, site_dir)
 
     except subprocess.TimeoutExpired:
         print(f"  ⚠ render-audit.js timed out after 180s")
@@ -10755,7 +10894,123 @@ def deploy_to_vercel(output_dir: Path, project_name: str) -> str | None:
 
 # --- Main ---
 
+# What this node is, in its own words. `kind: harness` because it does not
+# measure one thing — it RUNS other instruments (the benchmark gate, the
+# compile gate, the conformance gate, the compliance gate, render-audit.js and
+# now render-fix-contrast.js) and reconciles their verdicts into one exit code.
+# It is not a `builder`: assembling the manifest is one of the things it runs.
+#
+# `cannot_see` is the only field no static analysis derives, so every entry
+# below was measured on 2026-08-18 rather than reasoned:
+#   * `grep -c "sys.argv" scripts/orchestrate.py` -> 0, and no artifact this
+#     node writes carries argv, a flag set or a command line.
+#   * `build_log` has 28 columns over PostgREST; neither `db_template_count`
+#     (sent unconditionally, supabase_client.py:331) nor `token_ledger` is one.
+#     The retry pops only `token_ledger` (:378), so it 400s identically.
+#   * benchmarks/enterprise-payments-bvnk.json `_meta.ratification.basis` is
+#     `"inference"` with `corpus: null`.
+CAPABILITY = {
+    "id": "aurelix.harness.orchestrate",
+    "name": "The web-builder node — compiles a site spec into a built Next.js app and runs the gates over it",
+    "kind": "harness",
+    "invocation": (
+        "python3 scripts/orchestrate.py <project> [--tenant SLUG] [--captures DIR] "
+        "[--routes CSV] [--benchmark MARKET] [--preset NAME] [--industry NAME] "
+        "[--deploy] [--clean] [--fix-contrast] [--publish]"
+    ),
+    "preconditions": [
+        "web-builder/.env is sourced (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY); this file "
+        "never calls load_dotenv, so an ambient SUPABASE_URL from your shell wins over the file",
+        "briefs/<project>.md or --brief names a brief, and skills/presets/ carries the preset",
+        "a ratified benchmark resolves for the market, or the benchmark gate exits 3 — a market "
+        "with no benchmark no longer falls back to the crawled source",
+        "--tenant is passed for any compliance-bearing tenant; omitting it silently drops the "
+        "declared disclaimers and looks like a clean build",
+        "--deploy is a LOCAL production build plus `npm run start` to gate the render audit; it "
+        "is not a Vercel publish (that is --publish)",
+        "--fix-contrast MUTATES the generated globals.css and site-spec.json; it is off unless asked",
+    ],
+    "inputs": [
+        "briefs/<project>.md and skills/presets/<preset>.md — the operator-authored brief and preset",
+        "benchmarks/<market>.json — the design authority; the tenant supplies identity and content",
+        "--captures <DIR> — an audit run directory of capture records {url, html, http_status, fetch_error}",
+        "Supabase: section_archetypes (74), section_presets (995), industry_styles (29), "
+        "phase0_field_values, tenants, creative_assets",
+        "section-templates/ — the local React templates and manifest.json",
+    ],
+    "outputs": [
+        "output/<project>/site/ — the generated Next.js application",
+        "output/<project>/site-spec.json and site-manifest.json — the resolved spec and page model",
+        "output/<project>/section-artifacts/*.json and omitted-sections.json — per-slot provenance "
+        "and every unfilled slot with its reason",
+        "output/<project>/render-audit-results/{render-audit.json,report.json,render-facts.json} "
+        "and, under --fix-contrast only, contrast-fix.json",
+        "output/<project>/{checkpoint.json,bill-of-sale.json} and a build_log row that currently 400s",
+    ],
+    "outcome": (
+        "whether a site was assembled from sourced content and the compiled benchmark, which gates "
+        "measured it, and — as one exit code — whether the result is good, broken, or never measured"
+    ),
+    "exit_contract": {
+        0: "OK — artifacts generated, or deploy requested and the render audit passed",
+        1: "FAILED — a recorded build failure (dropped section, failed production build, a gate FAIL), "
+           "or the render audit produced no verdict with audit_ran true",
+        2: "REVIEW_NEEDED — the render audit ran and found defects a human must accept or fix",
+        3: "NOT_MEASURED — a gate could not measure, or the render audit never ran. NOT a pass",
+        64: "usage — you called it wrong. Deliberately outside the build-outcome range so a mistyped "
+            "flag is not indistinguishable from REVIEW_NEEDED",
+    },
+    "measures": [
+        "whether every emitted slot is sourced: provenance is harvested | phase0 | empty and "
+        "`default` is rejected by SectionArtifact.validate()",
+        "the verdicts of the instruments it runs — benchmark gate, compile gate, conformance gate, "
+        "compliance gate, render-audit.js — reconciled by resolve_build_outcome()",
+        "which archetypes the normative page model asks for, per industry and page type, and which "
+        "of them had no source (omitted-sections.json records the reason)",
+        "whether the production build compiles and the built routes render without defects",
+    ],
+    "cannot_see": [
+        "ITS OWN INVOCATION. `grep -c sys.argv` over this file is 0 and no artifact it writes — "
+        "checkpoint.json, bill-of-sale.json, site-manifest.json, site-spec.json — carries argv, a "
+        "flag set or a command line. A run cannot be reconstructed from its output, so two builds "
+        "that differ only by a flag are indistinguishable afterwards",
+        "that it recorded nothing. log_build() sends `db_template_count` unconditionally "
+        "(lib/supabase_client.py:331) and build_log has no such column — measured 2026-08-18, 28 "
+        "columns, neither db_template_count nor token_ledger among them. Every write 400s, the "
+        "retry pops only token_ledger, and neither call site checks the return value: the build "
+        "exits 0 having logged nothing",
+        "whether the benchmark it compiled from is CORRECT. The gate checks that the required "
+        "fields are present and declared, not that the numbers are right — and the ratified "
+        "enterprise-payments-bvnk.json has basis 'inference' with corpus null, so its measurements "
+        "cannot be re-derived at all",
+        "that --output-root and --extractions-root are separate roots. Re-rooting outputs alone "
+        "leaves the crawl input store where it was; it once took asset resolution from 5 extracted "
+        "to 0 and the build still exited 0. It prints where inputs are read from; it cannot tell "
+        "that the operator meant to move them",
+        "whether --fix-contrast's repair is right. The fixer rewrites a token and re-measures "
+        "nothing, and it rewrites globals.css after the audited build already compiled — so this "
+        "node's render-audit verdict is about the PRE-repair output either way",
+        "anything about a deployed site. --deploy is a local build; only --publish reaches Vercel, "
+        "and the render audit measures localhost, never production",
+    ],
+    "reachable_from": [
+        "run_pipeline.py stage_web_builder — build_orchestrate_cmd() (both the shopify and vercel chains)",
+        "an operator shell, directly; that is how every evidenced build so far was driven",
+    ],
+    "cost": (
+        "minutes. A --deploy run does npm install + a Next.js production build + `npm run start` + "
+        "a Playwright render audit per route. Needs Supabase reachable and node 20+; --fix-contrast "
+        "adds <1s and two file writes"
+    ),
+}
+
+
 def main():
+    # FIRST, before argparse: `project` is a required positional, so `--describe`
+    # alone would otherwise die a usage death. Before any Supabase or filesystem
+    # work too — describing an instrument must not require its preconditions.
+    if _describe_capability(CAPABILITY):
+        return 0
     parser = UsageErrorParser(description="Website Builder Pipeline")
     parser.add_argument("project", help="Project name (must match a brief in briefs/)")
     parser.add_argument("--preset", help="Override preset selection", default=None)
@@ -10843,6 +11098,14 @@ def main():
                              "slug into its own static page).")
     parser.add_argument("--max-pages", type=int, default=None, metavar="N",
                         help="Cap the number of harvested pages from --captures.")
+    parser.add_argument("--fix-contrast", action="store_true",
+                        help="After the render audit, run scripts/quality/render-fix-contrast.js "
+                             "--apply against report.json. DEFAULT OFF and deliberately so: it "
+                             "MUTATES globals.css and site-spec.json and re-measures nothing "
+                             "(its own run made muted text darker than the primary text while "
+                             "reporting a correct ratio). Its verdict is recorded to "
+                             "render-audit-results/contrast-fix.json and never changes the "
+                             "build's status or exit code.")
     parser.add_argument("--publish", action="store_true",
                         help="After a successful build+deploy, run `vercel --yes --prod` and record the "
                              "deployed URL in build_log.deploy_url (BRIEF #33299). Default off.")
@@ -11840,6 +12103,7 @@ def main():
         _render_audit_status = stage_render_audit(
             project_name=args.project,
             site_manifest=site_manifest,
+            fix_contrast=getattr(args, "fix_contrast", False),
         ) if deploy_ran else "skipped"
         _build_end_time = _time.time()
         _build_duration_ms = int((_build_end_time - _build_start_time) * 1000)
@@ -12136,6 +12400,7 @@ def main():
     _render_audit_status = stage_render_audit(
         project_name=args.project,
         site_manifest=site_manifest if site_manifest and "pages" in site_manifest else None,
+        fix_contrast=getattr(args, "fix_contrast", False),
     ) if deploy_ran else "skipped"
 
     # Print gap report summary if available (v0.9.0)

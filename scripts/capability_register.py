@@ -90,11 +90,29 @@ TOOL = "capability_register.py"
 DESCRIBE_TIMEOUT_S = 60
 
 # Where instruments live.  A root that does not exist is skipped, not an error —
-# submodules are frequently uninitialised (CLAUDE.md §3.1).
+# submodules are frequently uninitialised (CLAUDE.md §3.1), and the sibling repos
+# below are not present on every machine.
+#
+# WHY THE WHOLE SERVICE REPO, NOT A LIST OF SUBDIRECTORIES
+# The first version of this list named three specific directories and therefore
+# could not see `run_pipeline.py` (the chain itself), `aurelix-calculator`,
+# `shopify-url-redirect-migration-toolkit` or `run_calculator_live.py`. Four
+# agents declared capabilities that the compiler then silently ignored — the
+# register reporting a smaller, healthier toolbox than exists, which is the
+# failure mode this whole mechanism is built to prevent. A named-directory list
+# is a thing that goes stale; a repo root is not.
+#
+# Duplicate discovery is harmless: `candidate_files()` dedupes by resolved path,
+# so a file reachable from two roots is one entry.
+_SERVICE_REPO = ROOT.parent
+_GITHUB_ROOT = _SERVICE_REPO.parent.parent
+
 SCAN_ROOTS: tuple[Path, ...] = (
-    ROOT / "scripts",
-    ROOT.parent / "aurelix-uiux-audit",
-    ROOT.parent / "shopify-integration-layer",
+    _SERVICE_REPO,                              # web-builder, the audit, the shopify
+                                                # layer, both submodules, run_pipeline.py
+    _GITHUB_ROOT / "tenants" / "cape-crypto",   # the hand-written tenant gates — the
+                                                # duplicates this register exists to expose
+    _GITHUB_ROOT / "services" / "image-pipeline",
 )
 
 # A file is a CANDIDATE if it carries one of these markers.  Grep first, execute
@@ -159,6 +177,23 @@ def candidate_files(roots: tuple[Path, ...] = SCAN_ROOTS) -> list[Path]:
     return sorted(set(found), key=lambda p: p.as_posix())
 
 
+def _display_path(path: Path) -> str:
+    """A stable, readable path for the register.
+
+    Relative to the service repo where possible; relative to the GitHub root
+    otherwise, because the tenant repo and image-pipeline live outside it and
+    `relative_to` would raise. Never absolute — an absolute path embeds this
+    machine's home directory into a committed artifact and makes the register
+    non-reproducible on anyone else's checkout.
+    """
+    for base in (_SERVICE_REPO, _GITHUB_ROOT):
+        try:
+            return path.relative_to(base).as_posix()
+        except ValueError:
+            continue
+    return path.name
+
+
 def run_describe(path: Path) -> tuple[dict[str, Any] | None, str]:
     """Execute `<runner> <path> --describe`.  Returns `(spec, detail)`.
 
@@ -219,18 +254,50 @@ def save_evidence(by_id: dict[str, list[dict[str, Any]]], path: Path = EVIDENCE_
 
 
 def _script_token(command: str) -> str:
-    """The script a command line runs, by basename.
+    """The script a command line runs, by basename — or its console-script name.
 
     HONEST LIMIT: this is how an execution record is matched to a declaration.
-    It proves the same file was run; it does not prove the same flags were used.
-    Flags are kept verbatim in the record so a human can see them, and a run
-    whose exit code is not in the declared contract is BROKEN regardless of
+    It proves the same program was run; it does not prove the same flags were
+    used. Flags are kept verbatim in the record so a human can see them, and a
+    run whose exit code is not in the declared contract is BROKEN regardless of
     which flags produced it.
+
+    CONSOLE SCRIPTS: `aurelix-calculator analyze <url>` and `migrate init` name
+    no file at all. Returning "" for those would make every record match every
+    fileless declaration, so the first non-flag token is used instead — the
+    program being run. Both forms are compared like-for-like because a
+    declaration and its evidence are written against the same invocation.
     """
-    for token in command.split():
-        low = token.lower()
-        if low.endswith((".js", ".mjs", ".py", ".sh")):
+    tokens = command.split()
+    for token in tokens:
+        if token.lower().endswith((".js", ".mjs", ".py", ".sh")):
             return Path(token).name
+    # No file named. Fall back to the program: skip interpreters, shell
+    # plumbing and env assignments, then take the first bare word.
+    #
+    # `cd` consumes its argument. A declaration reading
+    # `cd aurelix-calculator && .venv/bin/aurelix-calculator analyze <url>`
+    # otherwise resolves to "cd", matches no evidence, and leaves a genuinely
+    # executed instrument sitting at NOT_VERIFIED. It failed safe rather than
+    # false-matching, but it was wrong.
+    _WRAPPERS = {"python3", "python", "node", "bash", "sh", "npx", "env",
+                 "poetry", "uv", "pipx"}
+    _PLUMBING = {"&&", "||", ";", "|", "then", "&"}
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "cd":
+            skip_next = True              # the directory it changes into
+            continue
+        if token in _PLUMBING or token in _WRAPPERS:
+            continue
+        if token.startswith("-"):
+            continue
+        if "=" in token:
+            continue                      # FOO=bar prefix
+        return Path(token).name
     return ""
 
 
@@ -268,7 +335,7 @@ def build_entries(paths: list[Path], evidence: dict[str, list[dict[str, Any]]]) 
     problems: list[str] = []
     seen: dict[str, Path] = {}
     for path in paths:
-        rel = path.relative_to(ROOT.parent).as_posix()
+        rel = _display_path(path)
         spec, detail = run_describe(path)
         if spec is None:
             # WHY an entry rather than a skip: an instrument that declares a
@@ -499,7 +566,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         return EXIT_NOT_MEASURED
     loaded = broken = 0
     for path in paths:
-        rel = path.relative_to(ROOT.parent).as_posix()
+        rel = _display_path(path)
         spec, detail = run_describe(path)
         if spec is None:
             broken += 1

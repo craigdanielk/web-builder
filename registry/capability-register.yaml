@@ -1,9 +1,9 @@
 _meta:
   generated_by: scripts/capability_register.py compile
-  instrument_count: 42
+  instrument_count: 55
   status_counts:
-    NOT_RUN: 15
-    VERIFIED: 27
+    NOT_RUN: 19
+    VERIFIED: 36
   note: GENERATED — do not edit. Declarations live in each instrument's source file behind `--describe`.
     Edit there and recompile.
 capabilities:
@@ -512,6 +512,62 @@ capabilities:
   status: VERIFIED
   evidence: 'ran `python3 scripts/quality/funnel-verdicts.py output/xago-exchange-mockup --out-dir /tmp/f`
     → exit 3. NOT_MEASURED: no built sections under section-artifacts - the honest branch'
+- id: aurelix.compiler.image-job
+  name: Creative compiler — job-v1 source to compile/ artifact directory
+  kind: compiler
+  invocation: python3 core/compile_job.py <job>.job.json --compile-dir <dir>
+  preconditions:
+  - python3 3.9+ — the core is dep-free by design; no venv, no requirements
+  - a job-v1 .job.json that validates against core/job.schema.json
+  - any cad.md, ProductSpec and reference images the job names must be resolvable relative to the job
+    file
+  inputs:
+  - one job-v1 .job.json path
+  - the job's sibling cad.md / knowledge-store ProductSpec, if it names one
+  outputs:
+  - <compile-dir>/ — manifest.json, ProductSpec.json, CreativeSpec.json, EditSpecs.json, ExecutionRequest.json,
+    ProviderPrompt.json, ProviderExecutionPlan.json, graph.json, RuntimeContext.json
+  - or, with -o, a single legacy artifacts JSON blob; with neither, the blob on stdout
+  - 'stdout: manifest_hash and compile_hash'
+  outcome: the fully lowered, inspectable creative plan for a job — every stage as its own JSON file —
+    without contacting any provider. This is the compile half of 'the runtime never compiles, the compiler
+    never executes'
+  exit_contract:
+    '0': compiled; the compile directory (or blob) was written
+    '1': any uncaught exception — schema validation failure, unresolvable reference, unreadable job file
+    '2': argparse usage error (missing the positional job path, unknown flag)
+  measures:
+  - 'that a job-v1 source lowers completely: every stage artifact is produced or the compile fails'
+  - compile determinism by hash — the same job-v1 compiled twice yields identical per-file hashes in manifest.json
+  - the resolved provider prompt and ProviderExecutionPlan, inspectable before a single credit is spent
+  cannot_see:
+  - anything about the image. It never executes, never calls a provider and never looks at a pixel — a
+    compile that succeeds says nothing about whether the render is on-model, on-brand or usable
+  - cost. --dry-run here only MARKS the execution plan as method=cost_estimate; the priced number comes
+    from the runtime calling `higgsfield generate cost`, not from this file
+  - whether the named engine/model still exists at the provider, or whether the higgsfield CLI is installed
+    or authenticated — none of that is touched at compile time
+  - whether reference images are the right ones. It resolves paths; it cannot judge a plate
+  - 'any Aurelix tenant, from this CLI. Measured 2026-08-18: 76 .job.json in this repo, 85 more across
+    tenants/, ZERO cape-crypto. Aurelix does not put its jobs on disk here — aurelix-ag/web-builder/scripts/quality/commission-media.py
+    lowers a gap via lib/image_jobs.to_job_v1, writes the spec to a TemporaryDirectory and shells straight
+    to core/run_job.py. So a cape-crypto job leaves no trace in jobs/ and this CLI has never been on that
+    path'
+  - the Aurelix job_hash. aurelix-ag/web-builder/lib/image_jobs.py hashes the palette into its own cache
+    key; the compile_hash written here is a different identity over a different object, and nothing reconciles
+    the two
+  reachable_from:
+  - ui/server.py:1260, :1303, :1520, :1558 — the operator UI shells out via _run_core('compile_job.py',
+    ...)
+  - README.md:29 quickstart (documentation, not a call site)
+  - 'NOT reached from aurelix-ag: measured 2026-08-18, zero references to image-pipeline in that repo''s
+    code'
+  cost: ~1s per job, fully offline. No network, no credentials, no provider, no credits, no money.
+  source_file: services/image-pipeline/core/compile_job.py
+  language: py
+  status: VERIFIED
+  evidence: 'ran `python3 core/compile_job.py jobs/_example.job.json --compile-dir /tmp/imgjob` → exit
+    0. offline and free. Repo suite: 122 passed'
 - id: aurelix.extractor.benchmark-corpus-capture
   name: Benchmark corpus capture
   kind: extractor
@@ -570,6 +626,149 @@ capabilities:
   status: VERIFIED
   evidence: ran `node scripts/quality/capture-benchmark-pages.js --market scratch-probe --page 'probe|http://127.0.0.1:8791/probe.html|smoke
     test' --out /tmp/corpus` → exit 0. 1/1 captured
+- id: aurelix.extractor.calculator
+  name: Aurelix Calculator — crawls a live site into a Shopify-shaped structural model
+  kind: extractor
+  invocation: cd aurelix-calculator && .venv/bin/aurelix-calculator analyze <url> [-o <dir>] [--max-pages
+    N] [--use-browser] [-v]   |   .venv/bin/aurelix-calculator validate <dir>/architecture.json
+  preconditions:
+  - 'Python >= 3.11 in a venv: `python3.12 -m venv .venv && .venv/bin/pip install -e .` — local python3
+    is 3.9.6 and python3.11 does not exist on this machine, so the console script exists ONLY inside .venv/bin
+    (python3.12/3.13/3.14 are present via homebrew)'
+  - 'The submodule must be initialised: `git submodule update --init --recursive`. An uninitialised checkout
+    is a directory that exists and is_dir() with 0 entries'
+  - '`npx playwright install chromium` before using --use-browser. NOTHING CHECKS THIS: a missing browser
+    is swallowed and the run still exits 0 with no data'
+  - Network reachability to the target host. No credentials of any kind are required — the API2Cart path
+    is a different instrument (see aurelix.extractor.calculator-live-api2cart)
+  inputs:
+  - a public URL (positional argument to `analyze`)
+  - that host's robots.txt and sitemap.xml, fetched by the crawler
+  - homepage HTML and inline/linked CSS, for brand and navigation extraction
+  - '`validate` instead reads an existing architecture.json'
+  outputs:
+  - '<outdir>/architecture.json — 12 keys: source_url, source_platform, crawled_at, crawl_stats, markets,
+    collections, pages, navigation, templates_required, brand, summary, industry'
+  - <outdir>/products.csv
+  - <outdir>/brand.json
+  - <outdir>/media-manifest.json
+  - <outdir>/brief.md
+  - <outdir>/analysis_report.md
+  outcome: 'A structural model of a source site expressed as Shopify collections, pages, templates and
+    markets, plus a brand palette and a media manifest. Exit 0 does NOT mean anything was extracted —
+    see cannot_see. Nothing in the Aurelix chain invokes this CLI: run_pipeline.py:412 imports `aurelix_calculator.industry`
+    as a library, and run_pipeline.py:535 runs the repo-root run_calculator_live.py instead.'
+  exit_contract:
+    '0': the command completed — for `analyze` this means the crawl and six writes finished, NOT that
+      the crawl found anything; for `validate` it means every required key is present in architecture.json
+    '1': 'raised via typer.Exit(1): the pipeline raised, the user interrupted, the file handed to `validate`
+      does not exist, is not JSON, or is missing required keys'
+    '2': 'usage error from Typer/Click — no subcommand, or a missing required argument (measured 2026-08-18:
+      bare `aurelix-calculator` and `aurelix-calculator analyze` both exit 2)'
+  measures:
+  - source platform detection (shopify / woocommerce / generic) from homepage HTML
+  - collection, page and template counts, and an estimated product total
+  - a complexity score (low / medium / high) derived from those counts
+  - markets, from <link rel=alternate hreflang> tags, then TLD grouping, then URL prefix
+  - brand primary/secondary colour, font families, logo and favicon URLs
+  - main and footer navigation trees
+  - a per-section media manifest and a products CSV
+  cannot_see:
+  - 'IT CANNOT TELL AN EMPTY EXTRACTION FROM A SIMPLE SITE. Measured on capecrypto.com without --use-browser:
+    0 collections, 0 pages, 0 products, no brand — and it printed `Complexity: low` and exited 0'
+  - 'It cannot see that Playwright''s browser is not installed. `_fetch_with_browser_safe` (pipeline.py:159-166)
+    catches every exception and returns None; the auto-escalation at pipeline.py:149-157 then logs a warning,
+    keeps the empty HTML, and the run still exits 0. Measured on allbirds.com: a real Shopify storefront
+    reported as generic/low'
+  - 'It cannot read a modern Shopify mega-nav. Measured on allbirds.com WITH chromium installed: platform=shopify
+    and 291 estimated products, but collections: 0, pages: 0, navigation.main_menu: 0 — and everything
+    downstream is fed by nav'
+  - It cannot see CSS syntax past the value. `_COLOR_PATTERN` captures `[^;}\n]+` and `_clean_color` (extractor.py:226-231)
+    strips only whitespace and a trailing `;`, so `body{color:#0000!important}` yields primary_color `#0000!important`
+    — reproduced 2026-08-18 through extract_brand()
+  - 'It cannot distinguish a locale alternate from a market: `_detect_from_hreflang` emits one Market
+    per <link rel=alternate hreflang> tag, which is how allbirds.com produced markets: 85'
+  - IT CANNOT HAND ITS EVIDENCE DOWNSTREAM. `CrawlResult.homepage_html` (models.py:93) is a single page
+    held in memory and never serialised; `save_json` writes 12 keys and none of them is `html`, `http_status`
+    or `fetch_error` — none of the four fields the capture-bundle loader (html-page-harvest.js `loadCaptures`)
+    reads. Feeding the builder from this extractor needs either persistence here or a separate capture
+    adapter
+  - 'It cannot see a store through API2Cart from this machine: no API2CART_API_KEY exists in any environment
+    or .env here'
+  - '`validate` cannot see whether the numbers in architecture.json are true — it checks that 9 top-level
+    keys are present and warns on collections missing handle/type'
+  reachable_from: []
+  cost: 'Network-bound: seconds to many minutes depending on --max-pages (DEFAULT 500) and the rate limiter;
+    --use-browser adds a chromium launch. No credentials, no spend, no live mutation — it only reads public
+    pages. Its own suite: 126 tests, 0.5s (`.venv/bin/python -m pytest -q -m ''not live''`, measured 2026-08-18).'
+  source_file: aurelix-calculator/capability_declaration.py
+  language: py
+  status: VERIFIED
+  evidence: 'ran `.venv/bin/aurelix-calculator analyze https://example.com --max-pages 3 -o /tmp/calc`
+    → exit 0. all six output files written; 0 collections / 0 pages / 0 products and ''Complexity: low''
+    - the silent-empty-result shape, exit 0. Suite: 126 passed'
+- id: aurelix.extractor.calculator-live-api2cart
+  name: run_calculator_live.py — fixed-purpose API2Cart/OpenCart extraction demo
+  kind: extractor
+  invocation: python3 run_calculator_live.py
+  preconditions:
+  - 'API2CART_API_KEY in a repo-root .env. MEASURED 2026-08-18: there is NO root .env (`ls .env` -> No
+    such file or directory) and no API2CART_API_KEY anywhere in the environment. The only credential file
+    in this tree is web-builder/.env, which holds SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY and nothing
+    else'
+  - OPENCART_STORE_KEY, or an API2Cart account with at least one connected store — with the key absent
+    it calls account.cart.list and picks the first cart whose id contains 'open', else the first cart
+    at all
+  - the aurelix-calculator submodule initialised, for the api2cart_integration/adapter/api2cart_adapter
+    import it does at runtime
+  - network access to api2cart.com/v1.1
+  inputs:
+  - repo-root .env (its own 20-line dotenv reader; it does not use python-dotenv)
+  - 'API2Cart v1.1 REST: account.cart.list, and whatever API2CartAdapter.extract_all calls'
+  - the connected store's homepage, for the brand crawl the adapter performs
+  outputs:
+  - testing/compiled/opencart-demo/ — HARDCODED at main(), with no flag and no environment variable that
+    can move it
+  outcome: 'On this machine: nothing. MEASURED 2026-08-18 — `python3 run_calculator_live.py` -> exit 1,
+    `Missing API2CART_API_KEY. Add it to repo root .env`, before any network call. With a key it would
+    write one OpenCart store''s extraction into a fixed directory and print its stats. It is NOT the calculator:
+    it never invokes the aurelix-calculator console script or its crawl pipeline (see aurelix.extractor.calculator).'
+  exit_contract:
+    '0': extraction ran to completion — including the branch where every connected store returned 0 products
+      AND 0 collections, which it prints as advice and still returns 0
+    '1': API2CART_API_KEY absent, or no connected store could be discovered from account.cart.list
+  measures:
+  - 'the API2Cart adapter''s report stats for one store: estimated_products, collections'
+  - which of an account's connected carts responds with data, by retrying each store_key
+  cannot_see:
+  - IT CANNOT SEE ANY ARGUMENT. There is no argparse, no click, no read of sys.argv anywhere in the file
+    — a caller cannot tell it which site, which platform, or where to write. Everything is fixed at the
+    source level
+  - 'It cannot see the three environment variables the chain sets FOR it: stage_calculator (run_pipeline.py:528-535)
+    builds calc_env with AURELIX_COMPILED_DIR, AURELIX_PLATFORM and AURELIX_SOURCE_URL, then calls run(name,
+    cmd, cwd=None) — which has no `env` parameter. The dict is constructed and discarded, so --from-url
+    cannot reach the extractor even in principle'
+  - 'It cannot write where the chain then looks: its output is testing/compiled/opencart-demo while run_pipeline.py:1425
+    defaults --from-compiled to aurelix-calculator/compiled/opencart-demo — a different directory, which
+    is why the chain hunts architecture.json across candidate paths afterwards'
+  - 'It cannot see a non-OpenCart source: store selection matches the substring ''open'' in the cart id,
+    and the module docstring and output path both name OpenCart'
+  - 'It cannot distinguish an empty store from a broken integration: when every store returns 0/0 it prints
+    ''Check API2Cart dashboard'' and returns 0 anyway'
+  - 'It cannot produce capture records: no html, http_status or fetch_error reach disk, so its output
+    cannot feed the capture-bundle loader the builder reads'
+  reachable_from:
+  - run_pipeline.py:535 — stage_calculator, Phase A of the Shopify chain, reached only when --from-url
+    is passed
+  cost: 'Fails in well under a second without a key, spending nothing. With a key: network-bound API2Cart
+    calls plus a homepage crawl, and up to one extract_all per connected cart in the retry loop. It writes
+    only into testing/compiled/opencart-demo and mutates no store.'
+  source_file: run_calculator_live.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 run_calculator_live.py` → exit 1. Missing API2CART_API_KEY. No argument parsing
+    at all; output path hardcoded to testing/compiled/opencart-demo, which is a DIFFERENT directory from
+    the chain's --from-compiled default (run_pipeline.py:1425)
 - id: aurelix.extractor.conformance-runner
   name: Design-conformance analyser driver
   kind: extractor
@@ -1442,6 +1641,77 @@ capabilities:
   language: py
   status: VERIFIED
   evidence: ran `python3 scripts/verify_gate_e.py` → exit 3. NOT_MEASURED branch
+- id: aurelix.generator.image-pipeline
+  name: Creative compiler runner — compile a job-v1 and execute it through the provider
+  kind: generator
+  invocation: python3 core/run_job.py <job>.job.json [--dry-run] [--concurrency N] [--track]
+  preconditions:
+  - python3 3.9+ (core is dep-free)
+  - the `higgsfield` CLI on PATH — present at ~/.npm-global/bin/higgsfield on this machine, 2026-08-18
+  - 'an AUTHENTICATED higgsfield session. The credential is that CLI''s own login, NOT an env var: there
+    is deliberately no API key anywhere in this repo, and .env.example carries only SUPABASE_* plus a
+    note that the AI drafting path uses the local `claude` CLI subscription'
+  - a Higgsfield credit balance for a real run. --dry-run needs no credits but DOES need the same authenticated
+    session, because it shells to `higgsfield generate cost <model> --prompt ... --json`
+  - --track additionally needs .env with SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+  inputs:
+  - one or more job-v1 .job.json paths (or '-' for stdin, alone)
+  - the compile/ bundle it produces itself from each job
+  - reference images the job names, uploaded to the provider on a real run
+  outputs:
+  - compile/<job-id>/ — the full artifact directory (written on dry-run too)
+  - generated images written by the output_local adapter to the job's output dir
+  - 'stdout: engine/model, reference list, compile_dir, compile_hash, the resolved prompt, and either
+    the DRY RUN cost estimate JSON or the saved file paths'
+  - with --track, rows mirrored into Supabase per db/SCHEMA.md
+  outcome: actual generated media for a job spec — or, with --dry-run, the provider's own priced cost
+    estimate for that exact resolved prompt
+  exit_contract:
+    '0': every job compiled and executed (or was priced) without raising
+    '1': SystemExit from a failed job in the fan-out ('N of M job(s) failed'), from combining '-' with
+      other paths, or any uncaught exception — a provider RuntimeError, a non-completed generation, an
+      unreadable job file
+    '2': argparse usage error (no positional job path, unknown flag)
+  measures:
+  - the provider's real priced cost for the resolved prompt, under --dry-run
+  - the compile_hash, so an identical job is recognisably the same work
+  - 'whether the provider actually completed: a job returning without status==''completed'' or without
+    a result_url raises rather than being recorded as done'
+  cannot_see:
+  - whether the image is any good — on-model, on-brand, usable, or the shot that was asked for. There
+    is no visual gate anywhere in this repo; the operator UI's approve/reject gallery is a human deciding
+  - 'whether --dry-run is free of side effects at the provider. It is free of CREDITS, but it is NOT offline:
+    `cost()` shells to `higgsfield generate cost ... --json`, a live authenticated call to a paid provider''s
+    API. Treat it as a network operation against a billed account, not as a local estimate'
+  - the credit balance. Nothing checks it before spending; a run fails at the provider rather than refusing
+    up front
+  - 'cape-crypto. Measured 2026-08-18: 76 .job.json in this repo, 85 across tenants/, ZERO cape-crypto
+    — and there never will be one on disk, because aurelix-ag''s commission-media.py writes the spec to
+    a TemporaryDirectory before shelling here. The intended tenant has no persisted job library, so nothing
+    about Cape Crypto''s imagery is reviewable, re-runnable or diffable from this repo'
+  - the Aurelix budget. commission-media.py owns the cache and the spend decision; this runner generates
+    whatever spec it is handed, so a caller with no budget check spends without being told no
+  - Remotion motion jobs. A media_type=video job with motion.engine=='remotion' is rendered by aurelix-ag/web-builder/motion/,
+    never here, so 'the pipeline ran' does not mean the motion did
+  - whether the generated file ever reaches a site. output_local writes to disk; there is no CDN, Drive
+    or webhook adapter (CLAUDE.md known gap 3), so delivery is a manual step this instrument cannot report
+    on
+  reachable_from:
+  - aurelix-ag/web-builder/scripts/quality/commission-media.py:_run_pipeline — subprocess [sys.executable,
+    $IMAGE_PIPELINE_ROOT/core/run_job.py, <tmp job file>] (+ --dry-run), cwd=IMAGE_PIPELINE_ROOT. This
+    is the ONLY executable call site measured anywhere
+  - README.md:26/:99, WORKFLOW.md:46-48, SKILL.md, ADAPTERS.md — documentation, not call sites
+  - 'NOT reached from ui/server.py: the UI shells to compile_job.py and run_graph.py, never to this file'
+  cost: 'MONEY. A real run bills Higgsfield credits per generated image against the CLI''s authenticated
+    account; there is no ceiling in this repo and no balance check. --dry-run costs no credits but still
+    makes a live authenticated `higgsfield generate cost` call. NOT_RUN in this survey for that reason:
+    exercising it would require `higgsfield` to be logged in and would hit a billed provider''s API, so
+    only --describe was executed.'
+  source_file: services/image-pipeline/core/run_job.py
+  language: py
+  status: NOT_RUN
+  evidence: 'spends Higgsfield credits per uncached job. Even --dry-run is not local: engine_higgsfield.cost()
+    shells `higgsfield generate cost` to a billed provider''s API'
 - id: aurelix.generator.media-commission
   name: Media commissioner — generate the pictures a build asked for
   kind: generator
@@ -1676,6 +1946,240 @@ capabilities:
   language: py
   status: NOT_RUN
   evidence: two full builds plus a served local audit; build timeout defaults to 3600s each, audit 1800s
+- id: aurelix.harness.image-graph-runtime
+  name: Graph runtime — execute a compiled graph.json node by node
+  kind: harness
+  invocation: python3 core/run_graph.py <compile-dir | job.json> [--dry-run] [--node <id>]
+  preconditions:
+  - python3 3.9+
+  - the target is either a compile/ directory containing manifest.json, or a job-v1 .job.json which this
+    will compile first (the one place the 'runtime never compiles' rule is relaxed, as a convenience)
+  - the `higgsfield` CLI on PATH and AUTHENTICATED via its own login — no API key env var exists in this
+    repo
+  - --track needs .env with SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+  inputs:
+  - a compile/ directory's manifest.json, graph.json and runtime bundle — resolved references and an ExecutionPlan,
+    never cad.md and never job-v1 semantics
+  - --node to run one node and its ancestors only
+  - --idempotency-key to make a re-run cache-safe
+  outputs:
+  - generated media via the output adapter
+  - graph run state persisted through graph_persistence, and Supabase graph_run rows under --track
+  - 'stdout: the full run result as indented JSON'
+  outcome: which nodes of a compiled graph ran, which were reused, and whether the run as a whole succeeded
+    — the execute half of 'the runtime never compiles, the compiler never executes'
+  exit_contract:
+    '0': the run completed; the result JSON was printed
+    '1': SystemExit(1) when the result carries status=='failed'; also SystemExit(str(exc)) re-raised from
+      a node failure inside the runtime, and any uncaught exception
+    '2': argparse usage error (missing the positional target, unknown flag)
+  measures:
+  - per-node execution and reuse across a graph, so a partial re-run does not redo satisfied nodes
+  - 'run lineage: --parent-run-id and --idempotency-key are recorded, so a re-run is attributable'
+  - node-level failure — it stops on the failing node rather than reporting a whole-graph success
+  cannot_see:
+  - anything about job-v1 or cad.md, by design. It executes from manifest.json only, so a wrong creative
+    decision that compiled cleanly executes faithfully and expensively
+  - image quality. No visual gate exists in this repo; a completed node is a node the provider said finished,
+    nothing more
+  - 'cost before it spends, except under --dry-run — and --dry-run is NOT offline: it reaches `higgsfield
+    generate cost` through the same authenticated CLI session, a live call to a billed account'
+  - the credit balance; nothing refuses a run for lack of budget
+  - cape-crypto. Zero cape-crypto jobs exist in this repo (measured 2026-08-18) and aurelix-ag reaches
+    the creative system through core/run_job.py, never through this file, so no Aurelix tenant has ever
+    executed a graph here
+  - Remotion motion, which aurelix-ag renders in web-builder/motion/ and never routes through a graph
+  - whether output reached anywhere. output_local writes to disk only; there is no delivery adapter
+  reachable_from:
+  - ui/server.py:1310, :1526, :1563 — _run_core('run_graph.py', ...) subprocess from the operator UI
+  - ui/server.py:74 imports run_graph and calls run_graph.run_graph_async directly (:1798) — the module,
+    not this CLI
+  - core/run_job.py imports run_graph and calls run_graph.run_graph() in-process
+  - README.md:32 — documentation, not a call site
+  - 'NOT reached from aurelix-ag: its only seam is commission-media.py -> core/run_job.py'
+  cost: 'MONEY on a real run — provider credits per generated node, no ceiling and no balance check in
+    this repo. --dry-run costs no credits but still makes a live authenticated provider cost call. NOT_RUN
+    in this survey: only --describe was executed.'
+  source_file: services/image-pipeline/core/run_graph.py
+  language: py
+  status: NOT_RUN
+  evidence: same billed provider path as aurelix.generator.image-pipeline
+- id: aurelix.harness.orchestrate
+  name: The web-builder node — compiles a site spec into a built Next.js app and runs the gates over it
+  kind: harness
+  invocation: python3 scripts/orchestrate.py <project> [--tenant SLUG] [--captures DIR] [--routes CSV]
+    [--benchmark MARKET] [--preset NAME] [--industry NAME] [--deploy] [--clean] [--fix-contrast] [--publish]
+  preconditions:
+  - web-builder/.env is sourced (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY); this file never calls load_dotenv,
+    so an ambient SUPABASE_URL from your shell wins over the file
+  - briefs/<project>.md or --brief names a brief, and skills/presets/ carries the preset
+  - a ratified benchmark resolves for the market, or the benchmark gate exits 3 — a market with no benchmark
+    no longer falls back to the crawled source
+  - --tenant is passed for any compliance-bearing tenant; omitting it silently drops the declared disclaimers
+    and looks like a clean build
+  - --deploy is a LOCAL production build plus `npm run start` to gate the render audit; it is not a Vercel
+    publish (that is --publish)
+  - --fix-contrast MUTATES the generated globals.css and site-spec.json; it is off unless asked
+  inputs:
+  - briefs/<project>.md and skills/presets/<preset>.md — the operator-authored brief and preset
+  - benchmarks/<market>.json — the design authority; the tenant supplies identity and content
+  - --captures <DIR> — an audit run directory of capture records {url, html, http_status, fetch_error}
+  - 'Supabase: section_archetypes (74), section_presets (995), industry_styles (29), phase0_field_values,
+    tenants, creative_assets'
+  - section-templates/ — the local React templates and manifest.json
+  outputs:
+  - output/<project>/site/ — the generated Next.js application
+  - output/<project>/site-spec.json and site-manifest.json — the resolved spec and page model
+  - output/<project>/section-artifacts/*.json and omitted-sections.json — per-slot provenance and every
+    unfilled slot with its reason
+  - output/<project>/render-audit-results/{render-audit.json,report.json,render-facts.json} and, under
+    --fix-contrast only, contrast-fix.json
+  - output/<project>/{checkpoint.json,bill-of-sale.json} and a build_log row that currently 400s
+  outcome: whether a site was assembled from sourced content and the compiled benchmark, which gates measured
+    it, and — as one exit code — whether the result is good, broken, or never measured
+  exit_contract:
+    '0': OK — artifacts generated, or deploy requested and the render audit passed
+    '1': FAILED — a recorded build failure (dropped section, failed production build, a gate FAIL), or
+      the render audit produced no verdict with audit_ran true
+    '2': REVIEW_NEEDED — the render audit ran and found defects a human must accept or fix
+    '3': NOT_MEASURED — a gate could not measure, or the render audit never ran. NOT a pass
+    '64': usage — you called it wrong. Deliberately outside the build-outcome range so a mistyped flag
+      is not indistinguishable from REVIEW_NEEDED
+  measures:
+  - 'whether every emitted slot is sourced: provenance is harvested | phase0 | empty and `default` is
+    rejected by SectionArtifact.validate()'
+  - the verdicts of the instruments it runs — benchmark gate, compile gate, conformance gate, compliance
+    gate, render-audit.js — reconciled by resolve_build_outcome()
+  - which archetypes the normative page model asks for, per industry and page type, and which of them
+    had no source (omitted-sections.json records the reason)
+  - whether the production build compiles and the built routes render without defects
+  cannot_see:
+  - ITS OWN INVOCATION. `grep -c sys.argv` over this file is 0 and no artifact it writes — checkpoint.json,
+    bill-of-sale.json, site-manifest.json, site-spec.json — carries argv, a flag set or a command line.
+    A run cannot be reconstructed from its output, so two builds that differ only by a flag are indistinguishable
+    afterwards
+  - 'that it recorded nothing. log_build() sends `db_template_count` unconditionally (lib/supabase_client.py:331)
+    and build_log has no such column — measured 2026-08-18, 28 columns, neither db_template_count nor
+    token_ledger among them. Every write 400s, the retry pops only token_ledger, and neither call site
+    checks the return value: the build exits 0 having logged nothing'
+  - whether the benchmark it compiled from is CORRECT. The gate checks that the required fields are present
+    and declared, not that the numbers are right — and the ratified enterprise-payments-bvnk.json has
+    basis 'inference' with corpus null, so its measurements cannot be re-derived at all
+  - that --output-root and --extractions-root are separate roots. Re-rooting outputs alone leaves the
+    crawl input store where it was; it once took asset resolution from 5 extracted to 0 and the build
+    still exited 0. It prints where inputs are read from; it cannot tell that the operator meant to move
+    them
+  - whether --fix-contrast's repair is right. The fixer rewrites a token and re-measures nothing, and
+    it rewrites globals.css after the audited build already compiled — so this node's render-audit verdict
+    is about the PRE-repair output either way
+  - anything about a deployed site. --deploy is a local build; only --publish reaches Vercel, and the
+    render audit measures localhost, never production
+  reachable_from:
+  - run_pipeline.py stage_web_builder — build_orchestrate_cmd() (both the shopify and vercel chains)
+  - an operator shell, directly; that is how every evidenced build so far was driven
+  cost: minutes. A --deploy run does npm install + a Next.js production build + `npm run start` + a Playwright
+    render audit per route. Needs Supabase reachable and node 20+; --fix-contrast adds <1s and two file
+    writes
+  source_file: web-builder/scripts/orchestrate.py
+  language: py
+  status: NOT_RUN
+  evidence: a full build is minutes and needs a captures bundle, Supabase, node_modules and a production
+    next build; --deploy additionally serves the site
+- id: aurelix.harness.pipeline-chain
+  name: The Aurelix chain — the platform-selected route that runs every other instrument
+  kind: harness
+  invocation: python3 run_pipeline.py (--tenant <slug> | --target-platform {shopify,vercel}) [--stop-at
+    <stage>] [--from-compiled DIR] [--output-dir DIR]
+  preconditions:
+  - 'a target platform is STATED, never defaulted: --tenant (whose phase-0 target_platform declaration
+    is read) or --target-platform. Neither ⇒ argparse error, because a chain chosen by default is how
+    every build became a Shopify build'
+  - web-builder/.env holds SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. There is NO root .env in this checkout;
+    load_dotenv(REPO_ROOT/'.env') returns without a word when the file is absent
+  - 'shopify route only: SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN (or SHOPIFY_ACCESS_TOKEN)
+    in the environment — neither exists on this machine, so gate_b0 returns NOT_MEASURED before layer4
+    can touch a store'
+  - 'shopify route only: --from-compiled or --compiled-dir must point at a directory that exists; the
+    chain returns 1 when it does not'
+  - 'vercel route only: web-builder and aurelix-uiux-audit are initialised submodules'
+  inputs:
+  - os.environ, plus REPO_ROOT/.env (absent here) and web-builder/.env, loaded file-second so an ambient
+    shell value always wins
+  - the compiled store extract (architecture.json, brand.json, products.csv) when --from-compiled/--compiled-dir
+    is given
+  - phase0_field_values.target_platform via web-builder/scripts/lib/tenant_context.py, when --tenant is
+    used
+  - the audit capture bundle produced by its own audit stage, on the vercel route
+  outputs:
+  - <output-dir>/overrides.json — written on EVERY run, empty list included, so 'no override was recorded'
+    and 'no override happened' are one artifact rather than two indistinguishable absences
+  - <output-dir>/compiled/ and <output-dir>/shopify/ — the stage working dirs Layer 4/5 write and Gate
+    B reads
+  - a per-stage log through src.logging_config, and an error log flushed by src.errors.ErrorLog at every
+    exit
+  - 'IRREVERSIBLE, on the shopify route past gate_b0: smart collections, products, Headless-channel publications,
+    menus and redirects created on a LIVE Shopify store by layer4_store_setup.py. There is no rollback'
+  outcome: whether the declared route for this platform ran end to end to the requested stop with every
+    gate on it answering PASS — and, when it did not, which stage stopped it and whether that stage FAILED
+    or was never MEASURED
+  exit_contract:
+    '0': every stage up to --stop-at ran and no gate failed
+    '1': 'a stage or gate returned a non-zero code that is not 3; or a required input (compiled-dir) was
+      missing. Also the exit when --continue-on-gate-failure ran the chain on past a failed gate: continuing
+      is not passing'
+    '2': usage error from argparse — no target platform, or a --stop-at that is not a stage of the selected
+      chain
+    '3': 'NOT_MEASURED — a gate or stage could not run. Unconditionally fatal: --continue-on-gate-failure
+      does NOT override it, because a check that did not run did not pass'
+  measures:
+  - 'which route a platform declares: select_chain() returns 11 stages for shopify and 7 for vercel, and
+    raises for anything else rather than defaulting'
+  - 'every stage name as a --stop-at value: STOPS_BY_PLATFORM is DERIVED from the chain by _stops_for(),
+    so adding a stage adds its stop and cannot be forgotten at one of three call sites'
+  - 'three-state gate verdicts via handle_gate(): 0 PASS · 3 NOT_MEASURED (stop, unconditionally) · other
+    FAIL (stop by default, overridable only with a stated --continue-reason, and the run still exits non-zero)'
+  - whether a submodule is genuinely initialised — submodule_is_initialised() tests contents, because
+    an uninitialised submodule directory exists() and is_dir() with zero entries
+  - that an Admin API credential is present and accepted BEFORE layer4 mutates a live store (gate_b0)
+  - the presence of a declared target_platform for a tenant, refusing when it is undeclared
+  cannot_see:
+  - 'that --from-url NEVER REACHES THE EXTRACTOR. stage_calculator builds a calc_env dict (AURELIX_COMPILED_DIR
+    / AURELIX_PLATFORM / AURELIX_SOURCE_URL) and hands it to run(), whose signature is run(name, cmd,
+    cwd=None) — there is no env parameter, so the dict is constructed and discarded. The subprocess cannot
+    see the intent even in principle, and the chain cannot see that it failed to pass it. Compounding:
+    it invokes run_calculator_live.py, a repo-root OpenCart demo with no argument parsing at all, not
+    the aurelix-calculator console script'
+  - whether a stage it did NOT run would have failed. A stage absent from the chain (layer5 without --with-media,
+    bulk_import without a products.csv, calculator without --from-url) contributes nothing to the verdict
+    — correctly, since a skipped stage in a status list reads as passed, but it means a green run is only
+    evidence about the stages that were IN it
+  - whether a gate passed for the RIGHT REASON. It reads exit codes and, at most, a file the gate wrote;
+    it never inspects what the gate examined. A gate that measured nothing and returned 0 is indistinguishable
+    here from one that measured everything — which is why the honest answer had to be pushed down into
+    the gates as exit 3, not solved at this layer
+  - what the node it invokes actually did with its flags. build_orchestrate_cmd() forwards a command line,
+    and no artifact orchestrate.py writes — checkpoint.json, bill-of-sale.json, site-manifest.json, site-spec.json
+    — records argv, so a run cannot be reconstructed from its output
+  - 'whether the store Gate B-0 verified is the store Layer 4 mutates: B-0 reads SHOPIFY_STORE_DOMAIN
+    from the environment while layer4 writes and verify_gate_b reads shopify_config.json.store_domain,
+    and nothing reconciles the two'
+  - anything after its --stop-at. The default stop is gate_c (shopify) / compile_gate (vercel), so an
+    ordinary green run has measured nothing about deploy, render or redirects
+  - 'background work it started. stage_bulk_import launches the importer with Popen without --wait-for-bulk
+    and never collects the exit code — which is why it returns 3 rather than 0: ''started'' is not ''succeeded'''
+  reachable_from:
+  - the operator shell — this is the repo-root entrypoint; no program in this tree invokes main()
+  - scripts/test_single_crawl.py (imports the module and exercises stage functions directly; not an invocation
+    of the chain)
+  cost: unbounded — it is the harness. A `--stop-at gate_b0` shopify run is seconds; a full vercel run
+    is a crawl plus a Next.js production build plus a render audit, tens of minutes. Past gate_b0 the
+    shopify route MUTATES A LIVE STORE irreversibly; the vercel route writes only under web-builder/output/
+    and does not publish.
+  source_file: run_pipeline.py
+  language: py
+  status: NOT_RUN
+  evidence: a chain run drives orchestrate.py and the gates end to end; the shopify route mutates a live
+    store at layer4 and there are no Shopify credentials on this machine
 - id: aurelix.migration.shopify-cdn-media
   name: Layer 5 — upload section media to the Shopify CDN and emit the URL map
   kind: migration
@@ -1881,6 +2385,83 @@ capabilities:
   status: NOT_RUN
   evidence: needs a write-scoped Admin token; creates smart collections, products, Headless-channel publications,
     menus and redirects on a LIVE store, irreversibly, with no rollback
+- id: aurelix.migration.url-redirects
+  name: URL redirect migration toolkit — maps legacy CMS URLs onto Shopify and uploads them
+  kind: migration
+  invocation: cd shopify-url-redirect-migration-toolkit && .venv/bin/migrate init --name <project> [--output
+    <dir>]   then, inside it, .venv/bin/migrate <discover|fetch|map|validate|upload|verify|rollback|pipeline>
+    [--config config.yaml] [--dry-run] [-v]
+  preconditions:
+  - 'Python >= 3.11 in a venv: `python3.12 -m venv .venv && .venv/bin/pip install -e .` — local python3
+    is 3.9.6 and python3.11 does not exist here; the console script lives only in .venv/bin'
+  - 'The submodule must be initialised: `git submodule update --init --recursive`'
+  - '`init` takes --name/-n <str> and --output/-o <dir> and NOTHING ELSE. The `--source wordpress --target
+    shopify` shown in older Aurelix docs does not exist: source and target are config.yaml FIELDS (verified
+    2026-08-18 against `init --help`)'
+  - Every command except `init` reads config.yaml (--config/-c, default ./config.yaml)
+  - 'upload / verify / rollback / pipeline need SHOPIFY_STORE_URL and SHOPIFY_ACCESS_TOKEN in the environment,
+    interpolated into config.yaml by the ${VAR} expander (src/migrate/config.py:168-172). MEASURED 2026-08-18:
+    neither is set on this machine'
+  - discover needs network access to the Wayback CDX API and/or the source sitemap
+  inputs:
+  - config.yaml — source domains, target store, mapping rules, output directory
+  - Wayback Machine CDX responses and the source sitemap.xml (discover)
+  - the source platform's API and the Shopify Admin REST API (fetch)
+  - the redirect CSV under <output>/04_redirect_mapping (validate, upload, verify)
+  - the upload manifest written by a previous upload (rollback)
+  outputs:
+  - 'a scaffolded project tree from `init`: config.yaml plus 00_source_data, 01_normalized_data, 03_mapping_rules,
+    04_redirect_mapping, 06_output, tests (measured — that is exactly what appeared)'
+  - discovered and normalised URL sets under 00_source_data / 01_normalized_data
+  - the redirect CSV (from_path,to_path[,status]) under 04_redirect_mapping — the same shape web-builder/scripts/verify_gate_e.py
+    reads via --redirect-map
+  - validation reports under 06_output
+  - redirects created in a live Shopify store, and an upload manifest for rollback
+  outcome: 'A reviewed, validated set of legacy-URL -> Shopify-URL redirects, and — only if you run upload
+    — those redirects created in a live store, with a manifest that lets you undo them. Nothing in the
+    Aurelix chain invokes this toolkit: a repo-wide grep of run_pipeline.py and web-builder/scripts finds
+    no call site (measured 2026-08-18). Gate E consumes a redirect map of this shape but never produces
+    one.'
+  exit_contract:
+    '0': 'the command completed: for upload/verify/rollback the underlying operation returned success;
+      for pipeline, steps_failed == 0'
+    '1': 'raised via typer.Exit(1): upload/verify/rollback returned failure, pipeline finished with at
+      least one failed step, or `discover` found no configured discovery source'
+    '2': usage error from Typer/Click — unknown command, or `init` without --name
+  measures:
+  - historical URLs recoverable from Wayback and the source sitemap
+  - source -> target URL matches and the confidence of each match
+  - CSV conformance to Shopify's redirect import format
+  - whether each mapped target actually exists in the target store
+  - redirect chains (a redirect whose target is itself redirected)
+  - 'live HTTP behaviour of a sample of uploaded redirects: 301 status and Location header'
+  cannot_see:
+  - 'IT HAS NEVER BEEN MEASURED AGAINST A STORE FROM THIS REPO. upload and rollback MUTATE A LIVE SHOPIFY
+    STORE and were deliberately not run; SHOPIFY_STORE_URL and SHOPIFY_ACCESS_TOKEN are unset here (measured:
+    0 matches in the environment), so the entire upload/verify/rollback half is NOT_RUN, not passing'
+  - Its 105 passing tests touch neither the network nor a store, so a green suite is not evidence that
+    upload works — the same shape of false comfort that made shopify-bulk-product-importer's 53 green
+    tests hide a CLI that cannot import
+  - It cannot see a legacy URL that appears in neither Wayback nor the sitemap; anything undiscovered
+    is silently absent from the map rather than reported as unmapped
+  - It cannot see whether a mapped target renders the RIGHT page — target-existence validation checks
+    that a URL resolves, not that its content corresponds to the legacy page's content
+  - '`pipeline` cannot see which URLs a partially-failed run left unmigrated: each step is wrapped in
+    `except Exception`, counted into steps_failed and the pipeline continues; the exit is 1 with a step
+    count, and discovery failures are downgraded to warnings and counted as steps RUN (cli.py, Step 1)'
+  - 'It cannot see SEO consequences: nothing measures traffic, rankings or crawl budget before or after
+    the migration'
+  reachable_from: []
+  cost: '`init` is instant and offline. discover/fetch are network-bound and Wayback CDX can take minutes
+    on a large domain. upload writes to a live Shopify store, is batch-paced, and is the only irreversible
+    step (rollback needs its manifest). Own suite: 105 tests, 5.4s (`.venv/bin/python -m pytest -q`, measured
+    2026-08-18).'
+  source_file: shopify-url-redirect-migration-toolkit/capability_declaration.py
+  language: py
+  status: VERIFIED
+  evidence: 'ran `.venv/bin/migrate init --name scratch-probe --output /tmp/redir` → exit 0. scaffolded
+    config.yaml + 6 dirs. Nine commands confirmed. Suite: 105 passed. upload/verify/rollback/pipeline
+    NOT run - live store'
 - id: aurelix.probe.animation-detection
   name: Animation-detection probe over live URLs
   kind: probe
@@ -2315,3 +2896,305 @@ capabilities:
   status: VERIFIED
   evidence: ran `node scripts/quality/shot-width.js http://127.0.0.1:8791/probe.html /tmp/w390.png 390
     844` → exit 0
+- id: capecrypto.gate.benchmark-conformance
+  name: Cape Crypto source-level benchmark drift checker (tenant-local)
+  kind: gate
+  invocation: node scripts/check-benchmark-conformance.mjs [src-root] [globals.css]
+  preconditions:
+  - src/app/globals.css is readable — it is the compiled theme and the source of the collapsed-token watch
+    list
+  - the source tree is on disk; nothing needs to be built, served or rendered
+  inputs:
+  - 'src/app/globals.css (argv[3], default) — scanned only for `--token: initial;` declarations'
+  - every .ts/.tsx/.js/.jsx file under argv[2] (default src/), skipping node_modules, .next and dotfiles
+  outputs:
+  - 'stdout only: one file:line per violation with the rule id, the matched class and a why line, then
+    a scanned/collapsed summary. It writes no artifact'
+  outcome: whether any Tailwind class in source bypasses the compiled theme — arbitrary hex, arbitrary
+    px rhythm, off-4px-grid px, fractional spacing steps, or a class whose backing token is `initial`
+  exit_contract:
+    '0': PASS — no source-level drift matched by the five rules
+    '1': FAIL — at least one match
+    '2': 'NOT_MEASURED — globals.css could not be read. NOTE: this is exit 2, not the Aurelix exit 3.
+      In the chain contract 2 is EXIT_REVIEW_NEEDED and 3 is EXIT_NOT_MEASURED, so a chain reading this
+      gate''s code would mis-read its ''cannot measure'' branch as ''review needed'''
+  measures:
+  - 'arbitrary colour utilities: text-[#hex], bg-[#hex], border-[#hex], ring/fill/stroke/from/via/to/shadow/accent/caret/decoration,
+    3-8 hex digits, either case'
+  - 'arbitrary rhythm utilities: p/m/gap/space/inset/top/right/bottom/left with a [Npx] value'
+  - any arbitrary [Npx] not divisible by 4, excluding text-/leading-/tracking- (the measured type scale
+    is deliberately off-grid at 13px and 18px)
+  - Tailwind fractional spacing steps (py-1.5 = 10px), which are off the 4px grid by construction
+  - 'collapsed tokens: a class whose backing custom property is `--x: initial` in the compiled theme,
+    which renders as INHERITED and is silent everywhere else. This is the one measurement no aurelix-ag
+    instrument makes, and the reason this file is not purely redundant'
+  cannot_see:
+  - 'everything the rendered page actually is. This greps class-name literals in source. Run on the same
+    site on 2026-08-18, aurelix.gate.conformance (aurelix-ag/web-builder/scripts/quality/conformance-gate.js)
+    — which serves the built site and reads computed style over the whole prerendered route set — found
+    three defects this checker is structurally incapable of seeing: dna_type_scale (rendered sizes including
+    11, 23, 26, 28 and 46px), dna_shadow_layers (5 layers on one element) and dna_palette_size (23 distinct
+    colours). This checker called the same site''s pages clean'
+  - 'any colour or size that does not arrive as a Tailwind arbitrary-value class: a hex in a style={{}}
+    object, an SVG fill attribute, a value in a .css file, a third-party component''s own stylesheet,
+    a runtime-computed class string'
+  - what a token RESOLVES to. It checks that a class NAME points at the theme, never the value behind
+    it. globals.css could compile every role to the same colour and every rule here still passes
+  - composition. A page built entirely from tokens can still be off-benchmark in rhythm, density and hierarchy;
+    none of that is a class-name property
+  - 'its own false positives, which are the practical risk of it being switched off. The `off-grid` rule
+    matches ANY <prefix>-[Npx] with N%4 — including width, height, radius and border, which the sibling
+    `arbitrary-rhythm` rule deliberately excludes as ''dimensions, not rhythm''. Measured 2026-08-18:
+    12 findings, 5 of them dimensions (h-[450px], w-[450px], min-h-[1px], min-w-[1px], h-[2px]); a 1px
+    hairline can never be on a 4px grid. 5/12 = 42% unactionable'
+  - 'the difference between the site and its scaffolding: all 12 of those findings are in src/components/animations/,
+    none in a page. A gate that only ever FAILs on vendored demo components trains its operator to ignore
+    it'
+  - a violation inside a multi-line comment whose continuation lines do not start with `*` — the comment
+    skip is a first-non-space test on each line, not a parse
+  - anything at all about content, links, compilation or accessibility
+  reachable_from: []
+  cost: ~1s over 82 files. No build, no server, no network, no credentials, no writes.
+  source_file: tenants/cape-crypto/site/scripts/check-benchmark-conformance.mjs
+  language: mjs
+  status: VERIFIED
+  evidence: ran `node scripts/check-benchmark-conformance.mjs` → exit 1. FAIL, 12 violations - but 5 of
+    12 are false positives from an off-grid regex that matches width/height/radius, and all 12 are in
+    src/components/animations/, zero in any page
+- id: capecrypto.gate.check-links
+  name: Cape Crypto internal link checker (tenant-local)
+  kind: gate
+  invocation: BASE_URL=http://localhost:3000 node scripts/check-links.mjs
+  preconditions:
+  - a Next.js server for THIS site is already serving at $BASE_URL (default http://localhost:3000) — this
+    gate neither builds nor serves
+  - the served build must match src/ — a stale .next serves old HTML and every link passes against a tree
+    that no longer exists
+  - src/content/support.ts and src/content/legal.ts must be present and parseable; they are the only derived
+    part of the route list
+  inputs:
+  - the running server at $BASE_URL
+  - src/content/support.ts — supportArticles slugs
+  - src/content/legal.ts — legalDocuments slugs (absent degrades to 'fewer routes', never to a crash)
+  - STATIC_ROUTES — a hardcoded 10-entry literal in this file
+  outputs:
+  - 'stdout only: crawl counts, an external-host histogram, and the failing route/link tables. It writes
+    no file, so its verdict exists only on a console someone captured'
+  outcome: whether every distinct same-origin href found in the server-rendered HTML of the enumerated
+    routes returns 200
+  exit_contract:
+    '0': PASS — every crawled page returned 200 and every distinct internal link returned 200
+    '1': FAIL — at least one internal link or page did not return 200; ALSO the code node returns when
+      route derivation throws (a content file with no `export const`, or an export yielding 0 slugs)
+    '3': NOT_MEASURED — $BASE_URL was unreachable or returned >=500, so nothing was checked. Not a pass
+  measures:
+  - every href in the server-rendered HTML of each enumerated route, both quote styles, HTML entities
+    decoded
+  - every DISTINCT internal target requested once, with the set of pages it was found on
+  - external hosts tallied but deliberately never requested — this tool must not hammer third parties
+  - 'measured 2026-08-18 against a fresh local production build: 59 routes, 2788 hrefs, 74 distinct internal
+    links, all 200'
+  cannot_see:
+  - 'the 10 blog article routes. The header claims the route list is ''DERIVED, never hardcoded'', but
+    only support and legal slugs are derived — STATIC_ROUTES is a literal, and /blog/[slug] exists with
+    10 slugs in src/content/blog.ts. Measured 2026-08-18: 59 routes crawled, 69 routes exist. A broken
+    blog post is invisible to this gate'
+  - any route added under src/app that nobody remembers to add to STATIC_ROUTES — the gate cannot fail
+    for a route it does not know about
+  - 'external links, by design: 103 distinct external targets and 55 hrefs to support.capecrypto.com are
+    listed and never requested, so a dead help-centre article ships green'
+  - images. Every img src in the generated content points at support.capecrypto.com and no checker requests
+    one; a dead image URL is invisible here
+  - 'the difference between a legitimate redirect and a break: internal targets are fetched with redirect:''manual''
+    and anything other than 200 is reported broken, so a 308 would read as FAIL'
+  - a 404 homepage. The NOT_MEASURED probe only rejects >=500, so a server answering 404 at / counts as
+    measurable
+  - links produced by client-side JS (router.push, onClick handlers) — it reads server HTML, never a hydrated
+    DOM
+  - 'whether a #fragment target id exists; the fragment is stripped before the request'
+  - everything about how the page LOOKS. Type scale, shadow depth, palette size, contrast and spacing
+    are properties of computed style; aurelix.gate.conformance (aurelix-ag/web-builder/scripts/quality/conformance-gate.js)
+    measures those over the prerendered route set and this gate cannot
+  - whether the served bytes came from the current source — it trusts whatever is on the port
+  reachable_from: []
+  cost: '~20s over 59 routes plus 74 link requests, once a server is up. Getting a trustworthy server
+    up is the real cost: rm -rf .next && npm run build (~60s) && npx next start. No credentials, no third-party
+    requests, no writes.'
+  source_file: tenants/cape-crypto/site/scripts/check-links.mjs
+  language: mjs
+  status: VERIFIED
+  evidence: 'ran `BASE_URL=http://localhost:3111 node scripts/check-links.mjs` → exit 0. PASS: 59 routes,
+    2788 hrefs, 74 internal links all 200. Measured after rm -rf .next + rebuild. Exit 3 also proved with
+    no server'
+- id: capecrypto.generator.blog-content
+  name: Cape Crypto blog content generator (Ghost capture -> src/content/blog.ts)
+  kind: generator
+  invocation: node scripts/generate-blog-content.mjs
+  preconditions:
+  - the capture bundle ../captures/2026-08-18-blog/captures/ exists and every record carries a non-empty
+    `html`, no `fetch_error` and http_status < 400 — the four-field capture-bundle contract
+  - the bundle contains exactly one /blog index record with a .post-feed of .post-card entries, plus at
+    least one article page
+  - every captured article must appear in the index, or the run refuses
+  inputs:
+  - ../captures/2026-08-18-blog/captures/*.json — Ghost blog capture records, read in sorted filename
+    order
+  - KNOWN_ROUTES — the in-file map of source paths this site reproduces, used to keep in-article links
+    internal
+  outputs:
+  - src/content/blog.ts — blogIndex, blogPosts[] (captured bodies as typed blocks), blogExternalPosts[]
+    (index cards with no captured body), blogPostBySlug
+  - 'stdout: per-article word/block/date/author accounting, a link classification tally, drop counts and
+    the unhandled-tag list'
+  outcome: a typed, verbatim, deterministic reproduction of every captured article, with a word-order
+    assertion that fails the run rather than dropping text
+  exit_contract:
+    '0': success — the word accounting matched for every article and src/content/blog.ts was written
+    '1': 'any throw: a capture with no usable html, a fetch_error, http_status >= 400, a missing .post-feed
+      / .post-card / .post__title / .post__content, an unresolvable slug, a duplicate slug, a captured
+      article absent from the index, or a word-accounting mismatch. Nothing is written on this path'
+  measures:
+  - word-for-word equality, in order, between the parsed source subtree and the emitted blocks — text
+    loss is a build failure, not a rendering artefact
+  - 'which fields the source actually states: author, date, read time, excerpt and hero image are emitted
+    only when present, null otherwise'
+  - 'link disposition: article / internal / anchor / mailto / external, counted'
+  - 'structure it flattened: unhandled tags are named on stdout with their text preserved'
+  cannot_see:
+  - whether the capture is still current. It reads a frozen 2026-08-18 bundle; the operator's Ghost blog
+    can be edited, retitled or unpublished afterwards and nothing here re-fetches or diffs. There is no
+    staleness check anywhere in this repo
+  - the difference between an article the bundle failed to capture and one that was deleted — both land
+    in blogExternalPosts as an index card linking off-site
+  - STRUCTURAL loss where the text survives. The fidelity assertion is order-sensitive word equality,
+    so a table flattened to paragraphs, a de-nested list, or dropped emphasis all pass
+  - whether the emitted TypeScript compiles. aurelix.gate.compile (aurelix-ag/web-builder/scripts/quality/compile-gate.js)
+    is the instrument for that
+  - whether any route renders the content, or renders it legibly — aurelix.gate.conformance and the render
+    audit measure the rendered page; this writes a data file and stops
+  - compliance. It reproduces the operator's words verbatim including any prohibited term or missing disclaimer.
+    Cape Crypto's declared lists (4 required_disclaimers, 9 prohibited_terms, 4 prohibited_language) are
+    scanned by aurelix.gate.compliance (orchestrate.run_compliance_gate), not here
+  - images. It emits src URLs pointing at the source CDN and never requests one, so a dead image ships
+  - link targets. Internal hrefs are rewritten by table lookup, never fetched; capecrypto.gate.check-links
+    would catch the internal ones but does not crawl /blog/<slug> at all
+  reachable_from: []
+  cost: ~2s, offline. Reads local capture files, writes one file in this repo. No network, no credentials,
+    no provider, no cost.
+  source_file: tenants/cape-crypto/site/scripts/generate-blog-content.mjs
+  language: mjs
+  status: VERIFIED
+  evidence: ran `node scripts/generate-blog-content.mjs` → exit 0. output byte-identical to the committed
+    file
+- id: capecrypto.generator.legal-content
+  name: Cape Crypto legal content generator (Zendesk capture -> src/content/legal.ts)
+  kind: generator
+  invocation: node scripts/generate-legal-content.mjs
+  preconditions:
+  - ../captures/2026-08-18-funnel/zendesk/ holds the help-centre capture
+  - the capture must contain EXACTLY 9 articles in Zendesk section 360003328417 — any other count refuses
+    to generate
+  - DOCUMENT_ORDER must name every one of those 9 article ids and no unknown id
+  inputs:
+  - ../captures/2026-08-18-funnel/zendesk/ — Zendesk article + section JSON
+  - LEGAL_SECTION_ID 360003328417 and FEE_SCHEDULE_ARTICLE_ID 360015121638, hardcoded in this file
+  - DOCUMENT_ORDER — the hardcoded 9-id presentation order
+  outputs:
+  - src/content/legal.ts — legalDocuments[] with slug, title, documentDate, revisedAt, sourceUrl, wordCount,
+    toc and typed blocks; plus legalDocumentBySlug
+  - 'stdout: per-document word/block/toc/date accounting, a link tally, the applied link fixups, drop
+    counts and unhandled tags'
+  outcome: a typed, verbatim, deterministic reproduction of the nine binding legal documents, with a word-order
+    assertion that fails the run rather than dropping text
+  exit_contract:
+    '0': success — word accounting matched for all nine documents and src/content/legal.ts was written
+    '1': 'any throw: article count != 9, DOCUMENT_ORDER naming an unknown id or covering the wrong number
+      of documents, or a word-accounting mismatch. Nothing is written on this path'
+  measures:
+  - word-for-word equality, in order, between the parsed source tree and the emitted blocks, per document
+  - Material-icon ligature glyphs excluded from BOTH sides of the accounting and reported by count, so
+    a Zendesk callout icon is not mistaken for document text
+  - the one broken authoring link in the source, fixed up explicitly and reported as a fixup rather than
+    silently rewritten
+  - 'the document set''s size: exactly nine, asserted'
+  cannot_see:
+  - whether the capture is still current. This is the regulatory text of an FSCA-licensed FSP (FSP No.
+    53746) reproduced from a frozen 2026-08-18 snapshot. If the operator revises the Terms of Use tomorrow,
+    this file keeps emitting the old one and nothing in either repo compares the two
+  - a TENTH legal document. The count assertion is a hard refusal, so publishing a new policy reads as
+    a broken generator rather than as new scope
+  - 'compliance of the words themselves — it reproduces them verbatim by design, including disclaimer
+    #3''s ''does not constitute advice, inducement or recommendation to invest'', which sits one word
+    from the declared prohibited term ''recommendation to buy''. aurelix.gate.compliance (orchestrate.run_compliance_gate,
+    wrapping scan_prohibited_terms) is the instrument that adjudicates that collision; this generator
+    has no opinion'
+  - 'STRUCTURAL loss where the text survives: the assertion is order-sensitive word equality, so a flattened
+    table or de-nested list passes'
+  - whether the emitted TypeScript compiles — aurelix.gate.compile covers that ground
+  - whether /legal/<slug> renders, or renders legibly. The `danger` callout colour problem documented
+    in globals.css was a rendering defect invisible to this generator; aurelix.gate.conformance measures
+    computed style
+  - 'images and external hrefs: emitted, never requested'
+  reachable_from: []
+  cost: ~2s, offline. Reads local capture files, writes one file in this repo. No network, no credentials,
+    no provider, no cost.
+  source_file: tenants/cape-crypto/site/scripts/generate-legal-content.mjs
+  language: mjs
+  status: VERIFIED
+  evidence: ran `node scripts/generate-legal-content.mjs` → exit 0. output byte-identical to the committed
+    file
+- id: capecrypto.generator.support-content
+  name: Cape Crypto support content generator (Zendesk capture -> src/content/support.ts)
+  kind: generator
+  invocation: node scripts/generate-support-content.mjs
+  preconditions:
+  - ../captures/2026-08-18-funnel/zendesk/ holds the help-centre capture (sections + articles)
+  - article titles must slugify uniquely — a slug collision refuses the run
+  - every article must survive conversion with its text intact; any mismatch refuses the run
+  inputs:
+  - ../captures/2026-08-18-funnel/zendesk/ — Zendesk section and article JSON
+  - LEGAL_SECTION_ID 360003328417 and FEE_SCHEDULE_ID 360015121638, hardcoded here as out-of-scope markers
+    owned by /legal and /fees
+  outputs:
+  - src/content/support.ts — supportHub, supportSections[], supportArticles[] with typed blocks, plus
+    supportArticleBySlug and supportSectionBySlug
+  - 'stdout: section/article/image counts, dropped spacer paragraphs, dropped Material-icon glyph names,
+    unknown HTML entities, and the text-fidelity verdict'
+  outcome: a typed, verbatim, deterministic reproduction of the help-centre articles in scope, with a
+    text-fidelity assertion that fails the run rather than dropping copy
+  exit_contract:
+    '0': success — text fidelity held for every article and src/content/support.ts was written
+    '1': 'any throw: a slug collision, or one or more articles losing or altering text during conversion.
+      Nothing is written on this path'
+  measures:
+  - plain text recovered from the emitted blocks against the plain text of the source HTML, per article
+  - 'HTML entity coverage: unknown entities are collected and reported rather than silently passed through'
+  - Material-icon ligature glyphs dropped and named, so a Zendesk callout icon is not mistaken for article
+    text
+  - images preserved, counted
+  - 'scope: the legal section and the fee schedule are excluded and linked out rather than duplicated'
+  cannot_see:
+  - whether the capture is still current. It reads a frozen 2026-08-18 snapshot of an operator-maintained
+    help centre; edits, new articles and deletions after that date are invisible and nothing re-fetches
+    or diffs
+  - STRUCTURAL loss where the text survives — the assertion compares recovered plain text, so a flattened
+    table, a de-nested list or dropped emphasis passes
+  - whether the emitted TypeScript compiles — aurelix.gate.compile (aurelix-ag/web-builder/scripts/quality/compile-gate.js)
+    covers that
+  - whether /support/<slug> renders, or renders legibly — aurelix.gate.conformance measures computed style
+    over the rendered routes
+  - compliance. 39 articles of operator copy are reproduced verbatim including any prohibited term; aurelix.gate.compliance
+    (orchestrate.run_compliance_gate) is the instrument that scans against the tenant's declared lists
+  - images. Every emitted src points at support.capecrypto.com and is never requested here, and capecrypto.gate.check-links
+    classifies that host as external and does not request it either — so a dead help-centre image is invisible
+    to both
+  - 'whether an article in scope was simply absent from the capture: unlike the legal generator, there
+    is no expected-count assertion, so a short capture yields fewer articles and still exits 0'
+  reachable_from: []
+  cost: ~2s, offline. Reads local capture files, writes one file in this repo. No network, no credentials,
+    no provider, no cost.
+  source_file: tenants/cape-crypto/site/scripts/generate-support-content.mjs
+  language: mjs
+  status: VERIFIED
+  evidence: ran `node scripts/generate-support-content.mjs` → exit 0. output byte-identical to the committed
+    file
