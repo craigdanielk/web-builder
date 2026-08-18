@@ -485,6 +485,58 @@ try:
     test("a non-hex --tenant-accent exits 64", r.returncode == 64,
          f"exit {r.returncode}")
 
+    # ── 12. the ground is elected by painted area, not element count ─────────
+    #
+    # Measured on the real BVNK corpus: `#f1f7ff` sits on 15 elements, every
+    # one of them rounded (a card tint), while `#ffffff` sits on 10 and covers
+    # 22x the painted area. Count-election returned the card tint as the page
+    # ground, and the bg_secondary gate then correctly refused the whole corpus
+    # because nothing was both a visible step from a card tint and readable
+    # against the measured text. The fixture below reproduces that shape: the
+    # tint wins on count 30:6, white wins on area by ~19x.
+    print("\n12. bg_primary is the ground, not the most-repeated tint")
+    tint = "rgb(241, 247, 255)"
+    dom = ([_el(BG_PRIMARY, w=1400, h=2400) for _ in range(6)]
+           + [_el(tint, w=380, h=240, radius=16, pad=40) for _ in range(30)]
+           + [_el(BG_BANDING, w=1400, h=500) for _ in range(4)])
+    area_ex = {
+        "renderedDOM": dom,
+        "textContent": [_text(TEXT_PRIMARY, 16, 400) for _ in range(40)]
+        + [_text(TEXT_MUTED, 14, 400) for _ in range(6)]
+        + [_text(TEXT_PRIMARY, 48, 600, heading=True) for _ in range(8)]
+        + [_text(TEXT_PRIMARY, 32, 600, heading=True) for _ in range(6)],
+        "assets": {"fonts": ["Circular"]},
+        "animations": {"profile": {
+            "intensity": {"level": "expressive", "score": 39.2,
+                          "confidence": 1.0}, "engine": "gsap"}},
+    }
+    area_root = tmp / "area"
+    (area_root / "home").mkdir(parents=True, exist_ok=True)
+    (area_root / "home" / "extraction.json").write_text(
+        json.dumps(area_ex, indent=2), encoding="utf-8")
+    (area_root / "index.json").write_text(json.dumps(
+        [{"slug": "home", "url": "https://fixture.invalid/home",
+          "why": "HERO", "ok": True}], indent=2), encoding="utf-8")
+    ab = commission(area_root, corpus_ref="benchmarks/corpora/area", **ARGS)
+    adist = ab["_distributions"]
+    test("the fixture's tint really does win on element count",
+         adist["backgrounds"]["#f1f7ff"] > adist["backgrounds"]["#ffffff"],
+         adist["backgrounds"])
+    test("bg_primary is the area winner, not the count winner",
+         ab["palette_roles"]["bg_primary"] == "#ffffff",
+         ab["palette_roles"]["bg_primary"])
+    test("the count winner is elected as surface instead",
+         ab["palette_roles"]["surface"] == "#f1f7ff",
+         ab["palette_roles"]["surface"])
+    test("the provenance states the area AND the element count",
+         ("px^2" in ab["palette_roles"]["_source"]["bg_primary"]
+          and "elements" in ab["palette_roles"]["_source"]["bg_primary"]),
+         ab["palette_roles"]["_source"]["bg_primary"])
+    test("both distributions are emitted so the election is auditable",
+         adist["background_area_px2"]["#ffffff"]
+         > adist["background_area_px2"]["#f1f7ff"],
+         adist["background_area_px2"])
+
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

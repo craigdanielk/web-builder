@@ -1,0 +1,332 @@
+{
+  "_meta": {
+    "ratified": true,
+    "market": "enterprise-stablecoin-payments-measured",
+    "captured_from": [
+      "https://www.bvnk.com/about-us",
+      "https://www.bvnk.com/digital-assets",
+      "https://www.bvnk.com/embedded-wallets",
+      "https://www.bvnk.com/",
+      "https://www.bvnk.com/payments"
+    ],
+    "captured_at": "2026-08-18",
+    "method": "computed_style",
+    "patterns_only": true,
+    "note": "PATTERNS ONLY. No markup, copy, asset, SVG or shader is lifted from the reference. Every number below is a count or a distribution over measured computed styles.",
+    "ratification_note": "ratified: false. Fields in _unmeasured are absent, not defaulted \u2014 four of them are required by design_system.load_benchmark, so this file does not load until an operator declares them. That is the gate, not a bug.",
+    "tool": {
+      "name": "commission_benchmark.py",
+      "version": "1",
+      "extractor": "scripts/quality/lib/extract-reference.js",
+      "capture_step": "scripts/quality/capture-benchmark-pages.js"
+    },
+    "reference_host": "bvnk.com",
+    "corpus": "benchmarks/corpora/enterprise-stablecoin-payments-measured",
+    "page_selection_rationale": {
+      "about-us": "ABOUT, TEAM, section rhythm at its most generous",
+      "digital-assets": "FEATURES, data-dense surfaces",
+      "embedded-wallets": "HOW-IT-WORKS, developer-facing density",
+      "home": "HERO, NAV, FOOTER, CTA, LOGO-BAR, display type scale",
+      "payments": "FEATURES, PRODUCT-SHOWCASE, card system"
+    },
+    "elements_measured": {
+      "definition": "renderedDOM_elements and text_nodes are summed across pages and counted separately; neither includes the other. renderedDOM is capped per page by MAX_DOM_ELEMENTS in extract-reference.js, so renderedDOM_elements <= pages * per_page_dom_cap by construction.",
+      "pages": 5,
+      "renderedDOM_elements": 2500,
+      "text_nodes": 367,
+      "per_page_dom_cap": 500
+    },
+    "contributions": {},
+    "measured_field_count": 21,
+    "ratification": {
+      "by": "operator-flag",
+      "date": "2026-08-18",
+      "overrides": [
+        {
+          "field": "palette_roles.accent",
+          "flag": "--ratify-accent",
+          "value": "#004e89",
+          "was": null,
+          "kind": "declaration"
+        },
+        {
+          "field": "palette_roles.on_accent",
+          "flag": "--ratify-on-accent",
+          "value": "#ffffff",
+          "was": null,
+          "kind": "declaration"
+        },
+        {
+          "field": "density",
+          "flag": "--ratify-density",
+          "value": "spacious",
+          "was": null,
+          "kind": "declaration"
+        },
+        {
+          "field": "motion.intensity",
+          "flag": "--ratify-motion-intensity",
+          "value": "expressive",
+          "was": "expressive",
+          "kind": "override"
+        }
+      ],
+      "resolved_from_unmeasured": [
+        "density",
+        "palette_roles.accent",
+        "palette_roles.on_accent"
+      ],
+      "source": "enterprise-stablecoin-payments-measured.json",
+      "note": "Fields under `overrides` are OPERATOR DECLARATIONS, not measurements. `_source` provenance is not written for them: a declared value that claimed a measured provenance would be fabrication with a citation."
+    }
+  },
+  "palette_roles": {
+    "bg_primary": "#ffffff",
+    "bg_secondary": "#e8f1ff",
+    "surface": "#f1f7ff",
+    "text_primary": "#242d35",
+    "text_muted": "#465869",
+    "border": "#dee3e8",
+    "_source": {
+      "bg_primary": "bvnk.com opaque background covering the most painted area, 53917308px^2 over 10 elements",
+      "text_primary": "bvnk.com text colour, 190 occurrences, 13.98:1 on bg_primary",
+      "text_muted": "bvnk.com secondary text colour, 14 occurrences, 7.34:1 on bg_primary",
+      "surface": "bvnk.com background on radius>=4px elements, 15 elements, 12.98:1 with text_primary",
+      "bg_secondary": "bvnk.com banding background, 12 elements, 1.14:1 step from bg_primary, 12.29:1 with text_primary",
+      "border": "bvnk.com measured borderColor on borderWidth>0, 13 elements, 1.29:1 from bg_primary (separator range)",
+      "_border_emphasis_excluded": "#242d35 measured on 13 elements is an emphasis outline, not a separator; excluded from the border role"
+    },
+    "accent": "#004e89",
+    "on_accent": "#ffffff"
+  },
+  "type_scale": {
+    "ratio": 1.5,
+    "base_px": 16,
+    "heading_weight": 500,
+    "body_weight": 400
+  },
+  "type_system": {
+    "weights_used": [
+      400,
+      500
+    ],
+    "scale_px": [
+      14,
+      16,
+      18,
+      64,
+      96,
+      128,
+      165
+    ],
+    "heading_sizes_px": [
+      14,
+      64,
+      96,
+      128,
+      165
+    ],
+    "_source": {
+      "heading_sizes_px": "every distinct heading fontSize measured on bvnk.com; see _distributions.heading_sizes_px for occurrence counts. No outlier is excluded here \u2014 exclusion is a ratification act."
+    }
+  },
+  "rhythm": {
+    "section_py_px": 180,
+    "block_gap_px": 4,
+    "card_pad_px": 8,
+    "grid_px": 2,
+    "_source": {
+      "section_py_px": "modal full-width block padding on bvnk.com: 180px on 19 blocks; runner-up 120px on 12. The modal value can be hero-specific top padding rather than the section default \u2014 see _distributions.section_py_px and decide at ratification."
+    }
+  },
+  "card_system": {
+    "radius_px": [
+      16,
+      24,
+      32
+    ]
+  },
+  "cta_buttons": {
+    "radius_px": [
+      100
+    ]
+  },
+  "shadow_system": {
+    "max_layers": 0,
+    "observation": "0 shadowed elements measured on bvnk.com; layer counts {}"
+  },
+  "palette": {
+    "max_unique": 13
+  },
+  "font_system": {
+    "measured_families": [
+      "Circular",
+      "CircularXX",
+      "webflow-icons"
+    ],
+    "_source": {
+      "measured_families": "most-used first font-family on bvnk.com; occurrence counts in _distributions.font_families"
+    }
+  },
+  "motion": {
+    "intensity": "expressive",
+    "_source": {
+      "intensity": "animation-detector.analyzeAnimationEvidence() scored 39.2 'expressive' at 1 confidence on page 'home'; engine gsap; libraries ['CustomEase', 'Draggable', 'GSAP', 'Inertia', 'Lottie', 'Observer', 'ScrollTrigger', 'SplitText']"
+    },
+    "evidence": {
+      "score": 39.2,
+      "confidence": 1,
+      "engine": "gsap",
+      "libraries": [
+        "CustomEase",
+        "Draggable",
+        "GSAP",
+        "Inertia",
+        "Lottie",
+        "Observer",
+        "ScrollTrigger",
+        "SplitText"
+      ],
+      "scored_page": "home",
+      "pages_profiled": 5
+    }
+  },
+  "_unmeasured": [
+    {
+      "field": "font_system.families",
+      "reason": "measurement yields the reference's proprietary face; naming a servable face is an operator act",
+      "resolution": "declare at ratification, or resolve measured_families through scripts/lib/font_match.py and stamp the substitution"
+    },
+    {
+      "field": "motion.duration_ms",
+      "reason": "analyzeAnimationEvidence() returns no duration; the walker's CSS-duration histogram is a different, disagreeing measurement and is not restored",
+      "resolution": "declare at ratification"
+    },
+    {
+      "field": "palette_roles.surface_inverse",
+      "reason": "no extractor in this repo identifies a deliberately-dark section ground",
+      "resolution": "declare at ratification"
+    }
+  ],
+  "_distributions": {
+    "backgrounds": {
+      "#f1f7ff": 15,
+      "#e8f1ff": 12,
+      "#f0f3f5": 12,
+      "#ffffff": 10,
+      "#242d35": 9,
+      "#080a0c": 5,
+      "#0b57f4": 2,
+      "#05162e": 1,
+      "#0b4fd3": 1
+    },
+    "background_area_px2": {
+      "#ffffff": 53917308,
+      "#e8f1ff": 2457600,
+      "#f1f7ff": 905966,
+      "#05162e": 523250,
+      "#0b57f4": 113680,
+      "#242d35": 100920,
+      "#f0f3f5": 71488,
+      "#080a0c": 32490,
+      "#0b4fd3": 4048
+    },
+    "text_colours": {
+      "#242d35": 190,
+      "#ffffff": 157,
+      "#465869": 14,
+      "#0b57f4": 6
+    },
+    "rounded_element_backgrounds": {
+      "#f1f7ff": 15,
+      "#e8f1ff": 12,
+      "#242d35": 9,
+      "#080a0c": 5,
+      "#ffffff": 5,
+      "#0b57f4": 2,
+      "#05162e": 1,
+      "#f0f3f5": 1
+    },
+    "border_colours": {
+      "#242d35": 13,
+      "#dee3e8": 13,
+      "#f1f7ff": 9,
+      "#d3dae1": 2,
+      "#f0f3f5": 2
+    },
+    "heading_sizes_px": {
+      "64.0": 18,
+      "96.0": 15,
+      "128.0": 5,
+      "14.0": 1,
+      "165.0": 1
+    },
+    "body_sizes_px": {
+      "16.0": 301,
+      "18.0": 20,
+      "14.0": 6
+    },
+    "heading_weights": {
+      "500": 39,
+      "400": 1
+    },
+    "body_weights": {
+      "400": 327
+    },
+    "section_py_px": {
+      "180": 19,
+      "120": 12,
+      "40": 2,
+      "304": 1
+    },
+    "card_pad_px": {
+      "8": 39,
+      "16": 26,
+      "40": 20,
+      "12": 7,
+      "32": 6,
+      "24": 1,
+      "30": 1,
+      "6": 1
+    },
+    "block_gap_px": {
+      "4": 169,
+      "24": 142,
+      "16": 95,
+      "8": 34,
+      "20": 33,
+      "40": 16,
+      "80": 13,
+      "28": 12,
+      "14": 6,
+      "48": 6,
+      "32": 5,
+      "50": 2,
+      "55": 2,
+      "64": 2,
+      "100": 1,
+      "150": 1,
+      "30": 1,
+      "42": 1,
+      "96": 1
+    },
+    "card_radius_px": {
+      "16": 50,
+      "24": 9,
+      "32": 9,
+      "8": 5,
+      "100": 1,
+      "12": 1
+    },
+    "cta_radius_px": {
+      "100": 59
+    },
+    "shadow_layers": {},
+    "font_families": {
+      "Circular": 328,
+      "CircularXX": 44,
+      "webflow-icons": 5
+    }
+  },
+  "density": "spacious"
+}

@@ -240,6 +240,7 @@ def palette_block(dom, text, host, tenant_accent):
     unmeasured: list[dict] = []
 
     bgs, fgs = Counter(), Counter()
+    bg_area: Counter = Counter()
     for el in dom:
         s = el.get("styles") or {}
         r = el.get("rect") or {}
@@ -247,6 +248,7 @@ def palette_block(dom, text, host, tenant_accent):
         bg = rgb_to_hex(s.get("backgroundColor"))
         if bg and area > 0:
             bgs[bg] += 1
+            bg_area[bg] += int(round(area))
     for t in text:
         fg = rgb_to_hex((t.get("styles") or {}).get("color"))
         if fg:
@@ -259,9 +261,21 @@ def palette_block(dom, text, host, tenant_accent):
             "colour(s) measured. Widen the capture."
         )
 
-    bg_primary = _ranked(bgs)[0][0]
+    # THE GROUND IS THE COLOUR THAT COVERS THE PAGE, NOT THE ONE ON THE MOST
+    # BOXES. Electing by element count measures "which tint is on the most
+    # cards". On the BVNK corpus it returned `#f1f7ff` — 15 elements, every one
+    # of them rounded (see `_distributions.rounded_element_backgrounds`), i.e. a
+    # card surface — over `#ffffff`, which covers 22x the painted area. The
+    # downstream effect was not a slightly-off colour: with a card tint as the
+    # ground, no measured background was both a visible step from it and
+    # readable against the measured text, so the bg_secondary gate refused and
+    # the corpus compiled to nothing. Painted area is the estimator that matches
+    # what the role means. Both are recorded in `_distributions`, so the
+    # election is auditable and a future disagreement is a data question.
+    bg_primary = _ranked(bg_area)[0][0]
     prov["bg_primary"] = (
-        f"{host} most common opaque background, {bgs[bg_primary]} elements")
+        f"{host} opaque background covering the most painted area, "
+        f"{bg_area[bg_primary]}px^2 over {bgs[bg_primary]} elements")
 
     # text roles: highest-count colours that clear AA on bg_primary
     readable = sorted(
@@ -422,6 +436,7 @@ def palette_block(dom, text, host, tenant_accent):
     })
 
     dist["backgrounds"] = _distribution(bgs)
+    dist["background_area_px2"] = _distribution(bg_area)
     dist["text_colours"] = _distribution(fgs)
     dist["rounded_element_backgrounds"] = _distribution(surface_c)
     dist["border_colours"] = _distribution(border_c)
