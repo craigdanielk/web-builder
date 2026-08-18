@@ -283,6 +283,107 @@ def test_components_converted_for_wrappability_are_reachable():
 
 
 # ---------------------------------------------------------------------------
+# The split: a catalogue of 1034 is not a library of 1034
+# ---------------------------------------------------------------------------
+
+LIBRARY = COMPONENTS_DIR / "registry" / "animation_library.json"
+WISHLIST = COMPONENTS_DIR / "registry" / "animation_wishlist.json"
+PRODUCER = COMPONENTS_DIR / "registry" / "annotate_backed_rows.py"
+
+
+def _json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_library_plus_wishlist_accounts_for_every_catalogue_row():
+    """Nothing may be lost in the split, and nothing invented.
+
+    The 986 unbacked rows are RECORDED, not deleted — that is the difference
+    between a split and a silent filter. If the two files stop summing to the
+    catalogue, rows are being dropped somewhere without a record.
+    """
+    catalogue = _json(FULL_REGISTRY)
+    library = _json(LIBRARY)
+    wishlist = _json(WISHLIST)
+    total = len(catalogue["components"])
+    assert len(library["components"]) + len(wishlist["components"]) == total
+    assert library["backed_components"] == len(library["components"])
+    assert wishlist["unresolved_components"] == len(wishlist["components"])
+    # And the header of the catalogue itself states the split, so a reader who
+    # quotes a count from the one file everybody reads cannot quote 1034 alone.
+    assert catalogue["backed_components"] == len(library["components"])
+    assert catalogue["unresolved_components"] == len(wishlist["components"])
+    assert catalogue["backed_components"] + catalogue["unresolved_components"] == \
+        catalogue["total_components"] == total
+
+
+def test_the_split_is_exactly_the_file_existence_sweep():
+    """Re-run the sweep here rather than trusting the artefact's own claim."""
+    rows = _registry_rows()
+    backed = {r["animation_id"] for r in rows if _backed(r)}
+    unbacked = {r["animation_id"] for r in rows} - backed
+    assert {c["animation_id"] for c in _json(LIBRARY)["components"]} == backed
+    assert {c["animation_id"] for c in _json(WISHLIST)["components"]} == unbacked
+
+
+def test_every_library_row_has_a_file_and_every_wishlist_row_does_not():
+    for row in _json(LIBRARY)["components"]:
+        assert (COMPONENTS_DIR / row["source_file"]).exists(), row["animation_id"]
+    for row in _json(WISHLIST)["components"]:
+        sf = row["source_file"]
+        assert not sf or not (COMPONENTS_DIR / sf).exists(), row["animation_id"]
+
+
+def test_selection_can_only_ever_reach_a_backed_row():
+    """The point of the split: an unbacked row must be unreachable.
+
+    Drained at `dramatic`, the widest ceiling, across every archetype the
+    build actually emits — the largest set selection can produce.
+    """
+    library_ids = {c["animation_id"] for c in _json(LIBRARY)["components"]}
+    for archetype in sorted({a for page in _cape_pages().values() for a in page}):
+        for got in _drain_pool(archetype, intensity="dramatic"):
+            assert got in library_ids, f"{archetype} selected unbacked row {got}"
+
+
+def test_the_split_reproduces_itself_byte_for_byte():
+    """The re-derivability bar: a library nobody can re-derive is not a library.
+
+    Re-running the producer over the same tree must reproduce both artefacts
+    exactly. Without this the split becomes a hand-maintained file that drifts
+    from the filesystem the moment a component is added or removed.
+    """
+    import hashlib
+
+    def digest(p: Path) -> str:
+        return hashlib.sha256(p.read_bytes()).hexdigest()
+
+    before = {p: digest(p) for p in (LIBRARY, WISHLIST, FULL_REGISTRY)}
+    proc = subprocess.run(
+        ["python3", str(PRODUCER)],
+        capture_output=True, text=True, cwd=str(WEB_BUILDER), timeout=300,
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    after = {p: digest(p) for p in (LIBRARY, WISHLIST, FULL_REGISTRY)}
+    changed = [p.name for p in before if before[p] != after[p]]
+    assert not changed, f"producer is not reproducible; rewrote {changed}"
+
+
+def test_the_reported_component_count_is_the_backed_count():
+    """`backedRowCount()` is what a refusal reason quotes. It must be 48, not 1034."""
+    proc = subprocess.run(
+        ["node", "-e", "console.log(require('./lib/component-inject').backedRowCount())"],
+        capture_output=True, text=True, cwd=str(QUALITY_DIR), timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    reported = int(proc.stdout.strip())
+    assert reported == len(_json(LIBRARY)["components"])
+    assert reported < len(_registry_rows()), (
+        "the reported count equals the catalogue — the split is not in effect"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Three-state reporting: an empty pool is a configuration outcome
 # ---------------------------------------------------------------------------
 

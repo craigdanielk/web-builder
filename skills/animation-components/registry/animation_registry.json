@@ -71413,5 +71413,8 @@
       "keyframe_names": [],
       "example_usage_refs": []
     }
-  ]
+  ],
+  "backed_components": 48,
+  "unresolved_components": 986,
+  "split_swept": "2026-08-18"
 }

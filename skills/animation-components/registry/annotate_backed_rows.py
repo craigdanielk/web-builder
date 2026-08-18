@@ -1,5 +1,23 @@
 #!/usr/bin/env python3
-"""Annotate the 48 file-backed rows of animation_registry.json from disk.
+"""Annotate the file-backed rows of animation_registry.json, and split the
+catalogue into the library that exists and the wish-list that does not.
+
+WHY THE SPLIT EXISTS
+--------------------
+`animation_registry.json` is a CATALOGUE of 1034 rows. It is not an inventory
+of what this repo has. Measured 2026-08-18 by an `os.path.exists` sweep over
+every row's `source_file`: **48 rows have a file on disk and 986 do not**, and
+the tree those 986 name — `21st-dev-library/` — is absent from the filesystem
+entirely. So 95.4% of the catalogue describes components that cannot be read,
+copied, safety-analysed or injected.
+
+"1,034 components" has been quoted in every plan and doc for months. It
+overstates the real supply by 21x. Splitting the file is what stops that
+number being quotable: the selector reads `animation_library.json` (what
+exists), and `animation_wishlist.json` records what does not — with the sweep
+that established it, and the date. Nothing is deleted; the catalogue stays
+whole, and library + wish-list always sum back to it (asserted below and in
+scripts/test_animation_selection.py).
 
 WHY THIS IS A SCRIPT AND NOT A HAND-EDIT
 ----------------------------------------
@@ -35,7 +53,16 @@ from pathlib import Path
 
 COMPONENTS_DIR = Path(__file__).resolve().parent.parent
 REGISTRY = COMPONENTS_DIR / "registry" / "animation_registry.json"
+LIBRARY = COMPONENTS_DIR / "registry" / "animation_library.json"
+WISHLIST = COMPONENTS_DIR / "registry" / "animation_wishlist.json"
 UNIFIED = COMPONENTS_DIR / "component-registry.json"
+
+# The exact sweep that splits the catalogue, recorded in the wish-list so the
+# artefact carries its own evidence rather than pointing at a census.
+SWEEP = (
+    "for row in animation_registry.json['components']: "
+    "os.path.exists(skills/animation-components/ + row['source_file'])"
+)
 
 # Local aliases and build-provided modules are not npm dependencies.
 NOT_A_PACKAGE = {"react", "react-dom", "next"}
@@ -151,6 +178,106 @@ MISDESCRIBED = {
 }
 
 
+# The date the sweep's RESULT was last reviewed. A reviewed constant, like
+# MISDESCRIBED — deliberately not a wall-clock stamp, because this producer's
+# defining property is that re-running it reproduces its outputs byte for byte
+# (proved in the census; asserted by test_animation_selection.py). A timestamp
+# would break that and turn a verifiable artefact into an unverifiable one.
+# Bump it when the finding changes, not when the file is rewritten.
+SWEEP_DATE = "2026-08-18"
+
+
+def split_catalogue(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Partition every catalogue row by whether its source_file exists.
+
+    This is the whole split: no heuristic, no allowlist, no framework filter —
+    one `os.path.exists` per row. A row is in the library iff the file it
+    names can be opened.
+    """
+    backed, unresolved = [], []
+    for row in rows:
+        sf = row.get("source_file")
+        if sf and (COMPONENTS_DIR / sf).exists():
+            backed.append(row)
+        else:
+            unresolved.append(row)
+    return backed, unresolved
+
+
+def write_split(rows: list[dict]) -> tuple[int, int]:
+    """Emit the library the selector reads and the wish-list it must not."""
+    backed, unresolved = split_catalogue(rows)
+
+    LIBRARY.write_text(
+        json.dumps(
+            {
+                "role": "the components that exist on disk — the ONLY rows animation "
+                        "selection may read",
+                "produced_by": "registry/annotate_backed_rows.py",
+                "swept": SWEEP_DATE,
+                "sweep": SWEEP,
+                "backed_components": len(backed),
+                "catalogue_components": len(rows),
+                "components": backed,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # The wish-list names each absent row rather than copying it whole: the row
+    # itself is not deleted, it stays in animation_registry.json. What is
+    # recorded here is the FINDING — this id, this path, this missing root.
+    missing_roots: dict[str, int] = {}
+    entries = []
+    for row in unresolved:
+        sf = row.get("source_file") or ""
+        root = sf.split("/")[0] if sf else "<no source_file>"
+        missing_roots[root] = missing_roots.get(root, 0) + 1
+        entries.append(
+            {
+                "animation_id": row.get("animation_id"),
+                "source_file": sf,
+                "missing_root": root,
+                "framework": row.get("framework") or row.get("engine") or "",
+                "section_archetypes": row.get("section_archetypes") or [],
+            }
+        )
+
+    WISHLIST.write_text(
+        json.dumps(
+            {
+                "role": "UNRESOLVED — catalogue rows naming a file that does not exist. "
+                        "Not deleted, not silently filtered: recorded, so a component "
+                        "count can never quote them as supply.",
+                "produced_by": "registry/annotate_backed_rows.py",
+                "swept": SWEEP_DATE,
+                "sweep": SWEEP,
+                "evidence": (
+                    "Every path below was tested with os.path.exists and did not "
+                    "exist. The tree they overwhelmingly name, 21st-dev-library/, is "
+                    "absent from this filesystem entirely (`ls -d 21st-dev-library` "
+                    "and `find / -maxdepth 6 -name 21st-dev-library` both return "
+                    "nothing), so these rows are not merely unvendored — they cannot "
+                    "be re-derived from anything present."
+                ),
+                "unresolved_components": len(entries),
+                "backed_components": len(backed),
+                "catalogue_components": len(rows),
+                "missing_by_root": dict(sorted(missing_roots.items())),
+                "components": entries,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert len(backed) + len(entries) == len(rows), "split lost or invented a row"
+    return len(backed), len(entries)
+
+
 def main() -> int:
     data = json.loads(REGISTRY.read_text(encoding="utf-8"))
     rows = data["components"]
@@ -216,10 +343,24 @@ def main() -> int:
             row.pop("duplicate_of", None)
         touched += 1
 
+    backed_n, unresolved_n = write_split(rows)
+
+    # The catalogue header said `total_components: 1034` and nothing else, so
+    # every reader that quoted a count quoted the catalogue. It now states the
+    # split in the same place, and the honest number is named `backed_components`.
+    data["backed_components"] = backed_n
+    data["unresolved_components"] = unresolved_n
+    data["split_swept"] = SWEEP_DATE
     REGISTRY.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
     print(f"annotated {touched} file-backed rows")
     print(f"misdescribed: {sum(1 for r in rows if r.get('id_describes_file') is False)}")
     print(f"byte-identical duplicates: {sorted(dupe_of.items())}")
+    print(
+        f"split: {backed_n} backed (animation_library.json) + "
+        f"{unresolved_n} unresolved (animation_wishlist.json) = "
+        f"{data['total_components']} catalogue rows"
+    )
     return 0
 
 

@@ -1,0 +1,3374 @@
+{
+  "role": "the components that exist on disk \u2014 the ONLY rows animation selection may read",
+  "produced_by": "registry/annotate_backed_rows.py",
+  "swept": "2026-08-18",
+  "sweep": "for row in animation_registry.json['components']: os.path.exists(skills/animation-components/ + row['source_file'])",
+  "backed_components": 48,
+  "catalogue_components": 1034,
+  "components": [
+    {
+      "animation_id": "entrance__blur_fade",
+      "source_file": "entrance/blur-fade.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "reveal",
+        "blur"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 39,
+      "has_default_export": true,
+      "named_exports": [
+        "BlurReveal"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "BlurReveal"
+    },
+    {
+      "animation_id": "entrance__character_reveal",
+      "source_file": "entrance/character-reveal.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "text"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "slide",
+        "blur",
+        "reveal"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x"
+      ],
+      "stagger_support": true,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "@gsap/react",
+        "gsap"
+      ],
+      "line_count": 137,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "TextRevealEffect"
+    },
+    {
+      "animation_id": "entrance__drawsvg_reveal",
+      "source_file": "entrance/drawsvg-reveal.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "icon",
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "entrance"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 78,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "DrawSVGReveal"
+    },
+    {
+      "animation_id": "entrance__fade_up_single",
+      "source_file": "entrance/fade-up-single.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "reveal",
+        "entrance",
+        "bounce"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "content_reveal",
+        "delight"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "spring"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 70,
+      "has_default_export": false,
+      "named_exports": [
+        "FadeText"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "FadeText"
+    },
+    {
+      "animation_id": "entrance__fade_up_stagger",
+      "source_file": "entrance/fade-up-stagger.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "section"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "entrance",
+        "flip",
+        "slide",
+        "rotate",
+        "blur",
+        "bounce",
+        "spring",
+        "stagger"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "delight"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x",
+        "z"
+      ],
+      "stagger_support": true,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "spring"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 169,
+      "has_default_export": false,
+      "named_exports": [
+        "AnimatedGroup"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "AnimatedGroup"
+    },
+    {
+      "animation_id": "entrance__page_loader",
+      "source_file": "entrance/page-loader.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "loading",
+      "trigger_types": [
+        "mount",
+        "time_delay"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "section"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "slide",
+        "loading"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "loading_feedback"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x"
+      ],
+      "stagger_support": true,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        100,
+        500
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 181,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "PageLoader"
+    },
+    {
+      "animation_id": "entrance__scale_up",
+      "source_file": "entrance/scale-up.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "reveal",
+        "scale",
+        "blur"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 36,
+      "has_default_export": false,
+      "named_exports": [
+        "BlurReveal"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "BlurReveal",
+      "mismatch_note": "file is a blur+rise reveal (filter blur 10px -> 0, y 20% -> 0), the same effect as entrance/blur-fade.tsx and the same export name. There is no scale in it."
+    },
+    {
+      "animation_id": "entrance__slide_in_left",
+      "source_file": "entrance/slide-in-left.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "hover",
+        "click",
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "entrance",
+        "exit",
+        "slide"
+      ],
+      "interaction_intents": [
+        "hover",
+        "engage"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": true,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": false,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 99,
+      "has_default_export": false,
+      "named_exports": [
+        "SlideTabs"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "SlideTabs",
+      "mismatch_note": "file is an interactive tab bar with hardcoded labels Home/Pricing/Features/Docs/Blog and a sliding cursor. No slide-in entrance animation, and it takes no props."
+    },
+    {
+      "animation_id": "entrance__slide_in_right",
+      "source_file": "entrance/slide-in-right.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "hover",
+        "click",
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "entrance",
+        "exit",
+        "slide"
+      ],
+      "interaction_intents": [
+        "hover",
+        "engage"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": true,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": false,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 99,
+      "has_default_export": false,
+      "named_exports": [
+        "SlideTabs"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "SlideTabs",
+      "mismatch_note": "byte-identical to entrance/slide-in-left.tsx \u2014 same tab bar, same export name. Neither direction exists in the file.",
+      "duplicate_of": "entrance__slide_in_left"
+    },
+    {
+      "animation_id": "entrance__staggered_grid",
+      "source_file": "entrance/staggered-grid.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "scroll_linked",
+        "mount",
+        "time_delay"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "section"
+      ],
+      "section_archetypes": [
+        "GALLERY"
+      ],
+      "motion_intents": [
+        "stagger"
+      ],
+      "interaction_intents": [
+        "scroll"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": true,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "medium",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 175,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "StaggeredGrid"
+    },
+    {
+      "animation_id": "entrance__staggered_timeline",
+      "source_file": "entrance/staggered-timeline.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "section"
+      ],
+      "section_archetypes": [
+        "HOW-IT-WORKS"
+      ],
+      "motion_intents": [
+        "flip",
+        "slide",
+        "rotate",
+        "blur",
+        "bounce",
+        "spring",
+        "stagger"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "delight"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x",
+        "z"
+      ],
+      "stagger_support": true,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "spring"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 169,
+      "has_default_export": false,
+      "named_exports": [
+        "AnimatedGroup"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "duplicate_of": "entrance__fade_up_stagger",
+      "actual_export": "AnimatedGroup"
+    },
+    {
+      "animation_id": "entrance__word_reveal",
+      "source_file": "entrance/word-reveal.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "viewport"
+      ],
+      "supported_elements": [
+        "text"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "reveal"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": true,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 83,
+      "has_default_export": true,
+      "named_exports": [
+        "WordReveal"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "WordReveal"
+    },
+    {
+      "animation_id": "scroll__gsap_pinned_horizontal",
+      "source_file": "scroll/gsap-pinned-horizontal.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "scroll",
+      "trigger_types": [
+        "scroll_linked",
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "section"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "reveal",
+        "slide",
+        "pin"
+      ],
+      "interaction_intents": [
+        "scroll"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "medium",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 177,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "PinnedHorizontalScroll"
+    },
+    {
+      "animation_id": "scroll__horizontal_scroll",
+      "source_file": "scroll/horizontal-scroll.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "scroll",
+      "trigger_types": [
+        "scroll_linked"
+      ],
+      "supported_elements": [
+        "card"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "parallax",
+        "progress",
+        "horizontal_scroll"
+      ],
+      "interaction_intents": [
+        "scroll"
+      ],
+      "conversion_support_roles": [
+        "progress_feedback",
+        "brand_polish"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "medium",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 107,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "Example",
+      "mismatch_note": "file is a self-contained demo page: a hardcoded 7-card carousel of Unsplash URLs titled 'Title 1'..'Title 7' between two 'Scroll down' / 'Scroll up' panels. Not a reusable horizontal-scroll wrapper."
+    },
+    {
+      "animation_id": "scroll__parallax_layers",
+      "source_file": "scroll/parallax-layers.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "scroll",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "parallax"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": true,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        20,
+        20
+      ],
+      "easing_profiles": [
+        "linear"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 63,
+      "has_default_export": false,
+      "named_exports": [
+        "FloatingPathsBackground"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "FloatingPathsBackground"
+    },
+    {
+      "animation_id": "scroll__parallax_section",
+      "source_file": "scroll/parallax-section.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "scroll",
+      "trigger_types": [
+        "scroll_linked"
+      ],
+      "supported_elements": [
+        "image"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "parallax",
+        "progress"
+      ],
+      "interaction_intents": [
+        "scroll"
+      ],
+      "conversion_support_roles": [
+        "progress_feedback",
+        "brand_polish"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "medium",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 57,
+      "has_default_export": false,
+      "named_exports": [
+        "ZoomParallax"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "ZoomParallax"
+    },
+    {
+      "animation_id": "scroll__pin_and_reveal",
+      "source_file": "scroll/pin-and-reveal.tsx",
+      "component_type": "ui",
+      "framework": "none",
+      "frameworks_all": [
+        "none"
+      ],
+      "animation_type": "scroll",
+      "trigger_types": [
+        "viewport"
+      ],
+      "supported_elements": [
+        "heading",
+        "card",
+        "image"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "reveal",
+        "pin"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": false,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [],
+      "line_count": 141,
+      "has_default_export": false,
+      "named_exports": [
+        "StickyFeatureSection"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "StickyFeatureSection",
+      "mismatch_note": "file is a hardcoded sticky feature section taking no props \u2014 a section, not a pin-and-reveal wrapper."
+    },
+    {
+      "animation_id": "scroll__scroll_progress",
+      "source_file": "scroll/scroll-progress.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "scroll",
+      "trigger_types": [
+        "scroll_linked"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "spring",
+        "progress",
+        "emphasis"
+      ],
+      "interaction_intents": [
+        "scroll"
+      ],
+      "conversion_support_roles": [
+        "urgency_signal",
+        "progress_feedback"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": true,
+      "duration_range_ms": [
+        1250,
+        1250
+      ],
+      "easing_profiles": [
+        "ease-in-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "medium",
+      "gpu_accelerated": true,
+      "accessibility_safe": false,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion",
+        "lucide-react"
+      ],
+      "line_count": 91,
+      "has_default_export": false,
+      "named_exports": [
+        "Component"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "Component",
+      "mismatch_note": "exported `Component` is a demo of five coloured panels with the copy 'Scroll down to see the progress bar'. The reusable piece in the file is the un-exported `ScrollProgress`, whose container is `overflow-y-auto h-full` \u2014 a scroll viewport, not a section wrapper."
+    },
+    {
+      "animation_id": "interactive__accordion_expand",
+      "source_file": "interactive/accordion-expand.tsx",
+      "component_type": "ui",
+      "framework": "none",
+      "frameworks_all": [
+        "none"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "heading"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [
+        "FAQ"
+      ],
+      "motion_intents": [
+        "collapse",
+        "expand"
+      ],
+      "interaction_intents": [
+        "expand"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [],
+      "line_count": 47,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "FAQs",
+      "mismatch_note": "file is a complete hardcoded FAQ <section> with placeholder body copy ('Accusantium quisquam. Illo, omnis?', a 30-day refund policy). It has no accordion behaviour and takes no props. Injecting it would put invented copy on the page."
+    },
+    {
+      "animation_id": "interactive__cursor_trail",
+      "source_file": "interactive/cursor-trail.tsx",
+      "component_type": "ui",
+      "framework": "none",
+      "frameworks_all": [
+        "none"
+      ],
+      "animation_type": "interactive",
+      "trigger_types": [
+        "mount",
+        "time_delay"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "section"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "slide",
+        "cursor_follow"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "delight"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x"
+      ],
+      "stagger_support": true,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": true,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": false,
+      "motion_stacking_risk": "low",
+      "dependencies": [],
+      "line_count": 263,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "CursorTrail"
+    },
+    {
+      "animation_id": "interactive__draggable_carousel",
+      "source_file": "interactive/draggable-carousel.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "interactive",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "card",
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "slide",
+        "drag"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "horizontal"
+      ],
+      "axis": [
+        "x"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": true,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": false,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 70,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "DraggableCarousel"
+    },
+    {
+      "animation_id": "interactive__flip_expand_card",
+      "source_file": "interactive/flip-expand-card.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "click"
+      ],
+      "supported_elements": [
+        "card",
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "card"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "flip",
+        "collapse",
+        "expand"
+      ],
+      "interaction_intents": [
+        "engage",
+        "expand"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": false,
+      "reversible": true,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 55,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "FlipExpandCard"
+    },
+    {
+      "animation_id": "interactive__flip_grid_filter",
+      "source_file": "interactive/flip-grid-filter.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "layout",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [
+        "GALLERY"
+      ],
+      "motion_intents": [
+        "flip"
+      ],
+      "interaction_intents": [
+        "filter"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": true,
+      "interruptible": false,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 64,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "FlipGridFilter"
+    },
+    {
+      "animation_id": "interactive__hover_glow",
+      "source_file": "interactive/hover-glow.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "exit",
+      "trigger_types": [
+        "click",
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "exit",
+        "glow"
+      ],
+      "interaction_intents": [
+        "engage"
+      ],
+      "conversion_support_roles": [
+        "cta_emphasis"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [],
+      "line_count": 126,
+      "has_default_export": true,
+      "named_exports": [
+        "HoverGlow",
+        "TubesBackground"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "HoverGlow"
+    },
+    {
+      "animation_id": "interactive__hover_lift",
+      "source_file": "interactive/hover-lift.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "hover",
+      "trigger_types": [
+        "hover"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "glow",
+        "attention"
+      ],
+      "interaction_intents": [
+        "hover"
+      ],
+      "conversion_support_roles": [
+        "attention_capture",
+        "cta_emphasis"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 44,
+      "has_default_export": true,
+      "named_exports": [
+        "HoverLift"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "HoverLift"
+    },
+    {
+      "animation_id": "interactive__magnetic_button",
+      "source_file": "interactive/magnetic-button.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "interactive",
+      "trigger_types": [
+        "hover",
+        "click",
+        "mount"
+      ],
+      "supported_elements": [
+        "button",
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "button"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "scale",
+        "slide",
+        "spring",
+        "magnetic",
+        "attention"
+      ],
+      "interaction_intents": [
+        "hover",
+        "engage"
+      ],
+      "conversion_support_roles": [
+        "attention_capture",
+        "cta_emphasis"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": true,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": false,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 88,
+      "has_default_export": true,
+      "named_exports": [
+        "MagneticButton"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "MagneticButton"
+    },
+    {
+      "animation_id": "interactive__morphsvg_icon",
+      "source_file": "interactive/morphsvg-icon.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "exit",
+      "trigger_types": [
+        "hover"
+      ],
+      "supported_elements": [
+        "icon"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "exit"
+      ],
+      "interaction_intents": [
+        "hover"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 70,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "MorphSVGIcon"
+    },
+    {
+      "animation_id": "interactive__observer_swipe",
+      "source_file": "interactive/observer-swipe.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "entrance"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "horizontal"
+      ],
+      "axis": [
+        "x"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 51,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "ObserverSwipe"
+    },
+    {
+      "animation_id": "interactive__spotlight_follow",
+      "source_file": "interactive/spotlight-follow.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "exit",
+      "trigger_types": [
+        "click",
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "section"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "exit",
+        "slide",
+        "bounce",
+        "spring",
+        "spotlight"
+      ],
+      "interaction_intents": [
+        "engage"
+      ],
+      "conversion_support_roles": [
+        "delight"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "spring"
+      ],
+      "requires_layout_measurement": true,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": false,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 180,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "SpotlightFollow"
+    },
+    {
+      "animation_id": "interactive__tilt_card",
+      "source_file": "interactive/tilt-card.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "exit",
+      "trigger_types": [
+        "hover"
+      ],
+      "supported_elements": [
+        "card",
+        "image"
+      ],
+      "supported_layout_contexts": [
+        "card"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "exit",
+        "flip",
+        "slide",
+        "glow",
+        "tilt"
+      ],
+      "interaction_intents": [
+        "hover"
+      ],
+      "conversion_support_roles": [
+        "cta_emphasis"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x",
+        "z"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-in-out",
+        "ease-out"
+      ],
+      "requires_layout_measurement": true,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": false,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 95,
+      "has_default_export": false,
+      "named_exports": [
+        "InteractiveTiltCard"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "InteractiveTiltCard"
+    },
+    {
+      "animation_id": "continuous__count_up",
+      "source_file": "continuous/count-up.tsx",
+      "component_type": "ui",
+      "framework": "none",
+      "frameworks_all": [
+        "none"
+      ],
+      "animation_type": "text",
+      "trigger_types": [
+        "viewport"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "count"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "value_highlight"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [],
+      "line_count": 86,
+      "has_default_export": true,
+      "named_exports": [
+        "CountUp"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "CountUp"
+    },
+    {
+      "animation_id": "continuous__floating",
+      "source_file": "continuous/floating.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "continuous",
+      "trigger_types": [
+        "click"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "float",
+        "slide",
+        "rotate",
+        "blur",
+        "bounce",
+        "spring"
+      ],
+      "interaction_intents": [
+        "engage"
+      ],
+      "conversion_support_roles": [
+        "delight"
+      ],
+      "directionality": [
+        "horizontal"
+      ],
+      "axis": [
+        "x",
+        "z"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "spring"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion",
+        "lucide-react"
+      ],
+      "line_count": 70,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "CircularMenu",
+      "mismatch_note": "file is a click-to-expand circular image menu with a plus button. Nothing floats continuously."
+    },
+    {
+      "animation_id": "continuous__gradient_shift",
+      "source_file": "continuous/gradient-shift.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "background",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "gradient"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-in-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 81,
+      "has_default_export": false,
+      "named_exports": [
+        "GradientBackground"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "GradientBackground"
+    },
+    {
+      "animation_id": "continuous__marquee",
+      "source_file": "continuous/marquee.tsx",
+      "component_type": "ui",
+      "framework": "none",
+      "frameworks_all": [
+        "none"
+      ],
+      "animation_type": "continuous",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "marquee"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "social_proof"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [],
+      "line_count": 101,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "Marquee"
+    },
+    {
+      "animation_id": "continuous__motionpath_orbit",
+      "source_file": "continuous/motionpath-orbit.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "rotate"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "z"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": true,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 68,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "MotionPathOrbit"
+    },
+    {
+      "animation_id": "text__character_flip",
+      "source_file": "text/character-flip.tsx",
+      "component_type": "animation",
+      "framework": "none",
+      "frameworks_all": [
+        "none"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "text"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "flip",
+        "slide"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "horizontal"
+      ],
+      "axis": [
+        "x"
+      ],
+      "stagger_support": true,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": true,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": false,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "medium",
+      "dependencies": [],
+      "line_count": 105,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "CharacterFlip"
+    },
+    {
+      "animation_id": "text__scramble_text",
+      "source_file": "text/scramble-text.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "text",
+      "trigger_types": [
+        "scroll_linked",
+        "mount"
+      ],
+      "supported_elements": [
+        "text"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "scramble"
+      ],
+      "interaction_intents": [
+        "scroll"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "medium",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 69,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "ScrambleText"
+    },
+    {
+      "animation_id": "text__split_text_stagger",
+      "source_file": "text/split-text-stagger.tsx",
+      "component_type": "ui",
+      "framework": "none",
+      "frameworks_all": [
+        "none"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "hover"
+      ],
+      "supported_elements": [
+        "text",
+        "heading"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "exit",
+        "stagger",
+        "reveal"
+      ],
+      "interaction_intents": [
+        "hover"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [],
+      "line_count": 55,
+      "has_default_export": false,
+      "named_exports": [
+        "BubbleText"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "BubbleText"
+    },
+    {
+      "animation_id": "text__splittext_chars",
+      "source_file": "text/splittext-chars.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "scroll_linked",
+        "mount"
+      ],
+      "supported_elements": [
+        "text"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "flip",
+        "slide",
+        "reveal"
+      ],
+      "interaction_intents": [
+        "scroll"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x",
+        "z"
+      ],
+      "stagger_support": true,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "medium",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 68,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "SplitTextChars"
+    },
+    {
+      "animation_id": "text__splittext_lines",
+      "source_file": "text/splittext-lines.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "scroll_linked",
+        "mount"
+      ],
+      "supported_elements": [
+        "text"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "reveal"
+      ],
+      "interaction_intents": [
+        "scroll"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": true,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "medium",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 69,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "SplitTextLines"
+    },
+    {
+      "animation_id": "text__splittext_words",
+      "source_file": "text/splittext-words.tsx",
+      "component_type": "animation",
+      "framework": "gsap",
+      "frameworks_all": [
+        "gsap"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "scroll_linked",
+        "mount"
+      ],
+      "supported_elements": [
+        "text"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "reveal"
+      ],
+      "interaction_intents": [
+        "scroll"
+      ],
+      "conversion_support_roles": [
+        "content_reveal"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": true,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "medium",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": true,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "gsap"
+      ],
+      "line_count": 65,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "SplitTextWords"
+    },
+    {
+      "animation_id": "text__text_gradient_flow",
+      "source_file": "text/text-gradient-flow.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "text",
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "flip",
+        "slide",
+        "emphasis"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "urgency_signal"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x",
+        "z"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": true,
+      "looping": true,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-in-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": false,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 95,
+      "has_default_export": false,
+      "named_exports": [
+        "TextShimmerWave"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "TextShimmerWave"
+    },
+    {
+      "animation_id": "text__text_scramble",
+      "source_file": "text/text-scramble.tsx",
+      "component_type": "ui",
+      "framework": "three.js",
+      "frameworks_all": [
+        "three.js"
+      ],
+      "animation_type": "text",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "text",
+        "heading"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "scramble"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": false,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "three"
+      ],
+      "line_count": 162,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": false,
+      "actual_export": "ShaderCanvas",
+      "mismatch_note": "file is a three.js full-screen GLSL RGB-glitch/scanline shader canvas. No text, no scramble."
+    },
+    {
+      "animation_id": "text__typewriter",
+      "source_file": "text/typewriter.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "entrance",
+      "trigger_types": [
+        "viewport",
+        "mount",
+        "time_delay"
+      ],
+      "supported_elements": [
+        "text"
+      ],
+      "supported_layout_contexts": [
+        "text"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "reveal",
+        "typewrite",
+        "emphasis"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "content_reveal",
+        "urgency_signal"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": true,
+      "interruptible": true,
+      "reversible": true,
+      "composable": false,
+      "looping": true,
+      "duration_range_ms": [
+        300,
+        2000
+      ],
+      "easing_profiles": [
+        "linear",
+        "ease-in-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": false,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "medium",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 188,
+      "has_default_export": false,
+      "named_exports": [
+        "TypewriterEffect",
+        "TypewriterEffectSmooth"
+      ],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "TypewriterEffect"
+    },
+    {
+      "animation_id": "effect__border_beam",
+      "source_file": "effect/border-beam.tsx",
+      "component_type": "animation",
+      "framework": "css",
+      "frameworks_all": [
+        "css"
+      ],
+      "animation_type": "effect",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "glow",
+        "beam"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "cta_emphasis"
+      ],
+      "directionality": [
+        "vertical"
+      ],
+      "axis": [
+        "y"
+      ],
+      "stagger_support": false,
+      "interruptible": false,
+      "reversible": false,
+      "composable": true,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [],
+      "line_count": 74,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [
+        "border"
+      ],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "BorderBeam"
+    },
+    {
+      "animation_id": "effect__glow_border",
+      "source_file": "effect/glow-border.tsx",
+      "component_type": "animation",
+      "framework": "none",
+      "frameworks_all": [
+        "none"
+      ],
+      "animation_type": "effect",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "card"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "blur",
+        "glow"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "cta_emphasis"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [],
+      "line_count": 106,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "GlowBorder"
+    },
+    {
+      "animation_id": "background__aurora_background",
+      "source_file": "background/aurora-background.tsx",
+      "component_type": "animation",
+      "framework": "framer-motion",
+      "frameworks_all": [
+        "framer-motion"
+      ],
+      "animation_type": "background",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "background"
+      ],
+      "supported_layout_contexts": [
+        "background"
+      ],
+      "section_archetypes": [],
+      "motion_intents": [
+        "aurora"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "omnidirectional"
+      ],
+      "axis": [
+        "none"
+      ],
+      "stagger_support": false,
+      "interruptible": true,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "low",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": true,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [
+        "framer-motion"
+      ],
+      "line_count": 128,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "AuroraBackground"
+    },
+    {
+      "animation_id": "background__perspective_grid",
+      "source_file": "background/perspective-grid.tsx",
+      "component_type": "ui",
+      "framework": "none",
+      "frameworks_all": [
+        "none"
+      ],
+      "animation_type": "background",
+      "trigger_types": [
+        "mount"
+      ],
+      "supported_elements": [
+        "any"
+      ],
+      "supported_layout_contexts": [
+        "any"
+      ],
+      "section_archetypes": [
+        "GALLERY"
+      ],
+      "motion_intents": [
+        "flip",
+        "perspective"
+      ],
+      "interaction_intents": [
+        "none"
+      ],
+      "conversion_support_roles": [
+        "brand_polish"
+      ],
+      "directionality": [
+        "vertical",
+        "horizontal"
+      ],
+      "axis": [
+        "y",
+        "x",
+        "z"
+      ],
+      "stagger_support": false,
+      "interruptible": false,
+      "reversible": false,
+      "composable": false,
+      "looping": false,
+      "duration_range_ms": [
+        300,
+        800
+      ],
+      "easing_profiles": [
+        "ease-out"
+      ],
+      "requires_layout_measurement": false,
+      "causes_layout_shift_risk": "medium",
+      "scroll_coupling_risk": "low",
+      "gpu_accelerated": false,
+      "accessibility_safe": true,
+      "reduced_motion_fallback_present": false,
+      "mobile_safe": true,
+      "motion_stacking_risk": "low",
+      "dependencies": [],
+      "line_count": 83,
+      "has_default_export": true,
+      "named_exports": [],
+      "keyframe_names": [],
+      "example_usage_refs": [],
+      "dependencies_verified": true,
+      "id_describes_file": true,
+      "actual_export": "PerspectiveGrid"
+    }
+  ]
+}

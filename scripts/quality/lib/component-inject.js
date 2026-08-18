@@ -39,9 +39,11 @@ const { deriveComponentIntensity } = require('./animation-injector');
 const COMPONENTS_DIR = path.resolve(__dirname, '../../../skills/animation-components');
 const INTENSITY_RANK = { subtle: 1, moderate: 2, expressive: 3, dramatic: 4 };
 const FULL_REGISTRY_PATH = path.join(COMPONENTS_DIR, 'registry/animation_registry.json');
+const LIBRARY_REGISTRY_PATH = path.join(COMPONENTS_DIR, 'registry/animation_library.json');
 const UNIFIED_REGISTRY_PATH = path.join(COMPONENTS_DIR, 'component-registry.json');
 
 let _fullRegistryCache = null;
+let _libraryRegistryCache = null;
 let _unifiedRegistryCache = null;
 let _unifiedBySourceFile = null;
 let _poolCache = {};
@@ -56,6 +58,35 @@ function loadFullRegistry() {
     _fullRegistryCache = [];
   }
   return _fullRegistryCache;
+}
+
+/**
+ * The LIBRARY — the rows whose component file exists on disk.
+ *
+ * `animation_registry.json` is a CATALOGUE, not an inventory: 986 of its 1034
+ * rows name files under `21st-dev-library/`, a tree that is absent from this
+ * filesystem entirely, so those rows cannot be read, copied or safety-analysed
+ * and could never be injected. Selection reads only this file. The 986 are not
+ * deleted and not silently dropped — `registry/animation_wishlist.json`
+ * records every one of them with the `os.path.exists` sweep that established
+ * it, and library + wish-list sum back to the catalogue.
+ *
+ * Both files are produced by `registry/annotate_backed_rows.py`, whose defining
+ * property is that re-running it reproduces them byte for byte.
+ *
+ * There is no fallback to the catalogue on a read failure. Falling back would
+ * put 986 unbacked rows into selection precisely when the split is broken —
+ * exactly the state the split exists to make impossible.
+ */
+function loadBackedLibrary() {
+  if (_libraryRegistryCache) return _libraryRegistryCache;
+  try {
+    const data = JSON.parse(fs.readFileSync(LIBRARY_REGISTRY_PATH, 'utf8'));
+    _libraryRegistryCache = Array.isArray(data.components) ? data.components : [];
+  } catch (err) {
+    _libraryRegistryCache = [];
+  }
+  return _libraryRegistryCache;
 }
 
 function loadUnifiedRegistry() {
@@ -475,7 +506,7 @@ function rowAdmissible(c, presetRank, role) {
 function componentPoolForIntensity(presetIntensity) {
   const key = String(presetIntensity == null ? '' : presetIntensity);
   if (Object.prototype.hasOwnProperty.call(_poolCache, key)) return _poolCache[key];
-  const registry = loadFullRegistry();
+  const registry = loadBackedLibrary();
   const presetRank = INTENSITY_RANK[presetIntensity] || INTENSITY_RANK.moderate;
   const seen = new Set();
   const pool = [];
@@ -501,9 +532,7 @@ function componentPoolForIntensity(presetIntensity) {
 
 /** Rows whose `source_file` exists on disk — the real, re-derivable supply. */
 function backedRowCount() {
-  return loadFullRegistry().filter(
-    (c) => c.source_file && fs.existsSync(path.join(COMPONENTS_DIR, c.source_file))
-  ).length;
+  return loadBackedLibrary().length;
 }
 
 /**
@@ -513,7 +542,8 @@ function backedRowCount() {
  * null if nothing qualifies.
  */
 function selectComponentForSection(archetype, usedAnimationIds, presetIntensity) {
-  const registry = loadFullRegistry();
+  // The LIBRARY, never the catalogue: an unbacked row can never be a candidate.
+  const registry = loadBackedLibrary();
   const roles = roleOrderForArchetype(archetype);
   const used = new Set(usedAnimationIds || []);
   const presetRank = INTENSITY_RANK[presetIntensity] || INTENSITY_RANK.moderate;
@@ -612,6 +642,7 @@ function decideComponentForSection(archetype, usedAnimationIds, presetIntensity)
 
 module.exports = {
   loadFullRegistry,
+  loadBackedLibrary,
   loadUnifiedRegistry,
   resolveComponent,
   analyzeSafety,
