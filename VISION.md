@@ -1,5 +1,35 @@
 # AURELIX: COMPLETE SYSTEM PLAN & NORTH STAR
 
+> ## ⚠ THIS IS A PLAN FROM FEBRUARY 2026, NOT A STATE DOCUMENT
+>
+> **Read `../CLAUDE.md` for what is present.** This file records the intended
+> shape of the system and the sequence it was meant to be built in. Its
+> "Current State" sections describe February and have **not** been maintained;
+> several are now false. It is kept because the plan's record is worth having,
+> not because it describes the code.
+>
+> **Corrections applied 2026-08-18** (only where a figure was being quoted
+> elsewhere as fact):
+>
+> - **"1,034-component animation library" is retired.** Measured by
+>   `os.path.exists` over every catalogue row's `source_file`, 2026-08-18:
+>   **1034 catalogue rows, 48 with a file on disk, 986 absent.** The
+>   `21st-dev-library/` tree the 986 name is not on the filesystem at all, so
+>   they cannot be re-derived from anything present. Only 5 of the 48 carry
+>   `section_archetypes`. **The figure overstated real supply by 21×.** The
+>   library is `registry/animation_library.json` (48 rows) — the only rows
+>   selection may read; `registry/animation_wishlist.json` holds the 986.
+> - **"35 industry presets"** — `ls skills/presets/*.md | wc -l` → **44**.
+> - **Module 3 "NOT YET BUILT"** — `shopify-integration-layer/` exists, is a
+>   plain directory rather than a submodule, and runs (`step0_token.py`,
+>   `verify_gate_b.py`, `layer4_store_setup.py`).
+> - The pipeline described below as LLM-first (Claude scaffold call, per-section
+>   generation) is **superseded**: assembly is deterministic, content is filled
+>   from the harvest, and unfillable slots are counted rather than defaulted.
+>
+> Everything else here is `[UNVERIFIED since 2026-02-17]`. Do not restate a
+> number from this file without re-running its command.
+
 ## WHAT AURELIX IS
 
 Aurelix is **three composable modules** that chain together through clean file-based interfaces to take a source e-commerce URL and output a live headless Shopify storefront:
@@ -172,7 +202,7 @@ Take a brief and industry preset, generate a production-quality Next.js website 
 - 7-dimension style schema (color, type, space, radius, motion, density, imagery)
 - Compact style header mechanism prevents visual drift across sections
 - Dual animation engine: **GSAP 3.14 + ScrollTrigger** (20 plugins detectable) or **Framer Motion 12**
-- **1,034-component animation library** with machine-usable registry (search index, taxonomy, capability matrix)
+- Animation registry with machine-usable search index, taxonomy and capability matrix. ~~1,034-component library~~ — **48 file-backed components**; see the banner at the top of this file
 - URL clone mode: Playwright extraction → auto-generated preset + brief → build
 - **Pattern identification pipeline** (Stage 0d): color intelligence, archetype mapping, animation/UI pattern matching, gap reporting
 - Python + Node.js hybrid orchestration (7 stages + injection wiring + pre-flight validation)
@@ -578,7 +608,7 @@ You are working on **Module 2: Web Builder**. The visual pipeline is production-
 
 ### Completed
 - Commerce prop contract defined (`skills/commerce-contract.ts`) — Shopify Storefront API types, section data mode classification, page template metadata
-- Pipeline maturation v0.1.0 → v1.1.2: animation library (1,034 components), GSAP ecosystem (20 plugins), pattern identification (Stage 0d), build reliability (JSX auto-repair), 8 engineering plans closed
+- Pipeline maturation v0.1.0 → v1.1.2: animation registry (**1034 catalogue rows, 48 file-backed** — see banner), GSAP ecosystem (20 plugins), pattern identification (Stage 0d), build reliability (JSX auto-repair), 8 engineering plans closed
 - 13 successful builds deployed to Vercel across diverse industries
 - VISION.md sync mechanism wired into doc-sync-checklist, close-checklist, and CLAUDE.md update protocol
 
