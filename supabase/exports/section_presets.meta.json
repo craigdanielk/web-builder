@@ -1,0 +1,33 @@
+{
+  "schema": "aurelix.store_export.v1",
+  "table": "section_presets",
+  "source": "supabase",
+  "row_count": 995,
+  "columns": [
+    "industry",
+    "page_type",
+    "position",
+    "component_type",
+    "section_archetype",
+    "section_variant",
+    "priority",
+    "content_direction",
+    "template_path"
+  ],
+  "excluded_columns": [
+    "id",
+    "created_at",
+    "updated_at"
+  ],
+  "excluded_reason": "database bookkeeping, not library content; the timestamps would churn the file on every reseed without recording a decision",
+  "sort_key": [
+    "industry",
+    "page_type",
+    "position",
+    "component_type",
+    "section_archetype",
+    "section_variant"
+  ],
+  "content_sha256": "dea9ed55f50aa14fe970c0c47e3d1c468006420104e64d4560df215cc006f854",
+  "verify": "python3 scripts/export_section_presets.py verify --live"
+}
