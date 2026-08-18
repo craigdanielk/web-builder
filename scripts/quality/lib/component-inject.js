@@ -44,6 +44,7 @@ const UNIFIED_REGISTRY_PATH = path.join(COMPONENTS_DIR, 'component-registry.json
 let _fullRegistryCache = null;
 let _unifiedRegistryCache = null;
 let _unifiedBySourceFile = null;
+let _poolCache = {};
 
 function loadFullRegistry() {
   if (_fullRegistryCache) return _fullRegistryCache;
@@ -417,6 +418,95 @@ function importStatementFor(resolved) {
 }
 
 /**
+ * Dedupe by FILE, not by animation_id. Two ids can point at one component:
+ * entrance__fade_up_stagger and entrance__staggered_timeline are the same
+ * byte-identical AnimatedGroup, and before this the homepage received both
+ * — reported as two distinct components in animation-coverage.json while
+ * rendering the same animation twice. `duplicate_of` is written by
+ * registry/annotate_backed_rows.py from a sha256 of the file.
+ */
+function canonicalKey(row) {
+  return (row && (row.duplicate_of || row.animation_id)) || null;
+}
+
+/**
+ * The registry filters that do not depend on what a build has already used:
+ * role directory, id-describes-file adjudication, installable engine, and the
+ * intensity ceiling. Shared by selection and by pool measurement so the two
+ * can never drift — the pool a ceiling admits is measured with exactly the
+ * predicate selection applies.
+ */
+function rowAdmissible(c, presetRank, role) {
+  if (!c.source_file) return false;
+  if (role && c.source_file.split('/')[0] !== role) return false;
+  // A row whose animation_id does not describe its file is never a
+  // candidate, whatever its role says. `interactive__accordion_expand`
+  // is a hardcoded FAQ section carrying placeholder body copy; injecting
+  // it would put invented content on a licensed FSP's site. Adjudicated
+  // per row in registry/annotate_backed_rows.py with the evidence.
+  if (c.id_describes_file === false) return false;
+  const engine = c.framework || c.engine || '';
+  if (!SUPPORTED_ENGINES.has(engine)) return false;
+  // Ceiling, not a target: a component's own intensity may never exceed
+  // the tenant preset's explicit `animation_intensity` field. Cape
+  // Crypto's is `moderate` per Craig's ruling — deliberately set, not
+  // inherited from how animated the source site happened to be.
+  const compRank = INTENSITY_RANK[deriveComponentIntensity(c)] || INTENSITY_RANK.moderate;
+  if (compRank > presetRank) return false;
+  return true;
+}
+
+/**
+ * Every component a given intensity CEILING admits, ignoring deduplication —
+ * i.e. the supply a build configured at this intensity could ever draw on.
+ *
+ * This exists so an empty result from selectComponentForSection() can be told
+ * apart from a library that has nothing. `deriveComponentIntensity` returns
+ * `subtle` only for an entrance/exit under 300ms with all three risks low, and
+ * no backed component satisfies that, so a preset declaring
+ * `animation_intensity: subtle` draws from a pool of ZERO. That is a
+ * configuration ceiling, not a supply failure, and reporting it as
+ * "no backed component for role" has made a settable field look like a missing
+ * library. Measured 2026-08-18: subtle 0 · moderate 7 · expressive 7 ·
+ * dramatic 17, out of 48 file-backed rows.
+ *
+ * Cached per intensity: the safety pass reads every backed file from disk.
+ */
+function componentPoolForIntensity(presetIntensity) {
+  const key = String(presetIntensity == null ? '' : presetIntensity);
+  if (Object.prototype.hasOwnProperty.call(_poolCache, key)) return _poolCache[key];
+  const registry = loadFullRegistry();
+  const presetRank = INTENSITY_RANK[presetIntensity] || INTENSITY_RANK.moderate;
+  const seen = new Set();
+  const pool = [];
+  for (const c of registry) {
+    if (!rowAdmissible(c, presetRank, null)) continue;
+    const ck = canonicalKey(c);
+    if (ck && seen.has(ck)) continue;
+    const resolved = resolveComponent(c.animation_id);
+    if (!resolved.ok) continue;
+    let source;
+    try {
+      source = fs.readFileSync(resolved.absPath, 'utf8');
+    } catch (err) {
+      continue;
+    }
+    if (!analyzeSafety(source, resolved.exportName).safe) continue;
+    if (ck) seen.add(ck);
+    pool.push(resolved);
+  }
+  _poolCache[key] = pool;
+  return pool;
+}
+
+/** Rows whose `source_file` exists on disk — the real, re-derivable supply. */
+function backedRowCount() {
+  return loadFullRegistry().filter(
+    (c) => c.source_file && fs.existsSync(path.join(COMPONENTS_DIR, c.source_file))
+  ).length;
+}
+
+/**
  * Pick the first unused, on-disk, framer-motion, safely-wrappable component
  * for a section's archetype, trying its preferred roles before falling back
  * across all roles. Returns a resolved component (see resolveComponent) or
@@ -428,39 +518,18 @@ function selectComponentForSection(archetype, usedAnimationIds, presetIntensity)
   const used = new Set(usedAnimationIds || []);
   const presetRank = INTENSITY_RANK[presetIntensity] || INTENSITY_RANK.moderate;
 
-  // Dedupe by FILE, not by animation_id. Two ids can point at one component:
-  // entrance__fade_up_stagger and entrance__staggered_timeline are the same
-  // byte-identical AnimatedGroup, and before this the homepage received both
-  // — reported as two distinct components in animation-coverage.json while
-  // rendering the same animation twice. `duplicate_of` is written by
-  // registry/annotate_backed_rows.py from a sha256 of the file.
-  const canonical = (row) => (row && (row.duplicate_of || row.animation_id)) || null;
   const usedComponents = new Set();
   for (const id of used) {
     const row = registry.find((c) => c.animation_id === id);
-    const key = canonical(row);
+    const key = canonicalKey(row);
     if (key) usedComponents.add(key);
   }
 
   for (const role of roles) {
     const candidates = registry.filter((c) => {
-      if (!c.source_file || c.source_file.split('/')[0] !== role) return false;
-      // A row whose animation_id does not describe its file is never a
-      // candidate, whatever its role says. `interactive__accordion_expand`
-      // is a hardcoded FAQ section carrying placeholder body copy; injecting
-      // it would put invented content on a licensed FSP's site. Adjudicated
-      // per row in registry/annotate_backed_rows.py with the evidence.
-      if (c.id_describes_file === false) return false;
-      const engine = c.framework || c.engine || '';
-      if (!SUPPORTED_ENGINES.has(engine)) return false;
+      if (!rowAdmissible(c, presetRank, role)) return false;
       if (used.has(c.animation_id)) return false;
-      if (usedComponents.has(canonical(c))) return false;
-      // Ceiling, not a target: a component's own intensity may never exceed
-      // the tenant preset's explicit `animation_intensity` field. Cape
-      // Crypto's is `moderate` per Craig's ruling — deliberately set, not
-      // inherited from how animated the source site happened to be.
-      const compRank = INTENSITY_RANK[deriveComponentIntensity(c)] || INTENSITY_RANK.moderate;
-      if (compRank > presetRank) return false;
+      if (usedComponents.has(canonicalKey(c))) return false;
       return true;
     });
 
@@ -490,14 +559,52 @@ function selectComponentForSection(archetype, usedAnimationIds, presetIntensity)
  * `archetype` is the section's SectionArtifact archetype, `usedAnimationIds`
  * the set already consumed elsewhere in this build (deduplication),
  * `presetIntensity` the tenant preset's explicit `animation_intensity`.
+ *
+ * Three states, never two:
+ *   selected      — a real component was chosen
+ *   not_measured  — the configured intensity ceiling admits a pool of ZERO, so
+ *                   nothing was ever compared; this is a configuration
+ *                   outcome and says nothing about the library's supply
+ *   no_supply     — the ceiling admits a non-empty pool, and still nothing in
+ *                   it fit this role / survived dedupe. That, and only that,
+ *                   is a supply statement.
+ * `status` is the machine-readable form; `reason` carries the same verdict in
+ * prose for the by_reason tally that orchestrate.py writes to
+ * animation-coverage.json.
  */
 function decideComponentForSection(archetype, usedAnimationIds, presetIntensity) {
   const resolved = selectComponentForSection(archetype, usedAnimationIds, presetIntensity);
+  const ceiling = String(presetIntensity == null ? '' : presetIntensity);
   if (!resolved) {
-    return { injected: false, reason: 'no backed component for role', component: null };
+    const pool = componentPoolForIntensity(presetIntensity);
+    if (pool.length === 0) {
+      return {
+        injected: false,
+        status: 'not_measured',
+        intensity_ceiling: ceiling,
+        pool_size: 0,
+        reason:
+          `NOT_MEASURED: animation_intensity ceiling '${ceiling}' admits 0 of ` +
+          `${backedRowCount()} file-backed components — no pool to select from, ` +
+          `so supply was never tested`,
+        component: null,
+      };
+    }
+    return {
+      injected: false,
+      status: 'no_supply',
+      intensity_ceiling: ceiling,
+      pool_size: pool.length,
+      reason:
+        `no backed component for role (ceiling '${ceiling}' admits a pool of ` +
+        `${pool.length}; none fit this role or all were already used)`,
+      component: null,
+    };
   }
   return {
     injected: true,
+    status: 'selected',
+    intensity_ceiling: ceiling,
     reason: `selected ${resolved.animationId}`,
     component: resolved,
   };
@@ -512,6 +619,8 @@ module.exports = {
   importStatementFor,
   selectComponentForSection,
   decideComponentForSection,
+  componentPoolForIntensity,
+  backedRowCount,
   roleOrderForArchetype,
   ROLE_BY_ARCHETYPE,
   ALL_ROLES,

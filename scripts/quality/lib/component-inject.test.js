@@ -220,5 +220,19 @@ test('decideComponentForSection refuses when no safe component exists', () => {
   const out = ci.decideComponentForSection('HERO', allIds, 'moderate');
   assert.equal(out.injected, false);
   assert.equal(out.component, null);
-  assert.equal(out.reason, 'no backed component for role');
+  // A non-empty pool that is exhausted IS a supply statement, and stays one.
+  assert.equal(out.status, 'no_supply');
+  assert.ok(out.pool_size > 0);
+  assert.match(out.reason, /^no backed component for role/);
+});
+
+test('an intensity ceiling admitting nothing reports NOT_MEASURED, not a supply failure', () => {
+  assert.equal(ci.componentPoolForIntensity('subtle').length, 0);
+  const out = ci.decideComponentForSection('HERO', [], 'subtle');
+  assert.equal(out.injected, false);
+  assert.equal(out.status, 'not_measured');
+  assert.equal(out.pool_size, 0);
+  assert.equal(out.intensity_ceiling, 'subtle');
+  assert.match(out.reason, /NOT_MEASURED/);
+  assert.doesNotMatch(out.reason, /no backed component for role/);
 });

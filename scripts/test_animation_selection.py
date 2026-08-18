@@ -47,6 +47,9 @@ for (const c of calls) {{
   out.push({{
     archetype: c.archetype,
     injected: r.injected,
+    status: r.status,
+    intensity_ceiling: r.intensity_ceiling,
+    pool_size: r.pool_size === undefined ? null : r.pool_size,
     reason: r.reason,
     animationId: r.component ? r.component.animationId : null,
     role: r.component ? r.component.role : null,
@@ -277,6 +280,85 @@ def test_components_converted_for_wrappability_are_reachable():
         reachable.update(_drain_pool(archetype, intensity="dramatic"))
     missing = expected - reachable
     assert not missing, f"converted components no longer selectable: {sorted(missing)}"
+
+
+# ---------------------------------------------------------------------------
+# Three-state reporting: an empty pool is a configuration outcome
+# ---------------------------------------------------------------------------
+
+
+def _pool_size(intensity: str) -> int:
+    """Size of componentPoolForIntensity() as the library itself reports it."""
+    proc = subprocess.run(
+        [
+            "node", "-e",
+            "console.log(require('./lib/component-inject')"
+            f".componentPoolForIntensity({json.dumps(intensity)}).length)",
+        ],
+        capture_output=True, text=True, cwd=str(QUALITY_DIR), timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    return int(proc.stdout.strip())
+
+
+def test_an_empty_intensity_pool_reports_not_measured_not_a_supply_failure():
+    """`animation_intensity: subtle` admits ZERO components — say so.
+
+    `deriveComponentIntensity` returns `subtle` only for an entrance/exit
+    under 300ms with all three risks low; no file-backed component satisfies
+    that, so the subtle ceiling drains to 0 (measured 2026-08-18, and again
+    below rather than asserted from the census). Reporting that as
+    "no backed component for role" states a fact about SUPPLY that was never
+    tested — nothing was ever compared. It is a configuration ceiling, and 18
+    of the 44 presets on disk declare it.
+    """
+    assert _pool_size("subtle") == 0, "fixture assumption: the subtle ceiling admits nothing"
+    got = _decide([{"archetype": "HERO", "used": [], "intensity": "subtle"}])[0]
+    assert got["injected"] is False
+    assert got["status"] == "not_measured", got
+    assert got["pool_size"] == 0, got
+    assert got["intensity_ceiling"] == "subtle", got
+    assert "NOT_MEASURED" in got["reason"], got["reason"]
+    assert "subtle" in got["reason"], got["reason"]
+    # It must not read as a statement about the library's supply.
+    assert "no backed component for role" not in got["reason"], got["reason"]
+
+
+def test_a_non_empty_pool_that_is_exhausted_still_reports_a_supply_failure():
+    """The other branch: a real pool, nothing left in it, is a supply statement.
+
+    Without this the change would be a one-way street — everything would
+    report NOT_MEASURED and the gate could only say "unmeasured", which is the
+    same dishonesty pointed the other way.
+    """
+    pool = _pool_size(PRESET_INTENSITY)
+    assert pool > 0, "fixture assumption: the moderate ceiling admits a real pool"
+    all_ids = [r["animation_id"] for r in _registry_rows()]
+    got = _decide([{"archetype": "HERO", "used": all_ids, "intensity": PRESET_INTENSITY}])[0]
+    assert got["injected"] is False
+    assert got["status"] == "no_supply", got
+    assert got["pool_size"] == pool, got
+    assert "NOT_MEASURED" not in got["reason"], got["reason"]
+    assert got["reason"].startswith("no backed component for role"), got["reason"]
+
+
+def test_reported_pool_size_equals_what_selection_can_actually_reach():
+    """Pool measurement and selection must not drift apart.
+
+    The reported ceiling pool is only honest if it is the same predicate
+    selection applies. Draining every archetype at a ceiling can only reach
+    components that pass that predicate, so the drained set must be a subset
+    of the reported pool, and at `dramatic` (where every role is reachable)
+    the two must be equal.
+    """
+    for intensity in ("moderate", "dramatic"):
+        reachable = set()
+        for archetype in sorted({a for page in _cape_pages().values() for a in page}):
+            reachable.update(_drain_pool(archetype, intensity=intensity))
+        assert len(reachable) <= _pool_size(intensity), (
+            f"{intensity}: selection reached {len(reachable)} components but the "
+            f"reported pool is {_pool_size(intensity)} — the report understates supply"
+        )
 
 
 def test_rows_with_no_file_on_disk_are_never_marked_verified():
