@@ -463,4 +463,118 @@ function mapSectionsToArchetypes(sections, textContent, options = {}) {
   return { mappedSections: deduped, gaps };
 }
 
-module.exports = { mapSectionsToArchetypes, loadArchetypes };
+// ---------------------------------------------------------------------------
+// Corpus annotation (gap 7 — a measured sequence must be expressible)
+// ---------------------------------------------------------------------------
+//
+// WHY THIS EXISTS
+// A corpus section record carried `index, tag, id, classNames, role, label,
+// rect, content, images` and no archetype, so the corpus could prove a BVNK
+// page has 9 sections and could NOT say the 4th is a HOW-IT-WORKS. No
+// reference sequence was compilable from it
+// (docs/census/2026-08-18-library-absorption-gaps.md §2.5).
+//
+// WHY IT REUSES mapSectionsToArchetypes
+// A second classifier would be a second, disagreeing measurement of the same
+// property. This is a thin wrapper: same heuristics, same confidences, plus a
+// threshold and the three-state honesty every gate in this system has.
+//
+// THE THRESHOLD IS THE ONE NEW RULE
+// `mapSectionsToArchetypes` NEVER returns null: its last branch assigns
+// FEATURES at 0.3 confidence with method `fallback`. Used unfiltered it would
+// stamp a guess onto the corpus and make it indistinguishable from a
+// measurement. Below the threshold the record carries `archetype: null` and
+// `archetype_status: "NOT_MEASURED"`; the rejected candidate is kept under
+// `archetype_below_threshold` so the evidence is inspectable but cannot be
+// read as a claim.
+//
+// 0.5 is not a new number — it is the confidence at which
+// `mapSectionsToArchetypes` already opens a `low_confidence_mapping` gap.
+const ARCHETYPE_MIN_CONFIDENCE = 0.5;
+
+/**
+ * Annotate corpus section records in place-safe fashion with an archetype.
+ *
+ * Returns NEW section objects (inputs are not mutated) carrying, in addition
+ * to every original field:
+ *
+ *   archetype               string | null   — null iff NOT_MEASURED
+ *   archetype_variant       string | null
+ *   archetype_confidence    number          — always the measured confidence
+ *   archetype_method        string          — which heuristic fired
+ *   archetype_status        "MEASURED" | "NOT_MEASURED"
+ *   archetype_below_threshold  {archetype, variant, confidence, method} | undefined
+ *
+ * @param {object[]} sections - corpus `sections[]`
+ * @param {object[]} [textContent] - corpus `textContent[]` (rect fallback path)
+ * @param {object} [options]
+ * @param {number} [options.minConfidence=0.5]
+ * @returns {{ sections: object[], measured: number, notMeasured: number, minConfidence: number }}
+ */
+function annotateSectionArchetypes(sections, textContent, options = {}) {
+  const minConfidence =
+    typeof options.minConfidence === 'number'
+      ? options.minConfidence
+      : ARCHETYPE_MIN_CONFIDENCE;
+
+  // dedupe:false is required, not stylistic — deduplication drops records, and
+  // the annotation must stay 1:1 with the corpus sections it describes.
+  const { mappedSections } = mapSectionsToArchetypes(sections || [], textContent, {
+    dedupe: false,
+  });
+
+  const out = [];
+  let measured = 0;
+  let notMeasured = 0;
+
+  for (let i = 0; i < (sections || []).length; i += 1) {
+    const sec = sections[i];
+    const m = mappedSections[i];
+    const annotated = { ...sec };
+
+    if (!m) {
+      // Cannot happen with dedupe:false, but a silent index slip would put a
+      // wrong archetype on a section — refuse rather than guess.
+      annotated.archetype = null;
+      annotated.archetype_variant = null;
+      annotated.archetype_confidence = 0;
+      annotated.archetype_method = 'unmapped';
+      annotated.archetype_status = 'NOT_MEASURED';
+      notMeasured += 1;
+      out.push(annotated);
+      continue;
+    }
+
+    annotated.archetype_confidence = m.confidence;
+    annotated.archetype_method = m.method;
+
+    if (m.confidence >= minConfidence) {
+      annotated.archetype = m.archetype;
+      annotated.archetype_variant = m.variant;
+      annotated.archetype_status = 'MEASURED';
+      measured += 1;
+    } else {
+      annotated.archetype = null;
+      annotated.archetype_variant = null;
+      annotated.archetype_status = 'NOT_MEASURED';
+      annotated.archetype_below_threshold = {
+        archetype: m.archetype,
+        variant: m.variant,
+        confidence: m.confidence,
+        method: m.method,
+      };
+      notMeasured += 1;
+    }
+
+    out.push(annotated);
+  }
+
+  return { sections: out, measured, notMeasured, minConfidence };
+}
+
+module.exports = {
+  mapSectionsToArchetypes,
+  loadArchetypes,
+  annotateSectionArchetypes,
+  ARCHETYPE_MIN_CONFIDENCE,
+};

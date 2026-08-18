@@ -31,6 +31,7 @@ const {
   extractAnimationData,
 } = require('./animation-detector');
 const { extractGsapFromBundles, mergeGsapData } = require('./gsap-extractor');
+const { annotateSectionArchetypes } = require('./archetype-mapper');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -1037,6 +1038,23 @@ async function extractReference(url, outputDir) {
       fs.writeFileSync(path.join(outputDir, 'full-page.png'), fullPageBuffer);
       console.log(`[extract] Screenshots saved to ${outputDir}`);
     }
+
+    // ── 12b. Annotate each section with its archetype ──────────────────
+    // A section record without an archetype records structure but no
+    // meaning: the corpus can say a page has 9 sections and not that the
+    // 4th is a HOW-IT-WORKS, so no reference SEQUENCE is compilable from it
+    // (docs/census/2026-08-18-library-absorption-gaps.md §2.5, gap 7).
+    // Classification is the existing archetype-mapper, thresholded — below
+    // the threshold the record says NOT_MEASURED rather than carrying the
+    // mapper's 0.3-confidence FEATURES fallback as though it were measured.
+    const archetypeAnnotation = annotateSectionArchetypes(sections, textContent);
+    sections.length = 0;
+    sections.push(...archetypeAnnotation.sections);
+    console.log(
+      `[extract] Archetypes: ${archetypeAnnotation.measured} measured, ` +
+        `${archetypeAnnotation.notMeasured} NOT_MEASURED ` +
+        `(min confidence ${archetypeAnnotation.minConfidence})`
+    );
 
     // ── 13. Build and return result ────────────────────────────────────
     const result = {
