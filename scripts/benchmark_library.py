@@ -59,6 +59,7 @@ def cmd_ratify(args: argparse.Namespace) -> int:
             benchmark_flag=args.slug,
             do_ratify=True,
             ratified_at=args.ratified_at,
+            ratified_by=getattr(args, "ratified_by", None),
             ratify_values=collect_ratify_values(args),
             interactive=False,
             write=lambda s: sys.stdout.write(s),

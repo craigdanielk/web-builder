@@ -60,17 +60,23 @@ MEASURED FACTS THIS MODULE IS BUILT ON (2026-08-17, all reproducible)
    ratification surface is derived from what the loader demands, not invented.
    `font_system.families` and `palette_roles.surface_inverse` are also
    unmeasurable but are NOT load-required, so they are not ratification args.
-3. **None of the three library files carries a `ratified` key at all**, and all
-   three load today. `enterprise-payments-bvnk.json` is the ratified benchmark
-   cape-crypto builds depend on. Refusing them for a missing flag would break
-   every existing build, so a file with no `ratified` key that carries all four
-   operator fields classifies as `legacy` — recorded as such, never restated as
-   an explicit ratification.
-4. **`_meta.market` is not the filename slug.** `enterprise-payments-bvnk.json`
+3. **SUPERSEDED 2026-08-18.** This note used to read: none of the three library
+   files carries a `ratified` key, so a file with no key that carries all four
+   operator fields classifies as `legacy`. That was an inference about an
+   operator act drawn from the shape of a file, and `legacy` is gone. All three
+   now carry an explicit backfilled `_meta.ratification` block declaring, in the
+   file, that they were ratified by inference on 2026-08-18 and that the
+   original declarant is not recorded. A file with NO block is unratified and
+   the gate refuses it. See `classify`.
+4. **`_meta.market` is not the filename slug** — `enterprise-payments-bvnk.json`
    declares market `enterprise-stablecoin-payments`; `consumer-crypto-robinhood.json`
-   declares `consumer-crypto-exchange`. Library matching therefore tries both
-   and records which one matched (`matched_by`). Matching on either alone would
-   miss the ratified file.
+   declares `consumer-crypto-exchange`. **Resolution is by market identity**,
+   then by an alias the file declares for itself, then by filename for
+   back-compat; both divergent files now declare their filename in
+   `_meta.aliases`. `matched_by` records which rule fired. See `match_library`.
+5. The library's market -> file map is GENERATED at `benchmarks/index.json`
+   (`build_index`). `check_index` fails the suite when it drifts from the files
+   on disk: a stale index answers confidently and wrongly.
 """
 from __future__ import annotations
 
@@ -191,18 +197,39 @@ def _plant(data: dict[str, Any], path: Sequence[str], value: Any) -> None:
 def classify(path: Path) -> dict[str, Any]:
     """One library file's ratification status. Never raises on bad JSON.
 
+    RATIFICATION IS DECLARED, NEVER INFERRED. `_meta.ratification` is the
+    authority:
+
+        "ratification": {"ratified": bool, "by": str, "date": "YYYY-MM-DD",
+                         "basis": "operator-flag" | "inference",
+                         "overrides": [...], "note": str}
+
     `ratification` is one of:
-      declared    `_meta.ratified is True` — stamped by this gate or by hand
-      legacy      no `ratified` key, but all four operator fields present. The
-                  three files in the library today are all this, and
-                  cape-crypto's build depends on one of them (module note, 3).
-      unratified  `_meta.ratified is False`, or operator fields missing
+      declared    `_meta.ratification.ratified is True`
+      unratified  the block says false, OR THERE IS NO BLOCK AT ALL
       unreadable  not JSON, or not an object
+
+    The `legacy` class is gone. It classified "no `ratified` key, but all four
+    operator fields happen to be present" as ratified — an inference about an
+    operator act, drawn from the shape of a file. The three census-era files
+    were all this, and cape-crypto's build depended on one of them. They now
+    carry an explicit backfilled block that says, in the file, that they were
+    ratified by inference on 2026-08-18 and that the original declarant is not
+    recorded. That is an honest record of a weak provenance; the inference
+    silently restated as a ratification was not.
+
+    A file with no block is therefore UNRATIFIED and the gate refuses it. That
+    is now a real distinction — declared-false versus never-declared — rather
+    than a guess about missing keys.
     """
     record: dict[str, Any] = {
         "slug": path.stem,
         "path": path.name,
         "market": None,
+        "ratified_by": None,
+        "ratification_basis": None,
+        "ratified_at": None,
+        "ratification_reason": None,
         "aliases": [],
         "captured_at": None,
         "corpus": None,
@@ -235,18 +262,37 @@ def classify(path: Path) -> dict[str, Any]:
     missing = [".".join(p) for p in _OPERATOR_PATHS if _dig(data, p) in (None, "")]
     record["missing_operator_fields"] = missing
 
-    flag = meta.get("ratified")
-    if flag is True:
+    block = meta.get("ratification")
+    if isinstance(block, dict) and block.get("ratified") is True:
         record["ratification"] = "declared"
-    elif flag is False:
-        record["ratification"] = "unratified"
-    elif missing:
-        record["ratification"] = "unratified"
+        record["ratified_by"] = block.get("by")
+        record["ratification_basis"] = block.get("basis")
+        record["ratified_at"] = block.get("date")
     else:
-        record["ratification"] = "legacy"
-    record["ratified"] = record["ratification"] in ("declared", "legacy")
-    if isinstance(meta.get("ratification"), dict):
-        record["ratified_by"] = meta["ratification"].get("by")
+        # No block, a malformed block, or ratified: false. All three mean the
+        # same thing to the gate — nobody has declared this file fit to build
+        # on — and all three are refusals rather than defaults.
+        record["ratification"] = "unratified"
+        if block is None:
+            record["ratification_reason"] = (
+                "no _meta.ratification block. Ratification is a declared "
+                "operator act; a file that does not carry the record of one is "
+                "not ratified. Ratify it: python3 "
+                "scripts/benchmark_library.py ratify " + path.stem)
+        elif not isinstance(block, dict):
+            record["ratification_reason"] = (
+                f"_meta.ratification is {type(block).__name__}, not an object")
+        else:
+            record["ratification_reason"] = "_meta.ratification.ratified is not true"
+    record["ratified"] = record["ratification"] == "declared"
+    # `_meta.ratified` is kept in sync by `ratify()` and is convenient to read,
+    # but it is NOT the authority. A file where the two disagree is recorded so
+    # the disagreement cannot pass unnoticed.
+    if isinstance(meta.get("ratified"), bool) \
+            and meta["ratified"] != record["ratified"]:
+        record["ratification_conflict"] = (
+            f"_meta.ratified is {meta['ratified']} but _meta.ratification "
+            f"says {record['ratified']}; the block wins")
 
     try:
         load_benchmark(path)
@@ -480,8 +526,14 @@ def ratify(benchmark: dict[str, Any], *, values: dict[str, str],
 
     meta["ratified"] = True
     meta["ratification"] = {
+        # `ratified` lives INSIDE the block, and is what `classify` reads.
+        # `_meta.ratified` above is a convenience mirror kept in sync here; a
+        # file where they disagree is reported by `classify`, not resolved
+        # silently.
+        "ratified": True,
         "by": by,
         "date": ratified_at,
+        "basis": "operator-flag",
         "overrides": overrides,
         "resolved_from_unmeasured": sorted(resolved),
         "source": source_path,
@@ -666,6 +718,7 @@ def resolve_benchmark(
     captured_at: str | None = None,
     do_ratify: bool = False,
     ratified_at: str | None = None,
+    ratified_by: str | None = None,
     ratify_values: dict[str, str] | None = None,
     market_keys: Sequence[str] = (),
     interactive: bool | None = None,
@@ -714,13 +767,14 @@ def resolve_benchmark(
             captured_at=captured_at, do_ratify=do_ratify,
             ratified_at=ratified_at, ratify_values=ratify_values, keys=keys,
             interactive=interactive, write=write,
-            commission_runner=commission_runner)
+            commission_runner=commission_runner, ratified_by=ratified_by)
 
     # ── (a) operator-flagged slug ────────────────────────────────────────────
     if benchmark_flag:
         return _branch_flagged(
             benchmarks_dir=benchmarks_dir, slug=benchmark_flag,
             do_ratify=do_ratify, ratified_at=ratified_at,
+            ratified_by=ratified_by,
             ratify_values=ratify_values, keys=keys, interactive=interactive,
             write=write)
 
@@ -739,7 +793,7 @@ def resolve_benchmark(
                 captured_at=captured_at, do_ratify=do_ratify,
                 ratified_at=ratified_at, ratify_values=ratify_values, keys=keys,
                 interactive=interactive, write=write,
-                commission_runner=commission_runner)
+                commission_runner=commission_runner, ratified_by=ratified_by)
         if choice == "abort":
             reason = ("the operator declined the offered benchmark"
                       if hit else _two_ways(keys))
@@ -797,7 +851,8 @@ def resolve_benchmark(
 def _branch_flagged(*, benchmarks_dir: Path, slug: str, do_ratify: bool,
                     ratified_at: str | None, ratify_values: dict[str, str],
                     keys: Sequence[str], interactive: bool,
-                    write: Callable[[str], None]) -> dict[str, Any]:
+                    write: Callable[[str], None],
+                    ratified_by: str | None = None) -> dict[str, Any]:
     path = benchmarks_dir / f"{slug}.json"
     if not path.exists():
         reason = (
@@ -811,7 +866,7 @@ def _branch_flagged(*, benchmarks_dir: Path, slug: str, do_ratify: bool,
     entry = classify(path)
     if do_ratify:
         _apply_ratification(path, values=ratify_values, ratified_at=ratified_at,
-                            write=write)
+                            write=write, by=ratified_by or "operator-flag")
         entry = classify(path)
 
     if not entry["loads"]:
@@ -828,8 +883,13 @@ def _branch_flagged(*, benchmarks_dir: Path, slug: str, do_ratify: bool,
             ratification=entry["ratification"], interactive=interactive))
 
     if not entry["ratified"]:
+        # The refusal must name WHICH of the three unratified states this is.
+        # "stamped ratified: false" was printed for a file carrying no
+        # ratification block at all — a refusal that describes a stamp nobody
+        # applied sends the reader looking for the wrong thing.
         reason = (
-            f"--benchmark {slug} loads but is stamped ratified: false. A "
+            f"--benchmark {slug} loads but is not ratified: "
+            f"{entry.get('ratification_reason') or 'ratified is not true'}. A "
             f"benchmark that loads is not thereby ratified — ratify it "
             f"explicitly: {' '.join(ratification_hint([]))} --benchmark {slug}")
         raise BenchmarkNotMeasured(reason, _record(
@@ -847,10 +907,11 @@ def _branch_flagged(*, benchmarks_dir: Path, slug: str, do_ratify: bool,
 
 def _apply_ratification(path: Path, *, values: dict[str, str],
                         ratified_at: str | None,
-                        write: Callable[[str], None]) -> None:
+                        write: Callable[[str], None],
+                        by: str = "operator-flag") -> None:
     data = json.loads(path.read_text(encoding="utf-8"))
     stamped = ratify(data, values=values, ratified_at=str(ratified_at),
-                     source_path=path.name)
+                     by=by, source_path=path.name)
     path.write_text(json.dumps(stamped, indent=2) + "\n", encoding="utf-8")
     declared = ", ".join(o["field"] for o in
                          stamped["_meta"]["ratification"]["overrides"]) or "nothing"
@@ -862,7 +923,8 @@ def _branch_commission(*, root: Path, benchmarks_dir: Path, reference_url: str,
                        ratified_at: str | None, ratify_values: dict[str, str],
                        keys: Sequence[str], interactive: bool,
                        write: Callable[[str], None],
-                       commission_runner) -> dict[str, Any]:
+                       commission_runner,
+                       ratified_by: str | None = None) -> dict[str, Any]:
     if not captured_at:
         raise BenchmarkUsage(
             "--reference-url requires --benchmark-captured-at YYYY-MM-DD. The "
@@ -929,7 +991,7 @@ def _branch_commission(*, root: Path, benchmarks_dir: Path, reference_url: str,
             interactive=interactive))
 
     _apply_ratification(out, values=ratify_values, ratified_at=ratified_at,
-                        write=write)
+                        write=write, by=ratified_by or "operator-flag")
     entry = classify(out)
     if not entry["loads"]:
         missing = missing_for_load(out)
@@ -975,6 +1037,11 @@ def add_arguments(parser: Any) -> None:
     parser.add_argument(
         "--ratified-at", metavar="YYYY-MM-DD",
         help="date of the ratification. Required with --ratify.")
+    parser.add_argument(
+        "--ratified-by", metavar="WHO",
+        help="who ratified it. Defaults to 'operator-flag', which records the "
+             "mechanism rather than the person; name someone when the record "
+             "should say who made the design call.")
     for f in RATIFY_FIELDS:
         parser.add_argument(
             f.flag, dest=f.dest,

@@ -39,8 +39,10 @@
     "contributions": {},
     "measured_field_count": 21,
     "ratification": {
+      "ratified": true,
       "by": "operator-flag",
       "date": "2026-08-18",
+      "basis": "operator-flag",
       "overrides": [
         {
           "field": "palette_roles.accent",

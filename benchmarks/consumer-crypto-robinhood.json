@@ -4,6 +4,39 @@
     "aliases": [
       "consumer-crypto-robinhood"
     ],
+    "ratification": {
+      "ratified": true,
+      "by": "inference-backfill; original declarant not recorded",
+      "date": "2026-08-18",
+      "basis": "inference",
+      "overrides": [
+        {
+          "field": "palette_roles.accent",
+          "flag": "--ratify-accent",
+          "value": "#004e89",
+          "kind": "backfilled"
+        },
+        {
+          "field": "palette_roles.on_accent",
+          "flag": "--ratify-on-accent",
+          "value": "#ffffff",
+          "kind": "backfilled"
+        },
+        {
+          "field": "density",
+          "flag": "--ratify-density",
+          "value": "comfortable",
+          "kind": "backfilled"
+        },
+        {
+          "field": "motion.intensity",
+          "flag": "--ratify-motion-intensity",
+          "value": "subtle",
+          "kind": "backfilled"
+        }
+      ],
+      "note": "BACKFILLED. This file predates ratification being a recorded act. It was classified ratified by INFERENCE \u2014 the gate observed that all four operator-declared fields were present and treated that shape as consent. Who declared these values, and when, is not recorded anywhere in this repository or its history. This block states that weak provenance explicitly rather than leaving an inference to be silently restated as a ratification. `overrides` lists the values as they already stood; `kind: backfilled` means the value was read out of the file, not declared at this ratification."
+    },
     "captured_from": [
       "https://robinhood.com/us/en/",
       "https://robinhood.com/eu/en/crypto/",

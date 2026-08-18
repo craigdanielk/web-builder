@@ -55,7 +55,10 @@ def _bench(market, *, aliases=None, ratified=True, captured_at="2026-08-18"):
     """A minimal file that `classify` reads. Not load-valid, and need not be:
     these tests are about identity and the index, not about compiling style."""
     meta = {"market": market, "captured_at": captured_at,
-            "ratified": bool(ratified)}
+            "ratified": bool(ratified),
+            "ratification": {"ratified": bool(ratified), "by": "fixture",
+                             "date": "2026-08-18", "basis": "operator-flag",
+                             "overrides": [], "note": "synthetic fixture"}}
     if aliases:
         meta["aliases"] = aliases
     return {

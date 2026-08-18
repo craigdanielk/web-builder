@@ -14,7 +14,7 @@
         "consumer-crypto-robinhood"
       ],
       "ratified": true,
-      "ratification": "legacy",
+      "ratification": "declared",
       "captured_at": "2026-08-13",
       "corpus": null,
       "loads": true
@@ -25,7 +25,7 @@
       "market": "crypto-exchange",
       "aliases": [],
       "ratified": true,
-      "ratification": "legacy",
+      "ratification": "declared",
       "captured_at": "2026-07-23",
       "corpus": null,
       "loads": true
@@ -38,7 +38,7 @@
         "enterprise-payments-bvnk"
       ],
       "ratified": true,
-      "ratification": "legacy",
+      "ratification": "declared",
       "captured_at": "2026-08-14",
       "corpus": null,
       "loads": true

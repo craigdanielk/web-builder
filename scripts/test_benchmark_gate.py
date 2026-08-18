@@ -278,8 +278,11 @@ try:
                             write=sink)
     test("a loading library file resolves", rec["gate"] == "PASS", json.dumps(rec))
     test("the rule is operator-flagged", rec["rule"] == "operator-flagged")
-    test("the real BVNK file classifies as ratified-legacy",
-         rec["ratification"] == "legacy", rec["ratification"])
+    test("the real BVNK file classifies as declared, by backfilled inference",
+         (rec["ratification"] == "declared"
+          and classify(ra / "benchmarks" / "enterprise-payments-bvnk.json")
+          ["ratification_basis"] == "inference"),
+         rec["ratification"])
     test("a --benchmark hit prints NO library prompt (it was not a library "
          "resolution)", "resolved from library" not in drain())
 
@@ -311,12 +314,26 @@ try:
     # a file that LOADS but is explicitly ratified: false is still refused
     loaded_unratified = json.loads(BVNK.read_text())
     loaded_unratified["_meta"]["ratified"] = False
+    loaded_unratified["_meta"]["ratification"]["ratified"] = False
     (ra / "benchmarks" / "stamped-false.json").write_text(
         json.dumps(loaded_unratified, indent=2), encoding="utf-8")
     sf = refuses(root=ra, benchmark_flag="stamped-false", interactive=False,
                  write=sink)
     test("loading is not ratification: ratified:false still refuses",
-         sf is not None and "ratified: false" in sf[0], sf[0] if sf else "")
+         sf is not None and "is not ratified" in sf[0], sf[0] if sf else "")
+    # The refusal must name WHICH unratified state this is. A file with no
+    # block at all was previously told it was "stamped ratified: false".
+    noblock = json.loads(BVNK.read_text())
+    noblock["_meta"].pop("ratification")
+    (ra / "benchmarks" / "no-stamp.json").write_text(
+        json.dumps(noblock, indent=2), encoding="utf-8")
+    ns = refuses(root=ra, benchmark_flag="no-stamp", interactive=False,
+                 write=sink)
+    drain()
+    test("a blockless file is refused for the ABSENCE of a block, not for a "
+         "stamp nobody applied",
+         ns is not None and "no _meta.ratification block" in ns[0],
+         ns[0] if ns else "")
 
     # ── 2. branch (b) --reference-url ───────────────────────────────────────
     print("\n2. branch (b) — --reference-url, commission then ratify")
@@ -538,11 +555,19 @@ try:
          len(index) >= 3 and all(e["ratification"] != "unreadable"
                                  for e in index),
          json.dumps([(e["slug"], e["ratification"]) for e in index]))
-    test("the census-era files are still classified legacy",
-         all(next(e for e in index if e["slug"] == s)["ratification"] == "legacy"
+    test("the census-era files carry a BACKFILLED ratification, declared as "
+         "an inference rather than restated as an operator act",
+         all(next(e for e in index if e["slug"] == s)["ratification_basis"]
+             == "inference"
              for s in ("consumer-crypto-robinhood", "crypto-exchange",
                        "enterprise-payments-bvnk")),
-         json.dumps([(e["slug"], e["ratification"]) for e in index]))
+         json.dumps([(e["slug"], e["ratification"], e["ratification_basis"])
+                     for e in index]))
+    test("a benchmark ratified through the gate records basis operator-flag",
+         next(e for e in index
+              if e["slug"] == "enterprise-stablecoin-payments-measured"
+              )["ratification_basis"] == "operator-flag",
+         json.dumps([(e["slug"], e["ratification_basis"]) for e in index]))
     test("every ratified library file loads today",
          all(e["loads"] for e in index if e["ratified"]),
          json.dumps([(e["slug"], e["load_error"]) for e in index]))
@@ -554,18 +579,41 @@ try:
          [m["slug"] for m in match_library(index, ["enterprise-payments-bvnk"])]
          == ["enterprise-payments-bvnk"])
 
-    # a legacy file missing one operator field is NOT legacy-ratified
-    rl = make_root(tmp, "legacy-edge")
-    stripped = json.loads(BVNK.read_text())
-    stripped.pop("density")
-    (rl / "benchmarks" / "no-density.json").write_text(
-        json.dumps(stripped, indent=2), encoding="utf-8")
-    nd = classify(rl / "benchmarks" / "no-density.json")
-    test("a key-less file missing an operator field is unratified, not legacy",
-         nd["ratification"] == "unratified" and nd["ratified"] is False,
-         nd["ratification"])
+    # RATIFICATION IS DECLARED, NOT INFERRED FROM SHAPE. This used to assert
+    # that a file missing one operator field fell out of the `legacy` class.
+    # There is no `legacy` class now: a file with no `_meta.ratification` block
+    # is unratified however complete its fields are, and a file with a block is
+    # ratified however the fields got there.
+    rl = make_root(tmp, "declared-edge")
+    blockless = json.loads(BVNK.read_text())
+    blockless["_meta"].pop("ratification")
+    (rl / "benchmarks" / "no-block.json").write_text(
+        json.dumps(blockless, indent=2), encoding="utf-8")
+    nb = classify(rl / "benchmarks" / "no-block.json")
+    test("a COMPLETE file with no ratification block is unratified",
+         nb["ratification"] == "unratified" and nb["ratified"] is False,
+         nb["ratification"])
+    test("...and the refusal says why, naming the command that would fix it",
+         "no _meta.ratification block" in (nb["ratification_reason"] or "")
+         and "benchmark_library.py ratify" in (nb["ratification_reason"] or ""),
+         nb["ratification_reason"])
     test("...and it is excluded from library matching",
-         match_library([nd], ["no-density"]) == [])
+         match_library([nb], ["no-block"]) == [])
+    test("...and the gate refuses to build on it",
+         refuses(root=rl, benchmark_flag="no-block", interactive=False,
+                 write=sink) is not None)
+    drain()
+    # The mirror key is not the authority, and a disagreement is recorded.
+    conflict = json.loads(BVNK.read_text())
+    conflict["_meta"]["ratified"] = False       # mirror says no
+    (rl / "benchmarks" / "conflict.json").write_text(
+        json.dumps(conflict, indent=2), encoding="utf-8")
+    cf = classify(rl / "benchmarks" / "conflict.json")
+    test("the ratification block wins over the _meta.ratified mirror",
+         cf["ratified"] is True, cf["ratification"])
+    test("...and the disagreement is recorded, not silently resolved",
+         "the block wins" in (cf.get("ratification_conflict") or ""),
+         cf.get("ratification_conflict"))
 
     # ── 8. the build record ────────────────────────────────────────────────
     print("\n8. the resolution lands in the build record")
