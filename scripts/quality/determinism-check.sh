@@ -27,10 +27,14 @@
 
 set -u
 
-# --describe: what this instrument is, in its own words. Shell cannot import
-# scripts/lib/capability.py, so the declaration is a JSON literal here and is
-# validated by `scripts/capability_register.py` when the register is compiled.
-# Same schema, same rules — `cannot_see` is not optional.
+# AURELIX-CAPABILITY — this file declares a capability under `--describe`.
+#
+# The marker above is what makes this file discoverable by
+# `scripts/capability_register.py`; it is the explicit form used by instruments
+# that cannot import the helper. Shell cannot import scripts/lib/capability.py,
+# so the declaration is a JSON literal here and is validated by the compiler
+# through `lib.capability.validate` when the register is compiled — same schema,
+# same rules. `cannot_see` is not optional.
 if [ "${1:-}" = "--describe" ]; then
   cat <<'CAPABILITY_JSON'
 {

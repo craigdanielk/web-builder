@@ -1,12 +1,79 @@
 _meta:
   generated_by: scripts/capability_register.py compile
-  instrument_count: 33
+  instrument_count: 42
   status_counts:
-    NOT_RUN: 8
-    VERIFIED: 25
+    NOT_RUN: 15
+    VERIFIED: 27
   note: GENERATED — do not edit. Declarations live in each instrument's source file behind `--describe`.
     Edit there and recompile.
 capabilities:
+- id: aurelix.adapter.shopify-admin-token
+  name: Step 0 — mint a Shopify Admin API token by client-credentials grant
+  kind: adapter
+  invocation: python3 step0_token.py [--env PATH] [--no-write]
+  preconditions:
+  - SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET — read from the --env FILE FIRST
+    and only then from os.environ (the opposite precedence to every other script here)
+  - the store must have a custom app installed whose client credentials grant the requested scopes; the
+    global shopify.com token endpoint returns 403, so this posts to the per-store /admin/oauth/access_token
+  - network reach to https://<domain>/admin/oauth/access_token and .../admin/api/2024-01/graphql.json
+  - --env defaults to <repo-root>/.env, which DOES NOT EXIST in this checkout. With no file and no ambient
+    credentials it returns 1 immediately
+  - the --env file must already exist for the token to be written back — a non-existent path silently
+    downgrades the run to print-only
+  inputs:
+  - 'the --env file: SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET'
+  - os.environ, as a fallback for each of those three only
+  - a hardcoded 30-scope request string covering products, inventory, content, themes, files, customers,
+    orders, fulfillments, translations, markets, publications and online-store navigation
+  outputs:
+  - 'the --env file, REWRITTEN: SHOPIFY_ADMIN_ACCESS_TOKEN is updated in place or appended under a ''#
+    Admin API token (Step 0; ~24h expiry)'' comment. This is a file mutation, not a print'
+  - 'stdout: the reported expires_in, the verified shop name and myshopifyDomain, and the destination
+    path'
+  - 'stdout under --no-write: the first 20 characters of the token only'
+  outcome: a live Admin API token written where every other Shopify instrument in this directory expects
+    to find it — the credential that Layer 4, Layer 5 and Gate B-0 all fail without
+  exit_contract:
+    '0': token obtained, verified against the shop query, and (unless --no-write) written to the --env
+      file
+    '1': missing client credentials, the token POST failed, the response carried no 'shp'-prefixed access_token,
+      or the verification shop query failed or returned GraphQL errors
+    '2': usage error from argparse
+  measures:
+  - that the client-credentials grant is accepted by this specific store
+  - that the returned token actually works, by spending it on { shop { name url myshopifyDomain } } before
+    writing it anywhere
+  - the expires_in the store reports (defaulting to 86400 when absent) — printed, never stored
+  cannot_see:
+  - WHICH SCOPES IT ACTUALLY GOT. It requests 30 scopes and never reads them back; Shopify grants only
+    what the installed app is configured for and returns 200 regardless. So a token minted here can pass
+    Gate B-0 and still 403 on the first write in Layer 4. Only diagnose_api_connection.py reads /admin/oauth/access_scopes.json
+  - the expiry it prints is not persisted anywhere — nothing downstream can tell a token minted 30 seconds
+    ago from one minted 23 hours ago, and the ~24h expiry is why this script is re-run rather than run
+    once
+  - 'it does not know it just overwrote a working token: the in-place rewrite has no backup and no diff,
+    and if the shop query passes but the file write is interrupted the .env is left mid-rewrite'
+  - it cannot see that the default --env path does not exist. `load_dotenv` returns {} for a missing file
+    and the write-back branch is guarded on `args.env.exists()`, so a run against a bad path fails on
+    'Missing required env' rather than on 'that file is not there'
+  - the storefront (public) token, which is a different credential minted in the Shopify Admin UI and
+    which Gate B needs — this script only ever produces the Admin one
+  reachable_from:
+  - preflight_api_keys.py:99-125 — try_refresh_shopify_token(), a subprocess call made only after an Admin
+    API 401 and only when SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET are both present in the (non-existent)
+    root .env
+  - run_pipeline.py, transitively, via the `preflight` stage that runs preflight_api_keys.py
+  - shopify-integration-layer/cli-deploy/update-scopes.sh:19 — an echoed instruction to a human, NOT an
+    invocation
+  cost: seconds. One token POST (30s timeout) and one verification GraphQL POST (15s timeout). It does
+    not touch store data, but it DOES rewrite the --env file unless --no-write is passed. The token it
+    returns lives ~24h.
+  source_file: shopify-integration-layer/step0_token.py
+  language: py
+  status: NOT_RUN
+  evidence: needs SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET + SHOPIFY_STORE_DOMAIN, all absent. It mints
+    a ~24h Admin token AND rewrites the --env file in place
 - id: aurelix.builder.animation-registry
   name: Animation component catalogue builder
   kind: builder
@@ -592,6 +659,184 @@ capabilities:
   status: VERIFIED
   evidence: ran `node scripts/quality/run-extract-aa.js http://127.0.0.1:8791/probe.html /tmp/xa` → exit
     0
+- id: aurelix.extractor.ui-codebase-preflight
+  name: UI codebase preflight — static route discovery and frontend-debt scan
+  kind: extractor
+  invocation: python3 run_ui_codebase_preflight.py [--repo <path>] [--target <slug>] [--bundle-id <id>]
+    [--output-dir <dir>] [--skip-lint] [--lint-timeout N]
+  preconditions:
+  - a frontend repo readable on disk — given by --repo, or resolved from registry/ui-ux-audit-paths.yaml
+    + registry/cross-repo-dependencies.yaml via --target
+  - 'npm on PATH and a `lint` script in package.json, for the lint half; without either it records {invoked:
+    false, reason} rather than pretending it linted'
+  - nothing is served or built — this reads source only, so it needs no running app
+  inputs:
+  - the repo's src/app/**/page.tsx (Next.js App Router) or react-router-dom routes (Vite+React), whichever
+    is found first
+  - every src/**/*.tsx outside node_modules, scanned for UX / a11y / frontend-debt signals
+  - vite.config.{ts,js}, for the dev-server port hint
+  - package.json, for the lint script
+  - registry/ui-ux-audit-paths.yaml and registry/cross-repo-dependencies.yaml
+  outputs:
+  - <bundle>/codebase_preflight.json — {preflight_version, repo_root, framework_guess, page_routes, suggested_local_seeds,
+    static_signals, lint, canonical_bundle_resolver, notes} plus vite_config when detected
+  - 'stdout: the absolute path of that JSON, and nothing else'
+  outcome: the route list a crawl should seed from, and the source-level UX/a11y signals that no amount
+    of crawling a rendered page can recover
+  exit_contract:
+    '0': 'the scan ran and codebase_preflight.json was written. It carries NO verdict — a repo with zero
+      routes and a failing lint exits 0, and `lint.ok: false` lives inside the JSON, never in the exit
+      code'
+    '1': the resolved repo path is not a directory
+    '2': 'the invocation could not be resolved to a repo or a canonical bundle dir: no cross-repo path
+      for --target, no default_target in the registry, the default_target repo is absent on disk, or --repo
+      matches no registry target and no --output-dir was given. argparse failures also land here'
+  measures:
+  - declared routes, including dynamic segments — [id], [...slug] and [[...slug]] are translated to URL
+    patterns with a concrete hint path each
+  - 'which framework the repo is, by evidence: Next.js App Router first, then react-router-dom, then `unknown`
+    — it does not guess from package.json alone'
+  - per-file static signals across every src/**/*.tsx
+  - the lint run's real exit code, or the precise reason it was not invoked (no package.json, no lint
+    script, npm absent, timeout, --skip-lint)
+  cannot_see:
+  - anything the browser does. Every signal is a regex over source text, so a rule violated only at runtime
+    — a computed style, a conditional render, an effect that moves focus — is invisible here by construction
+  - 'routes that are not statically declared: anything generated at build time, mounted from a config
+    object, or produced by a catch-all handler is not in page_routes, and an absent route reads as a route
+    that does not exist'
+  - whether a discovered route actually responds. suggested_local_seeds is a list of URLs it believes
+    SHOULD exist; only the crawl in run_ui_ux_audit.py finds out, and a seed that 404s comes back as a
+    coverage miss there, not as an error here
+  - any file outside <repo>/src. The tsx scan roots at src/ only, so a component tree under app/, components/
+    or packages/ at the repo root is scanned by nothing
+  - any non-.tsx source. Plain .ts, .jsx and .js files are excluded from the signal scan entirely, so
+    the same defect in a .jsx file is silently unmeasured
+  - whether it scanned the RIGHT repo. When --repo disagrees with the registry's canonical path for --target
+    it prints a warning and scans anyway — a warning on stderr, not a refusal, so a mismatched scan still
+    produces a confident-looking bundle
+  - 'the difference between ''nothing was measured'' and ''everything is clean''. There is no exit 3:
+    a repo where no framework was recognised and zero tsx files exist writes an empty-signal bundle and
+    exits 0'
+  reachable_from:
+  - .github/workflows/tests.yml:113 — CI runs it against a fixture repo
+  - standalone CLI
+  - 'NOTE: nothing in web-builder/scripts/ or run_pipeline.py invokes this. Its OUTPUT is consumed — run_ui_ux_audit.py
+    unions suggested_local_seeds into the crawl and lib/heuristics.py:1207 merges static_signals into
+    the findings — but the file must already be in the bundle dir, which only a manual run puts there'
+  cost: sub-second on a small repo without lint; the lint run dominates and is capped at --lint-timeout
+    (default 120s). No network, no browser, no build.
+  source_file: aurelix-uiux-audit/run_ui_codebase_preflight.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 run_ui_codebase_preflight.py --repo ../web-builder/output/xago-exchange-mockup/site
+    --output-dir /tmp/pf --skip-lint` → exit 0. framework_guess next, 14 routes, 0 signals - no src/**/*.tsx
+    matched its scan root
+- id: aurelix.extractor.ui-ux-audit
+  name: UI/UX architecture audit — crawl, capture, and score L1–L10
+  kind: extractor
+  invocation: python3 run_ui_ux_audit.py site <url> [--max-pages N] [--store-html] [--axe] [--benchmark
+    <file>] [--screenshots] [--psi] | python3 run_ui_ux_audit.py urls --url <u> [--url <u> …]
+  preconditions:
+  - the target URL answers over HTTP from this machine — a local `npm run start` counts, the audit does
+    not build or serve anything itself
+  - Playwright + chromium installed for --crawl-rendering browser, --screenshots, --axe and --benchmark;
+    nothing checks for it, and its absence degrades the run rather than stopping it
+  - an axe.min.js on disk or AXE_JS set, for --axe. It is deliberately NOT vendored, so pinning a copy
+    cannot silently freeze the ruleset
+  - PAGESPEED_API_KEY for --psi (the default is 'on if the key is set')
+  - 'Supabase credentials are OPTIONAL: the L1–L10 engine is pure HTML analysis, and without them the
+    normative-conformance layer reports NOT_MEASURED naming the reason'
+  inputs:
+  - the live site, reached by same-origin BFS from the seed (site mode) or as an explicit URL list (urls
+    mode)
+  - <bundle>/codebase_preflight.json, when one is paired — its suggested_local_seeds are unioned into
+    the crawl and its static signals merged into the findings
+  - a design-DNA benchmark JSON, when --benchmark is given
+  - registry/ui-ux-audit-paths.yaml — where the bundle is written when --output-dir is omitted
+  - a Playwright storage-state JSON, when --storage-state is given
+  - a DECLARED journey file, when --journeys is given
+  outputs:
+  - audit_result.yaml — THE report. findings[] is a FLAT list across all layers and pages, 13 fields each,
+    with evidence[] carrying {source, page_url, selector, observed, expected, confidence, reproducibility,
+    metadata}
+  - remediation_tasks.yaml, and remediation_brief.md unless --no-handoff
+  - captures/NNN_<hash>.json — the capture bundle. {url, http_status, fetch_error, headers, html_length},
+    plus `html` ONLY under --store-html
+  - captures_manifest.json — at the BUNDLE ROOT, not inside captures/
+  - psi/, axe/, screenshots/, journeys/ — each written only when its flag is on
+  - NOT report.json. That name belongs to the web-builder render probe, a different file with a different
+    schema; this runner has never written one
+  outcome: a per-rule PASS/FAIL/NOT_MEASURED score across ten layers of the live site, plus the capture
+    bundle that is the pipeline's universal source-interchange format
+  exit_contract:
+    '0': the audit ran and the bundle was written. It says NOTHING about the site's score — a site that
+      failed every rule exits 0, because this is an extractor and the verdict is inside audit_result.yaml,
+      not in the exit code
+    '1': 'the run could not be performed: no URLs to audit, --storage-state / --journeys / --benchmark
+      file missing, an invalid journey declaration, or --axe requested and axe-core unavailable (that
+      one deliberately fails the RUN, because an accessibility audit reporting zero violations it never
+      measured is worse than no audit)'
+    '2': argparse rejected the invocation — no subcommand, or an unknown flag
+  measures:
+  - 'L1–L10 heuristic rules over harvested HTML: structure, navigation, content, visual systems, accessibility,
+    performance, design-system integrity, behavioural friction'
+  - per-layer COVERAGE, and it suppresses the composite score below the reportable tier rather than publishing
+    a number it did not earn
+  - which requested routes it could NOT reach, in an explicit coverage block — every score is a score
+    over `reached`, and leaving that implicit turns a verdict on a public front door into a verdict on
+    the site
+  - 'blank renders: a page that returned HTML and painted nothing forces the render-dependent layers to
+    NOT_MEASURED, because a blank page trivially PASSES every visual and contrast rule'
+  - computed style vs a declared benchmark (dna_* rules), but ONLY with --benchmark
+  - real contrast, computed ARIA and focus order, but ONLY with --axe
+  cannot_see:
+  - 'WHERE in a page an offence is, at section granularity. There is no `section` field anywhere in the
+    finding schema — compiler.py:126-154 emits exactly 13 fields and none of them is one. Measured on
+    a 4-page local run: 45 findings, 45 carry a route, 0 carry a section. No consumer can route a finding
+    to a section artifact'
+  - WHICH element. 33 of those 45 findings did carry an evidence[].selector, but they are RULE selectors
+    — 'h1', 'title', 'meta[name=description]', ':focus-visible' — describing what the rule looked for,
+    not an instance a browser resolved. Only --axe emits selectors resolved against a rendered DOM, and
+    --axe is OFF BY DEFAULT
+  - where a dna_* conformance offence actually occurred. evaluate() flattens measured['per_page'] into
+    one aggregate and stamps pages[0] onto every evidence record (design_conformance.py:484, `first =
+    pages[0]`), so the page_url on those findings is 'the first page in the list', not the offending page
+  - 'the dna_* rules AT ALL without --benchmark. They are then ABSENT from the report, not passed — and
+    an absent rule in a findings list reads as a clean one. Measured: a default run produced 45 findings
+    and 0 of them dna_*'
+  - a localhost target, on the --psi path. PSI is a Google service reaching IN, so every call against
+    127.0.0.1 returns HTTP 400 and lands as a NOT_MEASURED finding — and since --psi defaults to ON whenever
+    PAGESPEED_API_KEY is set, a local run pays minutes of round trips to learn nothing unless you pass
+    --no-psi
+  - 'the HTML it fetched, unless --store-html is passed. html_length is computed in memory and ALWAYS
+    persisted; `html` is persisted only under the flag, so a capture record can report html_length: 23198
+    with no `html` key at all. A bundle in that shape is useless as a build source, and nothing in the
+    bundle says so'
+  - anything behind a login without --storage-state, and the plain fetch path carries no session at all
+    — so an unauthenticated crawl scores the public site and calls it the site
+  - 'whether it measured anything. There is no exit 3: a run that reached zero usable pages, ran no browser-dependent
+    layer and scored almost nothing still exits 0'
+  - the source code behind the rendered page — that is run_ui_codebase_preflight.py's job, and it is merged
+    in only when its JSON is present in the bundle dir
+  - 'capture identity by filename: slugs use Python''s builtin hash(), salted per process, so they change
+    every run. Only record[''url''] is stable'
+  reachable_from:
+  - run_pipeline.py:803 — the `audit` stage of the vercel chain
+  - web-builder/scripts/cvr_loop.py:1058 — audits the site the loop just built
+  - .github/workflows/tests.yml:78 — a `urls` smoke run in CI
+  - standalone CLI
+  cost: 'the httpx crawl itself is seconds — 4 local pages captured and scored in under 10s. --psi dominates
+    and is ON BY DEFAULT when PAGESPEED_API_KEY is set: measured ~4min for 4 pages x 2 strategies, all
+    of them failing because the target was localhost. --screenshots and --benchmark launch Playwright
+    per page. Crawls a live external site unless pointed at localhost, so it costs the target real traffic.'
+  source_file: aurelix-uiux-audit/run_ui_ux_audit.py
+  language: py
+  status: VERIFIED
+  evidence: ran `python3 run_ui_ux_audit.py site http://127.0.0.1:3987/login --max-pages 4 --crawl-rendering
+    httpx --store-html --output-dir /tmp/audit --no-handoff` → exit 0. 4 pages captured, 45 findings,
+    against a local next start of xago-exchange-mockup. All 45 carry a route; the schema has NO section
+    field at all
 - id: aurelix.fixer.render-contrast
   name: Contrast remediation at the design-token layer
   kind: fixer
@@ -836,6 +1081,131 @@ capabilities:
   status: VERIFIED
   evidence: ran `python3 scripts/verify_rails_gate.py --site-dir output/xago-exchange-mockup/site --output-dir
     /tmp/rails` → exit 1. FAIL, no rails-emission.json - correct, that tenant declares no cms
+- id: aurelix.gate.shopify-b
+  name: Gate B — Shopify store + CDN verification before the site build
+  kind: gate
+  invocation: python3 verify_gate_b.py [--output-dir DIR] [--compiled-dir DIR] [--env PATH] [--skip-head]
+    [--dry-run]
+  preconditions:
+  - at least one of --output-dir or --compiled-dir; with neither it appends 'Provide --output-dir and/or
+    --compiled-dir' and FAILs
+  - --output-dir must contain shopify_config.json (written by layer4_store_setup.py)
+  - 'a storefront token: shopify_config.json.storefront_access_token, or SHOPIFY_STOREFRONT_ACCESS_TOKEN
+    / PUBLIC_ACCESS_TOKEN in the environment. The checked-in shopify_config.json carries the literal placeholder
+    ''[set SHOPIFY_STOREFRONT_ACCESS_TOKEN or ...]'', which the leading-''['' test rejects'
+  - network reach to https://<store_domain>/api/2024-01/graphql.json unless --dry-run
+  - SHOPIFY_STORE_DOMAIN + SHOPIFY_ADMIN_ACCESS_TOKEN only for the optional --compiled-dir count comparison
+  - --env defaults to <repo-root>/.env, which DOES NOT EXIST in this checkout; load_dotenv returns {}
+    silently, so every credential must already be in the environment
+  inputs:
+  - <output-dir>/shopify_config.json — store_domain and storefront_access_token
+  - <output-dir>/cdn_url_map.json — OPTIONAL; its absence silently disables the entire B-CDN half
+  - <compiled-dir>/architecture.json — collections[] and summary.estimated_products, for a printed comparison
+    only
+  - the --env file, if it exists; values are only applied to keys not already in os.environ
+  outputs:
+  - 'stdout: ''VERIFY GATE B: PASS'' on success, nothing otherwise'
+  - 'stderr: one ''FAIL: <reason>'' line per error, and an informational store-vs-compiled count line'
+  outcome: whether the Shopify storefront the site build is about to target is reachable with a working
+    Storefront API token, and (only when a CDN map exists) whether its uploaded media URLs still resolve
+  exit_contract:
+    '0': 'PASS — no errors accumulated. NOTE: this is also what a run with cdn_url_map.json absent returns,
+      having checked no media at all'
+    '1': FAIL — one or more errors, each printed to stderr
+    '2': usage error from argparse (unrecognised flag, unparseable --output-dir)
+  measures:
+  - presence of shopify_config.json under --output-dir
+  - that a storefront token exists and is not the bracketed placeholder
+  - a live Storefront API POST { shop { name } } and that the response carries data.shop
+  - HEAD reachability of every cdn_url_map.json section_media URL — but only when that file exists and
+    --skip-head was not passed
+  - the store's live collection and product counts against architecture.json — printed, never asserted
+  cannot_see:
+  - 'IT CANNOT SEE THAT B-CDN DID NOT RUN. When <output-dir>/cdn_url_map.json is absent the whole CDN
+    branch — the `if cdn_path.exists():` block, lines 184-203 in this file, cited as 120-139 in the parent
+    CLAUDE.md against the pre-declaration numbering — is skipped and NOTHING is printed about it. The
+    only trace is a source comment on line 203, which no operator reads. The gate then prints ''VERIFY
+    GATE B: PASS'' and exits 0, so a run that verified zero media URLs is indistinguishable from one that
+    verified all of them'
+  - 'it has no NOT_MEASURED outcome at all: absent credentials, an unreachable store and a genuinely broken
+    storefront all land on exit 1, so ''we could not measure'' and ''we measured and it is broken'' are
+    the same code'
+  - the HEAD sweep `break`s after the FIRST failing CDN URL, so the error count is never the failure count
+    — one 'CDN URL HEAD failed' line can stand for any number of dead URLs
+  - 'the --compiled-dir count comparison is wrapped in `except Exception: pass`; an expired Admin token
+    there is swallowed entirely and the gate still passes'
+  - it never reads the Admin API for anything the site build actually consumes — it does not check that
+    products or collections are published to the Headless sales channel, which is the failure that makes
+    a Storefront query return an empty catalogue against a store full of products
+  - it does not verify the Storefront API VERSION the generated app uses; it pins 2024-01 here regardless
+    of what orchestrate.py emits
+  reachable_from:
+  - run_pipeline.py:604 — stage_gate_b(), the `gate_b` stage of the Shopify chain (absent from the Vercel
+    chain)
+  cost: seconds. One Storefront GraphQL POST (15s timeout) plus one HEAD per CDN URL (10s timeout each,
+    stopping at the first failure), plus two Admin REST GETs (30s timeout) when --compiled-dir is given.
+    Read-only against the store; it mutates nothing. --dry-run reduces it to file-presence checks with
+    no network at all.
+  source_file: shopify-integration-layer/verify_gate_b.py
+  language: py
+  status: NOT_RUN
+  evidence: needs an --output-dir shopify_config.json whose storefront_access_token is real; the checked-in
+    one holds a literal placeholder and SHOPIFY_STOREFRONT_ACCESS_TOKEN is unset
+- id: aurelix.gate.shopify-b0
+  name: Gate B-0 — Admin API credential check before Layer 4 mutates the store
+  kind: gate
+  invocation: python3 verify_gate_b0.py [--env PATH]
+  preconditions:
+  - SHOPIFY_ADMIN_ACCESS_TOKEN or SHOPIFY_ACCESS_TOKEN in the environment, beginning 'shp'. step0_token.py
+    mints it and Shopify expires it every ~24h
+  - SHOPIFY_STORE_DOMAIN in the environment
+  - network reach to https://<domain>/admin/api/2024-01/graphql.json
+  - --env defaults to <repo-root>/.env, which DOES NOT EXIST in this checkout; load_dotenv returns {}
+    without a word, so the environment is the only real source
+  inputs:
+  - the --env file, if it exists; only keys absent from os.environ are applied, so an ambient value always
+    wins over the file
+  - 'os.environ: SHOPIFY_ADMIN_ACCESS_TOKEN / SHOPIFY_ACCESS_TOKEN, SHOPIFY_STORE_DOMAIN'
+  outputs:
+  - 'stdout on PASS: ''VERIFY GATE B-0: PASS'', the token''s first 12 characters, and the shop name +
+    myshopifyDomain'
+  - 'stderr on FAIL: one ''FAIL: <reason>'' line per problem'
+  outcome: whether the Admin API credential in this environment is present, well-formed and actually accepted
+    by the named store — asked BEFORE Layer 4 starts creating collections on it
+  exit_contract:
+    '0': PASS — token present, shop query returned a shop
+    '1': FAIL — missing token or domain, token not starting 'shp', shop query raised, or no shop in the
+      response
+    '2': usage error from argparse
+  measures:
+  - 'that a token is present at all, and that it has the ''shp'' prefix (note: the error text says ''shp_''
+    but the test is `startswith("shp")`, so ''shpx'' passes the prefix check)'
+  - that SHOPIFY_STORE_DOMAIN is set
+  - that an Admin GraphQL { shop { name url myshopifyDomain } } against api 2024-01 returns a shop — which
+    is the only proof the token is live rather than merely present
+  cannot_see:
+  - SCOPES. A token minted for read-only scopes passes this gate and then fails inside Layer 4 on the
+    first collectionCreate — the shop query needs no write scope, so B-0 cannot distinguish a token that
+    can set the store up from one that can only read it. diagnose_api_connection.py is the instrument
+    that reads access_scopes; this one never does
+  - REMAINING LIFETIME. Shopify client-credentials tokens expire in ~24h and the shop query does not report
+    expires_in, so a token with one minute left passes identically to a fresh one — and Layer 4 is a long,
+    mutating run
+  - 'it has no NOT_MEASURED outcome: ''no credential was supplied'' and ''the credential was rejected''
+    both exit 1, so the chain cannot tell an unconfigured machine from a broken token'
+  - the response body on failure beyond str(e) — a 401, a 403 and a DNS failure all print as one 'Shop
+    query failed' line, which is why the separate SHOPIFY_403_DIAGNOSTIC_REPORT.md exists in this directory
+  - 'whether the domain it verified is the domain any later stage will use: it reads SHOPIFY_STORE_DOMAIN,
+    while layer4 writes and verify_gate_b reads shopify_config.json.store_domain, and nothing reconciles
+    the two'
+  reachable_from: []
+  cost: under a second. One Admin GraphQL POST with a 15s timeout. Strictly read-only — it mutates neither
+    the store nor any file.
+  source_file: shopify-integration-layer/verify_gate_b0.py
+  language: py
+  status: NOT_RUN
+  evidence: needs SHOPIFY_ADMIN_ACCESS_TOKEN (or SHOPIFY_ACCESS_TOKEN) plus SHOPIFY_STORE_DOMAIN; both
+    unset
 - id: aurelix.gate.template-tokens
   name: Section-template token conversion check
   kind: gate
@@ -1306,6 +1676,211 @@ capabilities:
   language: py
   status: NOT_RUN
   evidence: two full builds plus a served local audit; build timeout defaults to 3600s each, audit 1800s
+- id: aurelix.migration.shopify-cdn-media
+  name: Layer 5 — upload section media to the Shopify CDN and emit the URL map
+  kind: migration
+  invocation: python3 layer5_media_pipeline.py --compiled-dir PATH --output-dir PATH [--public-dir PATH]
+    [--env PATH] [--dry-run]
+  preconditions:
+  - SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN (or SHOPIFY_ACCESS_TOKEN or PRIVATE_ACCESS_TOKEN)
+    — checked BEFORE --dry-run is consulted, so even a dry run returns 1 without them (run_pipeline.py:598-600
+    documents this as the reason `--dry-run --full` used to die here)
+  - that token must carry write_files; fileCreate is a mutation
+  - <compiled-dir>/media-manifest.json must exist — a missing file is a clean exit 1
+  - 'the source_url of each asset must be a publicly fetchable http(s) URL: Shopify pulls it by originalSource,
+    and brand assets are fetched by this process directly'
+  - --env defaults to <repo-root>/.env, which DOES NOT EXIST in this checkout
+  - 'THE TARGET STORE IS MUTATED: every upload creates a permanent File in the store''s Content > Files'
+  inputs:
+  - <compiled-dir>/media-manifest.json — section_media{page_handle}{section_key}{source, source_url, deployment,
+    alt_text} and brand_assets[]{type, source_url, target_path}
+  - the --env file, if it exists; only keys absent from os.environ are applied
+  - the remote source URLs themselves, over the network
+  outputs:
+  - 'THE LIVE STORE: one Shopify File per uploaded section image, via the fileCreate mutation'
+  - <output-dir>/cdn_url_map.json — section_media (composite 'page:section' key -> CDN url), brand_assets,
+    product_images sentinel, and summary{uploaded, failed, skipped_dynamic}. THIS FILE'S EXISTENCE is
+    what switches Gate B's B-CDN half on
+  - <public-dir> (default <output-dir>/public) — brand assets downloaded to local disk, not uploaded
+  outcome: durable CDN URLs for the site's section imagery, plus the cdn_url_map.json that lets Gate B
+    check them and the build reference them
+  exit_contract:
+    '0': the manifest was walked and cdn_url_map.json was written. This is ALSO what a run where every
+      upload failed returns — failures are counted into summary.failed, never raised
+    '1': credentials missing, or <compiled-dir>/media-manifest.json missing
+    '2': usage error from argparse — including omitting either required directory flag
+  measures:
+  - how many section images uploaded, failed, and were skipped as dynamic (source == 'dynamic:storefront_api',
+    or deployment != 'shopify_cdn')
+  - whether fileCreate returned a MediaImage with an image.url — a file accepted but still processing
+    yields no url and is counted as a failure
+  - which brand assets were fetched to local disk
+  cannot_see:
+  - 'EVERY FAILURE MODE COLLAPSES INTO ONE INTEGER. upload_one_file() wraps the whole call in `except
+    Exception: return None`, so an expired token, a 404 source URL, a userErrors payload and a file still
+    processing all increment summary.failed identically, with no message and no per-asset reason recorded
+    anywhere'
+  - 'brand-asset download failures are worse than counted — they are `except Exception: pass`, so a brand
+    asset that never downloaded is simply absent from brand_assets in the map, and nothing anywhere says
+    so'
+  - '''failed'' does not stop it and does not change the exit code: a run with uploaded=0, failed=200
+    writes a cdn_url_map.json with an empty section_media, exits 0, and Gate B then finds that file present
+    and reports PASS on zero URLs'
+  - it cannot tell an asset it uploaded from one uploaded by a previous run — there is no idempotency
+    check at all, so every re-run creates duplicate Files on the store and there is no way to reconcile
+    or remove them
+  - 'it does not verify the CDN URL it recorded: the url comes from the mutation response and is never
+    fetched back, which is precisely the check Gate B''s HEAD sweep exists to perform later'
+  - --dry-run fabricates plausible URLs (https://cdn.shopify.com/dry-run/<page>_<section>.jpg) into a
+    real cdn_url_map.json. That file is indistinguishable by name from a real one, and a later Gate B
+    run against it will HEAD non-existent URLs
+  reachable_from:
+  - run_pipeline.py:584-597 — stage_layer5(), the `layer5` stage of the Shopify chain, gated on --with-media
+    (absent from the Vercel chain)
+  cost: 'minutes, scaling with the manifest: one fileCreate per section image at a 90s timeout, plus one
+    download per brand asset at 30s. IRREVERSIBLE and NOT idempotent — every run adds new Files to the
+    store. There are no Shopify credentials on this machine, and it must not be run even if there were.'
+  source_file: shopify-integration-layer/layer5_media_pipeline.py
+  language: py
+  status: NOT_RUN
+  evidence: needs write_files + Admin token; every run creates permanent Files via fileCreate with no
+    idempotency check, so re-runs duplicate
+- id: aurelix.migration.shopify-product-images
+  name: Layer 4 images (WP-012) — attach products.csv image URLs to live Shopify products
+  kind: migration
+  invocation: python3 layer4_upload_images.py --compiled-dir PATH --output-dir PATH [--env PATH] [--dry-run]
+  preconditions:
+  - SHOPIFY_STORE_DOMAIN (or SHOPIFY_STORE) and SHOPIFY_ADMIN_ACCESS_TOKEN (or SHOPIFY_ACCESS_TOKEN) —
+    checked even under --dry-run, which is the one credential check --dry-run does NOT bypass
+  - that token must carry both read_products and write_products; a 401/403 on the first POST aborts the
+    run
+  - THE PRODUCTS MUST ALREADY EXIST on the store — it resolves each CSV Handle via productByHandle and
+    silently skips every handle it cannot find
+  - <compiled-dir>/products.csv with a Handle (or handle) and Image Src (or image_src) column
+  - --env defaults to <repo-root>/.env, which DOES NOT EXIST in this checkout
+  - 'THE TARGET STORE IS MUTATED: it POSTs images onto live products'
+  inputs:
+  - <compiled-dir>/products.csv — Handle / handle, Image Src / image_src
+  - the --env file, if it exists; only keys absent from os.environ are applied
+  - --output-dir is declared required=True and then NEVER READ — the header calls it 'Dir with shopify_config
+    or product mapping' and no code opens anything under it
+  outputs:
+  - 'THE LIVE STORE: one image appended per product via POST /admin/api/2024-01/products/<id>/images.json'
+  - 'stdout: one ''Uploaded image: <handle>'' line per success, ''[dry-run] Would upload image for <handle>''
+    per row under --dry-run, and ''Image upload step done.'' at the end'
+  - 'stderr: WARN lines for per-product failures. It writes NO FILE AT ALL — the run leaves no artifact
+    and cannot be audited afterwards'
+  outcome: whether each product carrying an Image Src in the compiled CSV now has an image on the store
+    — idempotently, since products that already have one are skipped
+  exit_contract:
+    '0': the CSV was walked to the end. This is ALSO what a run returns when every single upload raised
+      a non-auth error, because those are printed as WARN and the loop continues
+    '1': credentials missing, or <compiled-dir>/products.csv missing, or a 401/403 on an image POST (the
+      only failure that aborts)
+    '2': usage error from argparse — including omitting either required directory flag
+  measures:
+  - which CSV handles resolve to a real product id on the store, via GraphQL productByHandle
+  - whether a product already has at least one image, via REST products/<id>.json?fields=id,images — this
+    is the idempotency test
+  - a 401/403 specifically, reported as 'requires write_products scope' rather than as a generic HTTP
+    error
+  cannot_see:
+  - IT COUNTS NOTHING AND REPORTS NOTHING. There is no success count, no failure count and no output file
+    — 'Image upload step done.' is printed identically for 500 uploads and for zero. A run where every
+    handle failed to resolve is indistinguishable from a complete one
+  - 'products it could not find: `if not product_id: continue` is silent, so a CSV whose handles do not
+    match the store''s (different locale, different importer) uploads nothing and still exits 0'
+  - whether the image URL is reachable — it hands Shopify the src and lets Shopify fetch it; a 404 image
+    source becomes a Shopify-side failure this script never observes
+  - 'whether the image it skipped is the RIGHT image: product_has_image() tests only that the array is
+    non-empty, so a product carrying a placeholder is treated as done forever'
+  - '--dry-run does not check the store at all: it prints a ''would upload'' line per CSV row before any
+    handle resolution, so the dry-run count is a CSV row count and not a work estimate'
+  - it has no NOT_MEASURED outcome, and there is no artifact for a gate to read even if it had one
+  reachable_from: []
+  cost: 'minutes, scaling with the CSV: up to two API reads plus one write per product row, 60s timeouts.
+    IRREVERSIBLE — it attaches images to live products with no rollback. There are no Shopify credentials
+    on this machine, and it must not be run even if there were.'
+  source_file: shopify-integration-layer/layer4_upload_images.py
+  language: py
+  status: NOT_RUN
+  evidence: needs write_products scope; POSTs images onto live products, which must already exist on the
+    store
+- id: aurelix.migration.shopify-store-setup
+  name: Layer 4 — write the compiled architecture into a live Shopify store
+  kind: migration
+  invocation: python3 layer4_store_setup.py --compiled-dir PATH --output-dir PATH [--env PATH] [--dry-run]
+    [--reset] [--skip-products]
+  preconditions:
+  - SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN (or SHOPIFY_ACCESS_TOKEN or PRIVATE_ACCESS_TOKEN)
+    — required unless --dry-run, which substitutes 'dry-run-store.myshopify.com'
+  - that token must carry WRITE scopes (write_products, write_content, write_online_store_navigation,
+    write_publications); step0_token.py requests them and Gate B-0 cannot confirm them
+  - <compiled-dir>/architecture.json must exist and parse — it is read unguarded, so a missing file is
+    an unhandled exception, not a clean exit 1
+  - --env defaults to <repo-root>/.env, which DOES NOT EXIST in this checkout; load_dotenv returns {}
+    silently
+  - 'THE TARGET STORE IS MUTATED. Point --output-dir at a fresh directory or pass --reset deliberately:
+    the checkpoint is what stops a re-run duplicating work'
+  inputs:
+  - <compiled-dir>/architecture.json — collections[], menus, pages, redirects[]
+  - <compiled-dir>/products.csv — Handle, Title, Tags, Image Src (skipped entirely under --skip-products,
+    which is what the chain passes)
+  - <output-dir>/<checkpoint file> — the completed-stage list from a previous run, unless --reset
+  - docs/SMART_COLLECTION_SETUP_DEFINITIVE.md — its mere EXISTENCE switches collection rules from derived-from-product-data
+    to the hardcoded HANDLE_TO_RULE_TAG map
+  - the --env file, if it exists; only keys absent from os.environ are applied
+  outputs:
+  - 'THE LIVE STORE: smart collections, products, the Headless-channel publication of both, navigation
+    menus, and URL redirects'
+  - <output-dir>/shopify_config.json — store_domain, storefront_access_token, counts; the file verify_gate_b.py
+    and Layer 9 both read
+  - <output-dir>/redirect_map.csv — from_path,to_path,status, consumed by Gate E
+  - <output-dir>/ a product manifest and a checkpoint file, for idempotency across re-runs
+  outcome: whether the compiled site architecture now exists as real Shopify resources, and a shopify_config.json
+    the rest of the Shopify chain can key off
+  exit_contract:
+    '0': 'every stage that was not already in the checkpoint ran to completion. NOTE: this is also what
+      a run returns when individual collectionCreate/productCreate calls failed — per-item failures are
+      counted, not raised'
+    '1': credentials missing (and not --dry-run), or preflight() returned errors
+    '2': usage error from argparse — including a missing --compiled-dir or --output-dir, both of which
+      are required=True
+  measures:
+  - 'preflight: that the credential works and the compiled inputs are present, BEFORE the first mutation'
+  - how many collections, products, publications, menus and redirects it created, recording each count
+    into the checkpoint as its stage completes
+  - which stages a previous run already completed, so a resumed run does not recreate them
+  - the Headless/Storefront publication GID, falling back to Online Store and then to the first publication
+  cannot_see:
+  - IT CANNOT SEE THE STORE IT DID NOT CREATE. The checkpoint records what THIS tool did; a collection
+    deleted in the Shopify Admin afterwards still reads as 'completed' and is silently never recreated.
+    The checkpoint is a memory of intent, not a measurement of the store
+  - 'the fallback publication choice is invisible in the exit code: if no Headless publication exists
+    it publishes to Online Store, or to whatever publication happens to be first — so products can end
+    up published to a channel the generated app never queries, and the run still exits 0'
+  - HANDLE_TO_RULE_TAG is a ten-entry German/English coffee-and-tea map (kaffee, tee, maschinen, zubehor,
+    geschenke). Any tenant outside that vocabulary gets no rule tag and its smart collections resolve
+    empty, with nothing reporting that the map did not apply
+  - 'it cannot tell a scope refusal from a data problem: per-item create failures are counted rather than
+    raised, so a token lacking write_products produces a run that reports low counts and exits 0'
+  - --dry-run does not exercise the store at all — it substitutes a fake domain, so a green dry run is
+    evidence about the compiled inputs and this script's control flow, and evidence about nothing on Shopify
+  - it has no NOT_MEASURED outcome; 'no credentials on this machine' exits 1, identically to 'preflight
+    found the store broken'
+  reachable_from:
+  - run_pipeline.py:506-511 — stage_layer4(), the `layer4` stage of the Shopify chain, always with --skip-products
+    (absent from the Vercel chain)
+  - shopify-integration-layer/scripts/sync_product_tags.py:89-91 — imported as a MODULE via importlib.spec_from_file_location,
+    not executed as a script
+  cost: 'minutes to tens of minutes against a real store, one API call per created resource with sleeps
+    between them. IRREVERSIBLE: it creates real collections, products, menus and redirects and has no
+    rollback. There are no Shopify credentials on this machine, and it must not be run even if there were.'
+  source_file: shopify-integration-layer/layer4_store_setup.py
+  language: py
+  status: NOT_RUN
+  evidence: needs a write-scoped Admin token; creates smart collections, products, Headless-channel publications,
+    menus and redirects on a LIVE store, irreversibly, with no rollback
 - id: aurelix.probe.animation-detection
   name: Animation-detection probe over live URLs
   kind: probe
@@ -1507,6 +2082,76 @@ capabilities:
   evidence: ran `node scripts/quality/render-audit.js --base http://127.0.0.1:4791 --routes / --out /tmp/ra-out
     --settle 1500` → exit 0. exit 0 WITH total_defects 2 (1 critical, 1 high) - confirms the exit code
     carries no verdict
+- id: aurelix.probe.shopify-api-connection
+  name: Shopify Admin API connection probe — nine calls, raw status codes, no verdict
+  kind: probe
+  invocation: python3 diagnose_api_connection.py
+  preconditions:
+  - SHOPIFY_STORE_DOMAIN and SHOPIFY_ACCESS_TOKEN (or SHOPIFY_ADMIN_ACCESS_TOKEN) — read from <repo-root>/.env
+    FIRST, then os.environ
+  - <repo-root>/.env, the ONLY env path it will read. It is hardcoded, there is no --env flag, and THAT
+    FILE DOES NOT EXIST in this checkout
+  - SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET, optionally — their presence turns on steps 6-9, which
+    mint a fresh token AND ATTEMPT A WRITE
+  - network reach to the store's /admin endpoints
+  inputs:
+  - <repo-root>/.env only — SHOPIFY_STORE_DOMAIN, SHOPIFY_ACCESS_TOKEN, SHOPIFY_ADMIN_ACCESS_TOKEN, SHOPIFY_CLIENT_ID,
+    SHOPIFY_CLIENT_SECRET
+  - os.environ, as a fallback for domain and access token only — the client id and secret are never read
+    from the environment
+  outputs:
+  - 'stdout only: a redacted env dump, then the HTTP status and the first 300-800 bytes of the body for
+    each of nine calls. It writes no file'
+  - 'A LIVE STORE MUTATION when client credentials are present: step 9 posts collectionCreate(input: {
+    title: "DIAG WRITE TEST" }) and leaves that collection on the store. Nothing deletes it'
+  outcome: which Shopify Admin surfaces this credential can actually reach — scopes, GraphQL read, REST
+    read, products read, app installation, a fresh client-credentials grant, and whether a write succeeds
+    — as raw status codes for a human to read
+  exit_contract:
+    '0': 'the nine calls were attempted and their statuses printed. THIS IS NOT A PASS: every call can
+      have returned 403 and the exit code is still 0'
+    '1': 'SHOPIFY_STORE_DOMAIN or the access token was missing, so nothing was attempted. MEASURED 2026-08-18
+      with no credentials set: it does not reach that clean return — it dies on line 53 with `TypeError:
+      ''NoneType'' object is not subscriptable` and Python exits 1 via the traceback, so the code is right
+      by accident and the message is a stack trace'
+  measures:
+  - GET /admin/oauth/access_scopes.json — the granted scopes, which no other instrument in this directory
+    reads
+  - GraphQL { shop { id name email } } against api 2025-01 AND 2024-01, so an API-version regression is
+    distinguishable from an auth failure
+  - REST GET /admin/api/<ver>/shop.json for both versions — REST and GraphQL can fail differently on the
+    same token
+  - 'GraphQL products(first: 1), currentAppInstallation { accessScopes { scopes } }'
+  - a per-store client_credentials grant, and then re-runs scopes, shop and a collectionCreate write against
+    the NEW token
+  cannot_see:
+  - IT RENDERS NO VERDICT AND CANNOT FAIL. It returns 0 after nine calls whatever they returned — 403
+    on all nine exits exactly as 200 on all nine does. It is a probe, and anything that treats its exit
+    code as a gate result will read a dead store as a healthy one
+  - 'it crashes on line 53 before reaching its own missing-credential check: the f-string does `token[:12]`
+    unguarded, so with a domain set and no token it dies with a TypeError instead of printing ''Missing
+    SHOPIFY_STORE_DOMAIN or SHOPIFY_ACCESS_TOKEN'' and returning 1'
+  - it cannot see the credential file it was pointed at. `load_env()` hardcodes REPO_ROOT/.env with no
+    flag and returns {} when it is absent, so 'the env file does not exist' and 'the env file has no Shopify
+    keys' are the same silence
+  - it cannot see the mess it makes. Step 9's 'DIAG WRITE TEST' collection is created and never cleaned
+    up, and the script does not report that it created one — a repeated diagnosis accumulates them on
+    the live store
+  - it truncates every response body to 300-800 bytes, so a userErrors array or a scope list longer than
+    that is cut off mid-JSON with no indication that it was
+  - 'it has no --dry-run and no --describe-only mode for its network half: apart from --describe, every
+    invocation goes straight to the live store'
+  reachable_from:
+  - shopify-integration-layer/cli-deploy/update-scopes.sh:20 — an echoed instruction to a human, NOT an
+    invocation. Nothing in run_pipeline.py or web-builder/scripts/ calls this file
+  cost: under a minute. Nine HTTP calls, 15-30s timeouts. Read-only UNLESS SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET
+    are set, in which case it mints a token and CREATES A COLLECTION on the live store that it never removes.
+  source_file: shopify-integration-layer/diagnose_api_connection.py
+  language: py
+  status: NOT_RUN
+  evidence: 'needs SHOPIFY_STORE_DOMAIN + SHOPIFY_ACCESS_TOKEN from a hardcoded repo-root .env that does
+    not exist. NOT read-only: with client creds present it posts collectionCreate ''DIAG WRITE TEST''
+    and never removes it'
 - id: aurelix.probe.shot-aa
   name: Full-page screenshot of a local HTML FILE, reveal-state neutralised
   kind: probe

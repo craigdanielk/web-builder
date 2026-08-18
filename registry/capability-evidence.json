@@ -1,6 +1,10 @@
 {
   "records": [
     {
+      "id": "aurelix.adapter.shopify-admin-token",
+      "not_run": "needs SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET + SHOPIFY_STORE_DOMAIN, all absent. It mints a ~24h Admin token AND rewrites the --env file in place"
+    },
+    {
       "id": "aurelix.builder.animation-registry",
       "not_run": "all five outputs are git-tracked; a run now would replace a 1034-row registry with ~53 rows and exit 0"
     },
@@ -62,6 +66,18 @@
       "id": "aurelix.extractor.run-extract-aa"
     },
     {
+      "argv": "python3 run_ui_codebase_preflight.py --repo ../web-builder/output/xago-exchange-mockup/site --output-dir /tmp/pf --skip-lint",
+      "exit": 0,
+      "id": "aurelix.extractor.ui-codebase-preflight",
+      "note": "framework_guess next, 14 routes, 0 signals - no src/**/*.tsx matched its scan root"
+    },
+    {
+      "argv": "python3 run_ui_ux_audit.py site http://127.0.0.1:3987/login --max-pages 4 --crawl-rendering httpx --store-html --output-dir /tmp/audit --no-handoff",
+      "exit": 0,
+      "id": "aurelix.extractor.ui-ux-audit",
+      "note": "4 pages captured, 45 findings, against a local next start of xago-exchange-mockup. All 45 carry a route; the schema has NO section field at all"
+    },
+    {
       "argv": "node scripts/quality/render-fix-contrast.js --report /tmp/report.json --site-spec /tmp/site-spec.json --globals /tmp/globals.css --apply",
       "exit": 0,
       "id": "aurelix.fixer.render-contrast",
@@ -88,6 +104,14 @@
       "exit": 1,
       "id": "aurelix.gate.rails",
       "note": "FAIL, no rails-emission.json - correct, that tenant declares no cms"
+    },
+    {
+      "id": "aurelix.gate.shopify-b",
+      "not_run": "needs an --output-dir shopify_config.json whose storefront_access_token is real; the checked-in one holds a literal placeholder and SHOPIFY_STOREFRONT_ACCESS_TOKEN is unset"
+    },
+    {
+      "id": "aurelix.gate.shopify-b0",
+      "not_run": "needs SHOPIFY_ADMIN_ACCESS_TOKEN (or SHOPIFY_ACCESS_TOKEN) plus SHOPIFY_STORE_DOMAIN; both unset"
     },
     {
       "argv": "node scripts/quality/check-template-tokens.js",
@@ -136,6 +160,18 @@
       "not_run": "two full builds plus a served local audit; build timeout defaults to 3600s each, audit 1800s"
     },
     {
+      "id": "aurelix.migration.shopify-cdn-media",
+      "not_run": "needs write_files + Admin token; every run creates permanent Files via fileCreate with no idempotency check, so re-runs duplicate"
+    },
+    {
+      "id": "aurelix.migration.shopify-product-images",
+      "not_run": "needs write_products scope; POSTs images onto live products, which must already exist on the store"
+    },
+    {
+      "id": "aurelix.migration.shopify-store-setup",
+      "not_run": "needs a write-scoped Admin token; creates smart collections, products, Headless-channel publications, menus and redirects on a LIVE store, irreversibly, with no rollback"
+    },
+    {
       "argv": "node scripts/quality/test-animation-detector.js https://example.com",
       "exit": 0,
       "id": "aurelix.probe.animation-detection",
@@ -156,6 +192,10 @@
       "exit": 0,
       "id": "aurelix.probe.render-audit",
       "note": "exit 0 WITH total_defects 2 (1 critical, 1 high) - confirms the exit code carries no verdict"
+    },
+    {
+      "id": "aurelix.probe.shopify-api-connection",
+      "not_run": "needs SHOPIFY_STORE_DOMAIN + SHOPIFY_ACCESS_TOKEN from a hardcoded repo-root .env that does not exist. NOT read-only: with client creds present it posts collectionCreate 'DIAG WRITE TEST' and never removes it"
     },
     {
       "argv": "node scripts/quality/shot-aa.js /tmp/probe.html /tmp/aa.png",

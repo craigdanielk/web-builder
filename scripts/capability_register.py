@@ -97,10 +97,27 @@ SCAN_ROOTS: tuple[Path, ...] = (
     ROOT.parent / "shopify-integration-layer",
 )
 
-# A file is a CANDIDATE if it imports the declaration helper.  Grep first,
-# execute second: running `--describe` against 4,000 files would be slower than
-# the thing it documents.
-_MARKERS = ("lib/capability", "lib.capability", "from lib import capability")
+# A file is a CANDIDATE if it carries one of these markers.  Grep first, execute
+# second: running `--describe` against 4,000 files would be slower than the thing
+# it documents.
+#
+# THE EXPLICIT MARKER, AND WHY IT IS NOT JUST THE IMPORT
+# An instrument that cannot import the helper still has to be discoverable.  A
+# shell script cannot import Python, and an instrument in a sibling repo must
+# not: `web-builder` and `aurelix-uiux-audit` BOTH ship a top-level package
+# named `lib`, the first import wins for the process, and adding
+# `from lib.capability import describe` to `conformance_runner.py` during the
+# 2026-08-18 fan-out killed its later `from lib.design_conformance import ...`.
+# Those instruments emit the JSON literally under `--describe` and declare
+# themselves discoverable with the marker below.
+#
+# Losing nothing by it: `capability_register.py` re-validates EVERY declaration
+# through `lib.capability.validate` whatever produced the JSON, so the schema is
+# enforced identically.  What a no-import declaration gives up is only the
+# fail-fast check at the instrument's own call site.
+CAPABILITY_MARKER = "AURELIX-CAPABILITY"
+_MARKERS = (CAPABILITY_MARKER, "lib/capability", "lib.capability",
+            "from lib import capability")
 
 _RUNNER = {".js": ["node"], ".mjs": ["node"], ".py": [sys.executable], ".sh": ["bash"]}
 
