@@ -3,16 +3,29 @@
 
 Every substitution applied is recorded in MANIFEST.json so the emission is
 reproducible and drift from the source is detectable by sha256.
+
+Two modes:
+
+    python3 build_templates.py            re-emit from the source repo
+    python3 build_templates.py --verify   re-hash the emitted templates against
+                                          MANIFEST.json's recorded shas
+
+`--verify` needs neither the source repo nor the network. It answers three
+states per file — MATCH / DRIFTED / MISSING — and exits 0 (all match), 1 (any
+drift or absence) or 3 (the manifest itself is absent or unreadable, so nothing
+was measured; NOT_MEASURED is not a pass).
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 XAGO = Path("/Users/craigkunte/Developer/GitHub/tenants/xago")
 SITE = XAGO / "site"
-DEST = Path("/Users/craigkunte/Developer/GitHub/services/aurelix-ag/web-builder/rails-templates/cms")
+DEST = Path(__file__).resolve().parent / "cms"
 XAGO_COMMIT = "ff5c5cd8d294f9943b591b6d9fb853d81978537f"
 
 TENANT_ENV = ("process.env.XAGO_TENANT_ID", "process.env.{{CMS_TENANT_ENV}}")
@@ -177,6 +190,96 @@ def sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+EXIT_OK = 0
+EXIT_DRIFT = 1
+EXIT_NOT_MEASURED = 3
+
+MANIFEST_NAME = "MANIFEST.json"
+
+
+def load_manifest(dest: Path) -> dict:
+    """Read dest/MANIFEST.json, or raise NotMeasured naming why it could not.
+
+    A manifest that is absent, unparseable, or carries no `files` list cannot
+    verify anything. That is NOT_MEASURED, never a pass.
+    """
+    path = dest / MANIFEST_NAME
+    try:
+        manifest = json.loads(path.read_text())
+    except FileNotFoundError:
+        raise NotMeasured(f"no manifest at {path}")
+    except OSError as exc:
+        raise NotMeasured(f"manifest unreadable at {path}: {exc}")
+    except json.JSONDecodeError as exc:
+        raise NotMeasured(f"manifest at {path} is not JSON: {exc}")
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), list):
+        raise NotMeasured(f"manifest at {path} carries no files[] list")
+    return manifest
+
+
+class NotMeasured(Exception):
+    """The manifest could not be read, so no verdict exists for any file."""
+
+
+def verify(dest: Path = DEST) -> tuple[list[tuple[str, str]], list[str]]:
+    """Re-hash every emitted template against its recorded template_sha256.
+
+    Returns (verdicts, unlisted) where verdicts is [(path, MATCH|DRIFTED|MISSING)]
+    in manifest order, and unlisted is on-disk files the manifest does not name.
+    Raises NotMeasured if the manifest itself cannot be read.
+    """
+    manifest = load_manifest(dest)
+    verdicts: list[tuple[str, str]] = []
+    named = {MANIFEST_NAME}
+
+    for entry in manifest["files"]:
+        rel = entry.get("path")
+        if not rel:
+            raise NotMeasured("a manifest entry carries no path")
+        named.add(rel)
+        recorded = entry.get("template_sha256")
+        if not recorded:
+            raise NotMeasured(f"{rel} has no template_sha256 to verify against")
+        target = dest / rel
+        try:
+            text = target.read_text()
+        except OSError:
+            verdicts.append((rel, "MISSING"))
+            continue
+        verdicts.append((rel, "MATCH" if sha(text) == recorded else "DRIFTED"))
+
+    unlisted = sorted(
+        str(p.relative_to(dest)) for p in dest.rglob("*")
+        if p.is_file() and str(p.relative_to(dest)) not in named
+    )
+    return verdicts, unlisted
+
+
+def run_verify(dest: Path = DEST) -> int:
+    try:
+        verdicts, unlisted = verify(dest)
+    except NotMeasured as exc:
+        print(f"VERIFY rails-templates: NOT_MEASURED — {exc}")
+        return EXIT_NOT_MEASURED
+
+    for rel, verdict in verdicts:
+        if verdict != "MATCH":
+            print(f"  {verdict:<8} {rel}")
+    for rel in unlisted:
+        print(f"  UNLISTED {rel}  (on disk, not in the manifest)")
+
+    counts = {v: sum(1 for _, got in verdicts if got == v)
+              for v in ("MATCH", "DRIFTED", "MISSING")}
+    print(
+        f"VERIFY rails-templates: {len(verdicts)} files — "
+        f"{counts['MATCH']} MATCH · {counts['DRIFTED']} DRIFTED · "
+        f"{counts['MISSING']} MISSING"
+    )
+    failed = counts["DRIFTED"] + counts["MISSING"]
+    print("VERIFY rails-templates: PASS" if not failed else "VERIFY rails-templates: FAIL")
+    return EXIT_OK if not failed else EXIT_DRIFT
+
+
 def main() -> None:
     DEST.mkdir(parents=True, exist_ok=True)
     inventory = []
@@ -302,4 +405,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--verify", action="store_true",
+        help="re-hash the emitted templates against MANIFEST.json instead of "
+             "re-emitting; exit 0 all-match, 1 on drift, 3 if the manifest is unreadable",
+    )
+    args = parser.parse_args()
+    if args.verify:
+        sys.exit(run_verify())
     main()
