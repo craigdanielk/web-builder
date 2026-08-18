@@ -1,0 +1,63 @@
+{
+  "_meta": {
+    "generated_by": "scripts/benchmark_library.py index",
+    "note": "GENERATED \u2014 do not hand-edit. Regenerate with `python3 scripts/benchmark_library.py index`; `--check` fails if this disagrees with the files on disk. There is no timestamp here on purpose: an unchanged library must regenerate to identical bytes.",
+    "market_count": 4,
+    "file_count": 4
+  },
+  "markets": {
+    "consumer-crypto-exchange": {
+      "file": "consumer-crypto-robinhood.json",
+      "slug": "consumer-crypto-robinhood",
+      "market": "consumer-crypto-exchange",
+      "aliases": [
+        "consumer-crypto-robinhood"
+      ],
+      "ratified": true,
+      "ratification": "legacy",
+      "captured_at": "2026-08-13",
+      "corpus": null,
+      "loads": true
+    },
+    "crypto-exchange": {
+      "file": "crypto-exchange.json",
+      "slug": "crypto-exchange",
+      "market": "crypto-exchange",
+      "aliases": [],
+      "ratified": true,
+      "ratification": "legacy",
+      "captured_at": "2026-07-23",
+      "corpus": null,
+      "loads": true
+    },
+    "enterprise-stablecoin-payments": {
+      "file": "enterprise-payments-bvnk.json",
+      "slug": "enterprise-payments-bvnk",
+      "market": "enterprise-stablecoin-payments",
+      "aliases": [
+        "enterprise-payments-bvnk"
+      ],
+      "ratified": true,
+      "ratification": "legacy",
+      "captured_at": "2026-08-14",
+      "corpus": null,
+      "loads": true
+    },
+    "enterprise-stablecoin-payments-measured": {
+      "file": "enterprise-stablecoin-payments-measured.json",
+      "slug": "enterprise-stablecoin-payments-measured",
+      "market": "enterprise-stablecoin-payments-measured",
+      "aliases": [],
+      "ratified": true,
+      "ratification": "declared",
+      "captured_at": "2026-08-18",
+      "corpus": "benchmarks/corpora/enterprise-stablecoin-payments-measured",
+      "loads": true
+    }
+  },
+  "aliases": {
+    "consumer-crypto-robinhood": "consumer-crypto-exchange",
+    "enterprise-payments-bvnk": "enterprise-stablecoin-payments"
+  },
+  "collisions": []
+}

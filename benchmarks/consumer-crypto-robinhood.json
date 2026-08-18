@@ -1,6 +1,9 @@
 {
   "_meta": {
     "market": "consumer-crypto-exchange",
+    "aliases": [
+      "consumer-crypto-robinhood"
+    ],
     "captured_from": [
       "https://robinhood.com/us/en/",
       "https://robinhood.com/eu/en/crypto/",

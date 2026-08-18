@@ -1,6 +1,9 @@
 {
   "_meta": {
     "market": "enterprise-stablecoin-payments",
+    "aliases": [
+      "enterprise-payments-bvnk"
+    ],
     "captured_from": [
       "https://www.bvnk.com/",
       "https://www.bvnk.com/payments",

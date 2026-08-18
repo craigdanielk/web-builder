@@ -444,13 +444,30 @@ try:
          printed)
     test("the prompt is in the record too", hit["prompt"] is not None)
 
-    # filename matching still works, and is recorded as such
+    # The legacy filename handle still resolves — that is the back-compat
+    # requirement — but it is now recorded as the ALIAS the file declares for
+    # itself rather than as an incidental filename match. The file names
+    # `enterprise-payments-bvnk` in `_meta.aliases`, so the stronger rule fires.
     hit2 = resolve_benchmark(root=rc2,
                             market_keys=["enterprise-payments-bvnk"],
                             interactive=False, write=sink)
     drain()
-    test("matching on the filename slug is recorded as filename",
-         hit2["matched_by"] == "filename", hit2["matched_by"])
+    test("the legacy filename handle still resolves the ratified file",
+         hit2["benchmark"] == "enterprise-payments-bvnk", hit2["benchmark"])
+    test("...and is recorded as a declared alias, not an accident of naming",
+         hit2["matched_by"] == "_meta.aliases", hit2["matched_by"])
+    test("its declared market resolves it too",
+         resolve_benchmark(root=rc2,
+                           market_keys=["enterprise-stablecoin-payments"],
+                           interactive=False, write=sink)["matched_by"]
+         == "_meta.market")
+    drain()
+    # A file that declares no alias still resolves by its bare filename.
+    fn = classify(rc2 / "benchmarks" / "enterprise-payments-bvnk.json")
+    test("a file with no declared aliases falls back to filename matching",
+         match_library([{**fn, "aliases": [], "market": "something-else"}],
+                       ["enterprise-payments-bvnk"])[0]["matched_by"]
+         == "filename")
 
     # ── 6. branch (d) interactive ──────────────────────────────────────────
     print("\n6. branch (d) — the injected-input prompt")

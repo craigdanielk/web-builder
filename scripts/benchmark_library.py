@@ -36,10 +36,13 @@ sys.path.insert(0, str(HERE))
 
 from lib.benchmark_gate import (  # noqa: E402
     EXIT_NOT_MEASURED,
+    INDEX_FILENAME,
     BenchmarkNotMeasured,
     BenchmarkUsage,
     add_arguments,
+    check_index,
     collect_ratify_values,
+    index_payload,
     resolve_benchmark,
 )
 
@@ -72,6 +75,33 @@ def cmd_ratify(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_index(args: argparse.Namespace) -> int:
+    benchmarks = ROOT / "benchmarks"
+    if not benchmarks.is_dir():
+        print(f"NOT_MEASURED: {benchmarks} does not exist; there is no library "
+              f"to index.", file=sys.stderr)
+        return EXIT_NOT_MEASURED
+    if args.check:
+        agrees, detail = check_index(benchmarks)
+        print(f"{TOOL}: {detail}", file=sys.stdout if agrees else sys.stderr)
+        return EXIT_OK if agrees else 1
+    path = benchmarks / INDEX_FILENAME
+    path.write_text(index_payload(benchmarks), encoding="utf-8")
+    import json as _json
+    data = _json.loads(path.read_text(encoding="utf-8"))
+    print(f"{TOOL}: wrote {path.relative_to(ROOT)}")
+    print(f"  markets   {data['_meta']['market_count']} "
+          f"({data['_meta']['file_count']} file(s))")
+    print(f"  aliases   {len(data['aliases'])}")
+    if data["collisions"]:
+        # Not a failure of the index — a failure the index now makes visible.
+        print(f"  COLLISIONS {len(data['collisions'])}: two files claim one "
+              f"market; the gate will refuse it for ambiguity")
+        for c in data["collisions"]:
+            print(f"    {c['market']}: {', '.join(c['files'])}")
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog=TOOL,
@@ -90,7 +120,18 @@ def main(argv: list[str] | None = None) -> int:
     add_arguments(p_ratify)
     p_ratify.set_defaults(func=cmd_ratify)
 
+    p_index = sub.add_parser(
+        "index",
+        help="regenerate benchmarks/index.json from the files on disk.")
+    p_index.add_argument(
+        "--check", action="store_true",
+        help="do not write; exit 1 if the persisted index disagrees with the "
+             "files on disk. A stale index answers confidently and wrongly.")
+    p_index.set_defaults(func=cmd_index)
+
     args = ap.parse_args(argv)
+    if args.command == "index":
+        return args.func(args)
     if getattr(args, "reference_url", None):
         print(f"{TOOL}: --reference-url is not accepted here. Commission with "
               f"scripts/commission_benchmark.py, then ratify the product.",

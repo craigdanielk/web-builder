@@ -203,6 +203,9 @@ def classify(path: Path) -> dict[str, Any]:
         "slug": path.stem,
         "path": path.name,
         "market": None,
+        "aliases": [],
+        "captured_at": None,
+        "corpus": None,
         "ratification": "unreadable",
         "ratified": False,
         "missing_operator_fields": [],
@@ -220,6 +223,15 @@ def classify(path: Path) -> dict[str, Any]:
 
     meta = data.get("_meta") or {}
     record["market"] = meta.get("market")
+    # A benchmark belongs to a MARKET; the filename is an accident of who wrote
+    # it. Two of the library's files are named after the site they were measured
+    # from rather than the market they describe, and the gate used to reconcile
+    # that with an undeclared rule in a docstring. `_meta.aliases` lets the file
+    # declare its own back-compat handles instead.
+    aliases = meta.get("aliases")
+    record["aliases"] = sorted(a for a in (aliases or []) if isinstance(a, str))
+    record["captured_at"] = meta.get("captured_at")
+    record["corpus"] = meta.get("corpus")
     missing = [".".join(p) for p in _OPERATOR_PATHS if _dig(data, p) in (None, "")]
     record["missing_operator_fields"] = missing
 
@@ -244,37 +256,166 @@ def classify(path: Path) -> dict[str, Any]:
     return record
 
 
+#: The generated index itself is a `benchmarks/*.json` file and is not a
+#: benchmark. Excluded by name so `library_index` cannot classify its own
+#: output as an unreadable benchmark.
+INDEX_FILENAME = "index.json"
+
+
 def library_index(benchmarks_dir: Path) -> list[dict[str, Any]]:
     """Every `benchmarks/*.json`, classified, sorted by slug."""
     if not benchmarks_dir.is_dir():
         return []
     return sorted(
-        (classify(p) for p in benchmarks_dir.glob("*.json")),
+        (classify(p) for p in benchmarks_dir.glob("*.json")
+         if p.name != INDEX_FILENAME),
         key=lambda r: r["slug"],
     )
 
 
+def build_index(benchmarks_dir: Path) -> dict[str, Any]:
+    """The library's market -> file map, derived wholly from the files.
+
+    GENERATED, NEVER HAND-MAINTAINED. There is no clock in here: `captured_at`
+    and the ratification date are read from the files, so regenerating an
+    unchanged library produces identical bytes. A hand-edited index is a second
+    source of truth that drifts, and a stale index is worse than none — it
+    answers confidently and wrongly. `check_index` exists to make that
+    impossible to leave in the tree.
+    """
+    entries = library_index(benchmarks_dir)
+    markets: dict[str, Any] = {}
+    aliases: dict[str, str] = {}
+    collisions: list[dict[str, Any]] = []
+
+    for e in entries:
+        market = e["market"] or e["slug"]
+        row = {
+            "file": e["path"],
+            "slug": e["slug"],
+            "market": market,
+            "aliases": e["aliases"],
+            "ratified": e["ratified"],
+            "ratification": e["ratification"],
+            "captured_at": e["captured_at"],
+            "corpus": e["corpus"],
+            "loads": e["loads"],
+        }
+        if market in markets:
+            # Two files claiming one market is exactly the ambiguity the gate
+            # refuses on. The index records it rather than letting last-write
+            # win: an index that silently drops one of them would hide the
+            # reason the gate refuses.
+            collisions.append({"market": market,
+                               "files": sorted([markets[market]["file"],
+                                                e["path"]])})
+        markets[market] = row
+        for alias in e["aliases"]:
+            aliases[alias] = market
+        if e["slug"] not in aliases and e["slug"] != market:
+            aliases[e["slug"]] = market
+
+    return {
+        "_meta": {
+            "generated_by": "scripts/benchmark_library.py index",
+            "note": ("GENERATED — do not hand-edit. Regenerate with "
+                     "`python3 scripts/benchmark_library.py index`; "
+                     "`--check` fails if this disagrees with the files on "
+                     "disk. There is no timestamp here on purpose: an "
+                     "unchanged library must regenerate to identical bytes."),
+            "market_count": len(markets),
+            "file_count": len(entries),
+        },
+        "markets": {k: markets[k] for k in sorted(markets)},
+        "aliases": {k: aliases[k] for k in sorted(aliases)},
+        "collisions": sorted(collisions, key=lambda c: c["market"]),
+    }
+
+
+def index_payload(benchmarks_dir: Path) -> str:
+    return json.dumps(build_index(benchmarks_dir), indent=2) + "\n"
+
+
+def check_index(benchmarks_dir: Path) -> tuple[bool, str]:
+    """Does the persisted index still describe the files on disk?
+
+    Returns `(agrees, detail)`. Never raises on a missing or corrupt index —
+    both are disagreements, not crashes.
+    """
+    path = benchmarks_dir / INDEX_FILENAME
+    want = index_payload(benchmarks_dir)
+    if not path.exists():
+        return False, (f"{path.name} does not exist. Generate it: "
+                       f"python3 scripts/benchmark_library.py index")
+    have = path.read_text(encoding="utf-8")
+    if have == want:
+        return True, f"{path.name} agrees with {len(library_index(benchmarks_dir))} file(s) on disk"
+
+    try:
+        hi = json.loads(have)
+        if not isinstance(hi, dict):
+            hi = {}
+    except json.JSONDecodeError as exc:
+        return False, (f"{path.name} is not readable JSON ({exc}). "
+                       f"Regenerate: python3 scripts/benchmark_library.py index")
+    wi = json.loads(want)
+    lines = [f"{path.name} disagrees with the files on disk:"]
+    hm, wm = (hi.get("markets") or {}), wi["markets"]
+    for m in sorted(set(hm) | set(wm)):
+        if m not in hm:
+            lines.append(f"    + market {m!r} on disk, absent from the index")
+        elif m not in wm:
+            lines.append(f"    - market {m!r} in the index, absent on disk")
+        elif hm[m] != wm[m]:
+            for k in sorted(set(hm[m]) | set(wm[m])):
+                if hm[m].get(k) != wm[m].get(k):
+                    lines.append(f"    ~ {m}.{k}: index says "
+                                 f"{hm[m].get(k)!r}, disk says {wm[m].get(k)!r}")
+    if len(lines) == 1:
+        lines.append("    (the market map agrees; aliases, collisions or "
+                     "_meta counts differ — regenerate)")
+    lines.append("  Regenerate: python3 scripts/benchmark_library.py index")
+    return False, "\n".join(lines)
+
+
 def match_library(index: Iterable[dict[str, Any]],
                   market_keys: Sequence[str]) -> list[dict[str, Any]]:
-    """Ratified benchmarks whose filename slug OR `_meta.market` matches a key.
+    """Ratified benchmarks matching a key, by market identity first.
 
-    Both are tried because they disagree in the library today (module note, 4).
-    `matched_by` records which, so a build record never implies the file
-    declared a market it did not.
+    PRECEDENCE, and why it is this way round:
+      1. `_meta.market`     the benchmark's identity. A benchmark describes a
+                            market; this is the thing it IS.
+      2. `_meta.aliases`    handles the file declares for itself, so a rename
+                            that never happened cannot break a caller.
+      3. filename slug      back-compat. Two library files are named after the
+                            site they were measured from, not the market they
+                            describe, and `--benchmark <filename>` is the handle
+                            in every recorded invocation. It resolves, and is
+                            recorded as the weakest match so a build record
+                            never implies the file declared a market it did not.
+
+    `matched_by` records which rule fired.
     """
     keys = [k for k in market_keys if k]
     out: list[dict[str, Any]] = []
     for entry in index:
         if not entry["ratified"]:
             continue
-        for key in keys:
-            if entry["slug"] == key:
-                out.append({**entry, "matched_by": "filename", "matched_key": key})
+        # Rule-major, not key-major: the strongest RULE wins regardless of the
+        # order the caller happened to resolve its market keys in.
+        rules = (
+            ("_meta.market", lambda k: bool(entry["market"]) and entry["market"] == k),
+            ("_meta.aliases", lambda k: k in (entry.get("aliases") or [])),
+            ("filename", lambda k: entry["slug"] == k),
+        )
+        hit = None
+        for name, fires in rules:
+            match = next((k for k in keys if fires(k)), None)
+            if match is not None:
+                hit = (name, match)
                 break
-            if entry["market"] and entry["market"] == key:
-                out.append({**entry, "matched_by": "_meta.market",
-                            "matched_key": key})
-                break
+        if hit:
+            out.append({**entry, "matched_by": hit[0], "matched_key": hit[1]})
     return out
 
 
