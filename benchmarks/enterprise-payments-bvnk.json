@@ -37,6 +37,9 @@
       ],
       "note": "BACKFILLED. This file predates ratification being a recorded act. It was classified ratified by INFERENCE \u2014 the gate observed that all four operator-declared fields were present and treated that shape as consent. Who declared these values, and when, is not recorded anywhere in this repository or its history. This block states that weak provenance explicitly rather than leaving an inference to be silently restated as a ratification. `overrides` lists the values as they already stood; `kind: backfilled` means the value was read out of the file, not declared at this ratification."
     },
+    "corpus": null,
+    "corpus_absent_reason": "NOT PERSISTED \u2014 gone. Captured 2026-08-14 with the extractor repaired by clearVisibilityGate() (70a09f97), but no corpus was committed: `ls benchmarks/captures` -> No such file or directory, and a repo-wide find for extraction.json returns nothing outside node_modules. Census \u00a71.2. The numbers in this file are therefore NOT re-derivable, and several of them were finished by hand in any case (census \u00a73). The nearest re-derivable artifact is benchmarks/enterprise-stablecoin-payments-measured.json, compiled from a persisted corpus of the same five bvnk.com pages.",
+    "corpus_absent_consequence": "Every number in this file is therefore an assertion with no evidence behind it that this repository can replay. It is kept because builds depend on it, not because it is verifiable. Do not cite it as measured without saying that the measurement cannot be reproduced.",
     "captured_from": [
       "https://www.bvnk.com/",
       "https://www.bvnk.com/payments",
