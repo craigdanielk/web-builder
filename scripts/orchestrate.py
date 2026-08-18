@@ -7055,7 +7055,73 @@ _MODULE_CATALOGUE: dict = {
 }
 
 
-def _module_entry(tenant_context: "dict | None", field: str, reader) -> "dict | None":
+#: A MARKET's default for a tech-choice module, consulted only where the tenant
+#: is silent. `{market_identity: {field: value}}`, on the same closed vocabulary
+#: as the declaration (`CMS_KINDS`, `EMAIL_SENDERS`) — an out-of-vocabulary
+#: value here raises at resolution rather than reaching the build.
+#:
+#: WHY THIS LAYER EXISTS. Census 2026-08-18 §3.3e: **0 of 924 phase-0 rows
+#: declare `cms` or `email`**, and there was no layer above the tenant, so
+#: nothing in the system could express *"sites in this market ship a block
+#: store"*. The resolver, the vocabulary and the three-state refusal already
+#: worked; the gap was a missing key, not missing machinery — so this is a
+#: lookup under `_module_entry`, not a second mechanism.
+#:
+#: WHY IT SHIPS EMPTY. A market default is a design-authority claim about a
+#: market. Nothing measured supports one today: the one CMS in the library was
+#: extracted from ONE tenant repo (Xago), which is a fact about that tenant, not
+#: about enterprise-stablecoin-payments. Populating this from that would be
+#: invention — "sourced or empty, never invented" applies to the library as much
+#: as to copy. An operator populates it; the build never infers an entry.
+#:
+#: The key is the MARKET IDENTITY (`_meta.market` of the resolved benchmark),
+#: not the benchmark's filename slug. Those disagree in the library today —
+#: `enterprise-payments-bvnk.json` declares market
+#: `enterprise-stablecoin-payments` — and keying by filename would make a
+#: rename change a tenant's tech stack.
+_MARKET_MODULE_DEFAULTS: "dict[str, dict[str, str]]" = {}
+
+#: The layer that answered a module resolution. Recorded, never inferred.
+MODULE_SOURCE_TENANT = "tenant"
+MODULE_SOURCE_MARKET = "market"
+
+
+def _tenant_is_silent(tenant_context: "dict | None", field: str) -> bool:
+    """True iff the loaded context carries no value at all for `field`.
+
+    `PlatformNotDeclared` covers two different facts — the key is absent, and
+    the key holds a value outside the vocabulary. Only the first is silence. A
+    tenant that declared `cms: wordpress` HAS answered; overriding that with a
+    market default would replace a wrong declaration with a plausible one and
+    lose the operator's error. The refusal stands and names the field.
+    """
+    values = (tenant_context or {}).get("phase0_field_values") or {}
+    raw = values.get(field)
+    return raw is None or (isinstance(raw, str) and not raw.strip())
+
+
+def market_module_default(market: "str | None", field: str) -> "str | None":
+    """This market's default for `field`, or None when it declares none.
+
+    Raises ValueError on a value outside the field's closed vocabulary: a
+    default nobody can resolve must fail where it was written, not silently
+    become "undeclared" at the build and read as an operator omission.
+    """
+    if not market:
+        return None
+    value = (_MARKET_MODULE_DEFAULTS.get(market) or {}).get(field)
+    if value is None:
+        return None
+    if value not in _MODULE_CATALOGUE[field]:
+        raise ValueError(
+            f"market {market!r} defaults {field}={value!r}, which is not in the "
+            f"declared vocabulary {tuple(_MODULE_CATALOGUE[field])}"
+        )
+    return value
+
+
+def _module_entry(tenant_context: "dict | None", field: str, reader,
+                  market: "str | None" = None) -> "dict | None":
     """One declared module's resolution, or None when it was not declared.
 
     None means "no key in the returned dict" — deliberately, and this is the
@@ -7071,16 +7137,44 @@ def _module_entry(tenant_context: "dict | None", field: str, reader) -> "dict | 
     today. A caller that needs the difference calls `declared_cms` /
     `declared_email` directly and catches the subclass; both refusals name the
     field, the tenant and what was allowed.
+
+    PRECEDENCE, explicit and recorded in `source`:
+
+      1. the TENANT declaration      wins outright, including `none`. An
+                                     operator who declared is never overridden
+                                     by a market.
+      2. the MARKET default          applies only where the tenant is silent.
+      3. absent                      no key at all. A module nobody asked for is
+                                     not "none".
+
+    The market is consulted on `PlatformNotDeclared` ONLY — never on
+    `PlatformNotMeasured`. An unreachable tenant record is not silence: filling
+    it from a market default would turn NOT_MEASURED into a confident answer,
+    which is the exact substitution this file keeps removing. So a market with a
+    default and a context that never loaded still resolves to nothing.
     """
     try:
         declared = reader(tenant_context)
-    except _tenant_vocab.PlatformDeclarationError:
+        source = MODULE_SOURCE_TENANT
+    except _tenant_vocab.PlatformNotMeasured:
         return None
+    except _tenant_vocab.PlatformNotDeclared:
+        if not _tenant_is_silent(tenant_context, field):
+            return None          # declared, out of vocabulary — the refusal stands
+        declared = market_module_default(market, field)
+        if declared is None:
+            return None
+        source = MODULE_SOURCE_MARKET
     spec = _MODULE_CATALOGUE[field][declared]
     return {
         # "none" is a DECLARATION and is recorded as one: the key is present with
         # nothing behind it, which is a different fact from the key being absent.
         "declared": declared,
+        # Which layer answered. A build record that states a value without
+        # stating who supplied it cannot be audited — same contract as
+        # `industry_resolution.source`.
+        "source": source,
+        "market": market if source == MODULE_SOURCE_MARKET else None,
         "npm_packages": dict(spec["npm_packages"]),
         "env_names": list(spec["env_names"]),
     }
@@ -7090,6 +7184,7 @@ def platform_modules(
     target_platform: str,
     source_platform: str = "unknown",
     tenant_context: "dict | None" = None,
+    market: "str | None" = None,
 ) -> dict:
     """Which modules, hosts and packages this platform pair loads.
 
@@ -7109,6 +7204,13 @@ def platform_modules(
     into `npm_packages`. An undeclared one contributes nothing at all — see
     `_module_entry`. With no `tenant_context` the shape is byte-identical to
     before this parameter existed.
+
+    `market` is the resolved MARKET IDENTITY (`_meta.market` of the benchmark
+    that won the design-authority gate), and supplies a default only where the
+    tenant declared nothing — see `_module_entry` for the precedence and
+    `_MARKET_MODULE_DEFAULTS` for why it is a market key and not a filename
+    slug. `market=None` is the pre-benchmark and preset-only case and resolves
+    exactly as it did before this parameter existed.
     """
     adapter = _resolve_adapter(target_platform)
 
@@ -7133,7 +7235,7 @@ def platform_modules(
         ("cms", _tenant_vocab.declared_cms),
         ("email", _tenant_vocab.declared_email),
     ):
-        entry = _module_entry(tenant_context, field, reader)
+        entry = _module_entry(tenant_context, field, reader, market=market)
         if entry is None:
             continue
         modules[field] = entry
@@ -7150,6 +7252,57 @@ def platform_modules(
             npm_packages[package] = version
 
     return modules
+
+
+def module_resolution_record(modules: dict, market: "str | None") -> dict:
+    """The tech-choice resolution, as a build record.
+
+    Written unconditionally, refusals included — same contract as
+    `industry_resolution` and `benchmark_resolution`. An omitted key reads as a
+    question nobody asked, and "which layer decided this site ships a CMS?" is
+    a question an auditor will ask of a build that shipped one.
+
+    Per field: `source` is `tenant`, `market`, or `absent`. `absent` is a
+    recorded state, NOT `none` — nobody asked is not the same answer as asked
+    and answered "no CMS".
+    """
+    record = {"market": market, "fields": {}}
+    for field in ("cms", "email"):
+        entry = modules.get(field)
+        if entry is None:
+            record["fields"][field] = {
+                "declared": None, "source": "absent", "market": None,
+                "reason": "no tenant declaration and no default for this market",
+            }
+        else:
+            record["fields"][field] = {
+                "declared": entry["declared"],
+                "source": entry["source"],
+                "market": entry.get("market"),
+            }
+    return record
+
+
+def report_module_resolution(modules: dict, market: "str | None",
+                             write=None) -> None:
+    """Print the tech-choice resolution once, naming the layer that answered."""
+    write = write or (lambda s: print(s))
+    for field in ("cms", "email"):
+        entry = modules.get(field)
+        if entry is None:
+            write(f"  ○ {field}: not declared by the tenant"
+                  + (f", and market {market!r} declares no default" if market
+                     else " (no market resolved)")
+                  + " — no module resolved (not the same as 'none')")
+        elif entry["source"] == MODULE_SOURCE_MARKET:
+            write(f"  📦 {field}: {entry['declared']!r} — from the MARKET default "
+                  f"for {entry['market']!r}; the tenant declared nothing. "
+                  f"npm={len(entry['npm_packages'])}, "
+                  f"env declared-not-valued={len(entry['env_names'])}")
+        else:
+            write(f"  📦 {field}: declared {entry['declared']!r} by the TENANT — "
+                  f"npm={len(entry['npm_packages'])}, "
+                  f"env declared-not-valued={len(entry['env_names'])}")
 
 
 def _resolve_adapter(target_platform: str) -> DeployAdapter:
@@ -7237,6 +7390,7 @@ def stage_deploy(
     harvested_nav: list[dict] | None = None,
     design_style: dict | None = None,
     tenant_context: dict | None = None,
+    market: str | None = None,
 ):
     """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/.
     When site_manifest and section_files_by_page are set (Layer 6), deploys multi-route app
@@ -7244,7 +7398,9 @@ def stage_deploy(
     `harvested_nav` (see lib/nav_harvest.py) — sourced nav links from a real
     --from-url harvest. When provided (even empty), Phase 6's identical-link
     repair uses these instead of the adapter's generic placeholder table.
-    target_platform selects the deploy adapter ('shopify' or 'vercel')."""
+    target_platform selects the deploy adapter ('shopify' or 'vercel').
+    `market` is the resolved market identity; it supplies the cms/email default
+    where the tenant declared nothing (see `platform_modules`)."""
     adapter = _resolve_adapter(target_platform or "shopify")
     print(f"\n🚀 Stage 5: Deploying to Next.js project ({adapter.log_label()} adapter)...")
     is_multipage = bool(site_manifest and section_files_by_page is not None)
@@ -8705,7 +8861,7 @@ async function downloadOne(url) {{
     # no line — there is nothing for a status list to misread as a pass. A
     # declared `"none"` DOES get a key, and is recorded as the answer it is.
     _rails_modules = platform_modules(
-        adapter.name, tenant_context=tenant_context
+        adapter.name, tenant_context=tenant_context, market=market
     ) if tenant_context else {}
     _rails_declared_cms = (_rails_modules.get("cms") or {}).get("declared")
     _rails_declared_email = (_rails_modules.get("email") or {}).get("declared")
@@ -10731,16 +10887,15 @@ def main():
           f"l7_pages={_modules['generate_l7_pages']}, "
           f"image_hosts={len(_modules['image_hosts'])}, "
           f"extra_npm={len(_modules['npm_packages'])}")
-    # cms/email are printed only when DECLARED, and the undeclared case is
-    # printed as itself rather than as "cms=none". A build log reading `cms=none`
-    # for a tenant nobody asked is the exact confusion the reader refuses to make.
-    for _field in ("cms", "email"):
-        _entry = _modules.get(_field)
-        if _entry is None:
-            print(f"  ○ {_field}: not declared — no module resolved (not the same as 'none')")
-        else:
-            print(f"  📦 {_field}: declared {_entry['declared']!r} — "
-                  f"npm={len(_entry['npm_packages'])}, env declared-not-valued={len(_entry['env_names'])}")
+    # cms/email are NOT reported here, and this is the one behaviour change to
+    # this block. They now have a second resolution layer — the market default
+    # (`_MARKET_MODULE_DEFAULTS`) — and the market identity is not known until
+    # the benchmark gate has spoken, several hundred lines below. Printing them
+    # here would state an answer the build then supersedes: a log reading "cms:
+    # not declared" followed by "cms: block-store, from the market" is worse
+    # than one that states it once. `report_module_resolution()` runs exactly
+    # once, after the market resolves, on every path — including every path
+    # where no market resolves at all, which is where the old lines came from.
 
     # ── Output-root injection: re-root the base output directory ──
     # Default (flag absent) is a no-op — OUTPUT_DIR stays <web-builder>/output.
@@ -11184,6 +11339,11 @@ def main():
     # about this build. None ⇒ the gate falls back to its own ratified default
     # and says so in conformance.json.
     _benchmark_path_for_gate = None
+    # The resolved MARKET IDENTITY, which is the key the tech-choice defaults
+    # are held under. None until the benchmark gate resolves one, and None
+    # forever on a preset-only build — in which case the module resolution
+    # below is tenant-declaration-only, exactly as it was before this layer.
+    _build_market = None
     if site_spec is not None:
         # The industry resolution is consulted here too, so preset selection
         # and benchmark selection can no longer disagree about what the tenant
@@ -11267,6 +11427,11 @@ def main():
         try:
             from lib.design_system import load_benchmark, compile_style
             _bm = load_benchmark(_bm_path)
+            # The market IDENTITY, not the filename slug. They disagree in the
+            # library today (`enterprise-payments-bvnk.json` declares market
+            # `enterprise-stablecoin-payments`), and keying a tenant's tech
+            # stack off a filename would make a rename change what ships.
+            _build_market = (_bm.get("_meta") or {}).get("market") or _bm_market
             _crawled = (site_spec.get("style") or {}).get("palette") or {}
             site_spec["style"] = compile_style(_bm)
             _p = site_spec["style"]["palette"]
@@ -11316,6 +11481,29 @@ def main():
             # fall back to the crawl — the substitution this wire removes.
             print(f"\n  ✖ Benchmark '{_bm_market}' is unusable: {_bm_err}")
             sys.exit(1)
+
+    # ── Tech choice: the ONE module resolution, now that the market is known ──
+    # Census 2026-08-18 §3.3e: 0 of 924 phase-0 rows declare `cms` or `email`,
+    # and there was no layer above the tenant, so a market could not express
+    # "sites here ship a block store". This is that layer, and it sits UNDER the
+    # existing refusal contract rather than beside it: tenant declaration wins,
+    # market default applies only to silence, absent stays absent.
+    _modules = platform_modules(
+        args.target_platform, _source_platform, tenant_context,
+        market=_build_market,
+    )
+    report_module_resolution(_modules, _build_market)
+    if site_spec is not None:
+        site_spec["module_resolution"] = module_resolution_record(
+            _modules, _build_market)
+        try:
+            _mr_path = OUTPUT_DIR / args.project / "site-spec.json"
+            if _mr_path.exists():
+                _mr_spec = json.loads(_mr_path.read_text(encoding="utf-8"))
+                _mr_spec["module_resolution"] = site_spec["module_resolution"]
+                _mr_path.write_text(json.dumps(_mr_spec, indent=2), encoding="utf-8")
+        except (OSError, json.JSONDecodeError) as _mr_err:
+            print(f"  ⚠ module resolution not persisted to site-spec.json: {_mr_err}")
 
     # Nav/footer, sourced from the harvest or empty — never a canned table.
     # `_harvested_nav is not None` marks this as a harvested (--from-url)
@@ -11576,6 +11764,7 @@ def main():
                     harvested_nav=_harvested_nav,
                     design_style=(site_spec or {}).get("style"),
                     tenant_context=tenant_context,
+                    market=_build_market,
                 )
                 run_compliance_gate(
                     OUTPUT_DIR / args.project / SITE_DIR_NAME,
@@ -11875,7 +12064,7 @@ def main():
                     "validate", "pre-flight validation blocked the requested deploy (no --force)"
                 )
         if validation['passed'] or args.force:
-            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform, harvested_nav=_harvested_nav, design_style=(site_spec or {}).get("style"), tenant_context=tenant_context)
+            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform, harvested_nav=_harvested_nav, design_style=(site_spec or {}).get("style"), tenant_context=tenant_context, market=_build_market)
             run_compliance_gate(
                 OUTPUT_DIR / args.project / SITE_DIR_NAME,
                 getattr(args, "tenant", None),

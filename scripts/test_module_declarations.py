@@ -296,8 +296,14 @@ def test_declared_none_is_recorded_and_is_not_the_same_as_undeclared(modules_of)
     declared_none = modules_of("vercel", "ghost", ctx(cms="none", email="none"))
     undeclared = modules_of("vercel", "ghost", ctx())
 
-    assert declared_none["cms"] == {"declared": "none", "npm_packages": {}, "env_names": []}
-    assert declared_none["email"] == {"declared": "none", "npm_packages": {}, "env_names": []}
+    # `source`/`market` arrived with the market-default layer (census row 12).
+    # `source: "tenant"` and `market: None` is the shape that says an operator
+    # answered this, not a market — which is what makes the answer auditable.
+    for field in ("cms", "email"):
+        assert declared_none[field] == {
+            "declared": "none", "source": "tenant", "market": None,
+            "npm_packages": {}, "env_names": [],
+        }
 
     assert "cms" not in undeclared, (
         "an undeclared cms must be ABSENT from the dict; a key present with "
