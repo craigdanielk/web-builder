@@ -1,0 +1,52 @@
+[
+  {
+    "slug": "home",
+    "url": "https://www.bvnk.com/",
+    "why": "HERO, NAV, FOOTER, CTA, LOGO-BAR, display type scale",
+    "ok": true,
+    "dom_elements": 500,
+    "text_nodes": 79,
+    "motion_level": "expressive",
+    "animation_profile_error": null
+  },
+  {
+    "slug": "payments",
+    "url": "https://www.bvnk.com/payments",
+    "why": "FEATURES, PRODUCT-SHOWCASE, card system",
+    "ok": true,
+    "dom_elements": 500,
+    "text_nodes": 73,
+    "motion_level": "expressive",
+    "animation_profile_error": null
+  },
+  {
+    "slug": "embedded-wallets",
+    "url": "https://www.bvnk.com/embedded-wallets",
+    "why": "HOW-IT-WORKS, developer-facing density",
+    "ok": true,
+    "dom_elements": 500,
+    "text_nodes": 76,
+    "motion_level": "expressive",
+    "animation_profile_error": null
+  },
+  {
+    "slug": "digital-assets",
+    "url": "https://www.bvnk.com/digital-assets",
+    "why": "FEATURES, data-dense surfaces",
+    "ok": true,
+    "dom_elements": 500,
+    "text_nodes": 70,
+    "motion_level": "expressive",
+    "animation_profile_error": null
+  },
+  {
+    "slug": "about-us",
+    "url": "https://www.bvnk.com/about-us",
+    "why": "ABOUT, TEAM, section rhythm at its most generous",
+    "ok": true,
+    "dom_elements": 500,
+    "text_nodes": 69,
+    "motion_level": "expressive",
+    "animation_profile_error": null
+  }
+]
