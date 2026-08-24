@@ -91,8 +91,9 @@ CAPABILITY = {
     "cannot_see": [
         "PASS or FAIL. By design it renders no verdict, filters no rules and reshapes no measurement — "
         "conformance-gate.js owns the interpretation so there is exactly one place the verdict is defined",
-        "WHERE an offence is: evaluate() flattens measured['per_page'] into one aggregate and stamps "
-        "pages[0] onto every evidence record, so the URL on a result is 'the first page', not the offending page",
+        "WHICH SECTION an offence is in. evaluate() now attributes each per-element rule to the routes it "
+        "was measured on (evidence[0].metadata.offending_routes / route_counts), and marks the union-over-"
+        "routes rules site_aggregate rather than inventing a route; sections are not measured at all",
         "that nothing was reached. Measured 2026-08-18 against a dead port: it exits 0 with error=None, "
         "urls_reached=[] and 10 results of which some read PASS. The only honest signal is the EMPTY "
         "urls_reached and a 'conformance skip <url>' line in notes — a caller reading the exit code, "

@@ -23,18 +23,35 @@
  *                         no measurement behind them.  NOT_MEASURED != PASS.
  *
  *   writes <output>/conformance.json — violations carry
- *   {layer, rule, measured, expected, route, section}.
+ *   {layer, rule, measured, expected, route, section, attribution}.
  *
- * ON `route` AND `section` BEING NULL
- * -----------------------------------
- * The `dna_*` rules are site-level aggregates.  `evaluate()` flattens
- * `measured["per_page"]` into one `aggregate` and stamps `pages[0]` onto every
- * evidence record (design_conformance.py:484-485), so the URL on a finding is
- * "the first page in the list", not where the offence is.  Reporting that as a
- * route would be inventing a fact.  `route` and `section` are therefore null,
- * and `routes_measured` / `affected_routes` carry the honest scope: the whole
- * measured set.  Per-route routing needs `evaluate()` to iterate `per_page` —
- * an upstream change, not something this gate may fake.
+ * ON `route`
+ * ----------
+ * `evaluate()` now attributes each per-element rule to the routes it was
+ * actually measured on (design_conformance.py, `_attribute`), and says in
+ * `evidence[0].metadata.attribution` whether it could.  This gate reports what
+ * it is told and invents nothing:
+ *
+ *   attribution=per_route      `route` = the worst offending route when the
+ *                              rule offends on exactly one; null when several,
+ *                              with all of them in `affected_routes` and their
+ *                              counts in `route_counts`.
+ *   attribution=site_aggregate `route` stays null and `attribution_reason`
+ *                              carries WHY — the measurement is a union over
+ *                              routes (palette size, undeclared font count), so
+ *                              no single route owns it.
+ *   attribution=per_page_absent  no per-page measurements were supplied.
+ *
+ * `section` is still null everywhere: nothing measures sections yet.
+ *
+ * ON `waived`
+ * -----------
+ * A violation matching a declared deviation
+ * (`<benchmark-stem>.deviations.json`) arrives carrying
+ * `evidence[0].metadata.waiver`.  It is moved to the `waived` array, counted in
+ * `counts.waived`, printed separately, and does NOT fail the build.  It is
+ * never dropped.  A waiver whose declared build_value no longer matches the
+ * measurement arrives with `waiver_rejected` instead and fails normally.
  *
  * USAGE
  *   node scripts/quality/conformance-gate.js \
@@ -73,7 +90,9 @@ const CAPABILITY = {
     'python3 with the aurelix-uiux-audit analyser importable (conformance_runner.py drives it)',
   ],
   inputs: ['the built site directory', 'a benchmark json'],
-  outputs: ['<output>/conformance.json — violations carry {layer, rule, measured, expected, route, section}'],
+  outputs: ['<output>/conformance.json — violations carry {layer, rule, measured, expected, route, '
+    + 'section, attribution, affected_routes, route_counts}; waived findings are in a separate '
+    + '`waived` array with the deviation that waived them'],
   outcome: 'per-rule PASS/FAIL with measured vs expected, over every prerendered route of the built site',
   exit_contract: {
     0: 'PASS — every measured rule conforms',
@@ -88,8 +107,14 @@ const CAPABILITY = {
     'source-level token drift — it reads computed style, so a template that hardcodes a literal ' +
       'matching the benchmark passes here while still being unmaintainable',
     'anything not rendered on a prerendered route: client-only states, hover, modals, authed pages',
-    'WHERE an offence is. The dna_* rules are site-level aggregates; evaluate() flattens per_page ' +
-      'and stamps pages[0] onto every record, so route and section are reported null rather than invented',
+    'WHICH SECTION an offence is in. Routes are attributed (see the header); sections are not ' +
+      'measured at all, so `section` is null on every finding',
+    'a route it could not attribute. dna_palette_size and the undeclared-set branch of ' +
+      'dna_font_families measure a union over routes — every route can conform while the union ' +
+      'breaches — so those keep route null and say so in attribution_reason rather than invent one',
+    'whether a declared deviation is still a good decision. It checks that the waiver names a ' +
+      'reason, a person and a date, and that the build still measures what was waived; it cannot ' +
+      'check that the reason is true',
     'whether the benchmark itself is right — a wrong ratified benchmark produces confident conformance',
   ],
   reachable_from: ['orchestrate.py:9867', 'run_pipeline.py:992', 'standalone CLI'],
@@ -150,8 +175,9 @@ function baseReport(extra) {
     benchmark: null,
     base_url: null,
     routes_measured: [],
-    counts: { pass: 0, fail: 0, not_measured: 0 },
+    counts: { pass: 0, fail: 0, not_measured: 0, waived: 0 },
     violations: [],
+    waived: [],
     not_measured: [],
   }, extra || {});
 }
@@ -172,14 +198,24 @@ function notMeasured(outputDir, reason, extra) {
  * A FAIL whose evidence carries no `observed` or no `expected` is an opinion,
  * not a finding — it is recorded as NOT_MEASURED and never fails a build.
  */
+/** Absolute measured URL -> route path. `http://127.0.0.1:41234/fees` -> `/fees`. */
+function toRoute(url, baseUrl) {
+  if (typeof url !== 'string' || !url) return null;
+  if (baseUrl && url.startsWith(baseUrl)) return url.slice(baseUrl.length) || '/';
+  try { return new URL(url).pathname || '/'; } catch (_) { return url; }
+}
+
 function decide(results, ctx) {
   const violations = [];
+  const waived = [];
   const unmeasured = [];
   let passCount = 0;
+  const base = ctx.baseUrl || '';
 
   for (const r of results || []) {
     const state = String(r.state || '').toUpperCase();
     const ev = (r.evidence && r.evidence[0]) || {};
+    const meta = ev.metadata || {};
     const measured = ev.observed === undefined ? null : ev.observed;
     const expected = ev.expected === undefined ? null : ev.expected;
 
@@ -187,19 +223,37 @@ function decide(results, ctx) {
     if (state === 'NOT_APPLICABLE') continue;
 
     if (state === 'FAIL' && measured !== null && expected !== null) {
-      violations.push({
+      // Attribution comes from the analyser, which measured it. This gate does
+      // not derive a route from anything else — see the header.
+      const offending = (meta.offending_routes || []).map((u) => toRoute(u, base));
+      const routeCounts = {};
+      for (const [u, n] of Object.entries(meta.route_counts || {})) {
+        routeCounts[toRoute(u, base)] = n;
+      }
+      const finding = {
         layer: r.layer || null,
         rule: r.rule_id || null,
         measured,
         expected,
-        // Site-level aggregate: no honest route, no section. See header.
-        route: null,
-        section: null,
+        // One offending route is a route. Several is a list, and claiming one of
+        // them would be inventing a fact; the list is in affected_routes.
+        route: offending.length === 1 ? offending[0] : null,
+        section: null,                       // nothing measures sections yet
+        attribution: meta.attribution || null,
+        attribution_reason: meta.attribution_reason || null,
         severity: r.severity || null,
         prevalence: typeof r.prevalence === 'number' ? r.prevalence : null,
         issue: r.issue || null,
-        affected_routes: ctx.routes || [],
-      });
+        route_counts: routeCounts,
+        affected_routes: offending.length ? offending : (ctx.routes || []),
+      };
+      if (meta.waiver) {
+        // Counted and printed separately, never dropped, and never a PASS.
+        waived.push(Object.assign({ waiver: meta.waiver }, finding));
+        continue;
+      }
+      if (meta.waiver_rejected) finding.waiver_rejected = meta.waiver_rejected;
+      violations.push(finding);
       continue;
     }
     unmeasured.push({
@@ -219,10 +273,43 @@ function decide(results, ctx) {
   return {
     status,
     exit_code: EXIT[status],
-    counts: { pass: passCount, fail: violations.length, not_measured: unmeasured.length },
+    counts: {
+      pass: passCount,
+      fail: violations.length,
+      not_measured: unmeasured.length,
+      waived: waived.length,
+    },
     violations,
+    waived,
     not_measured: unmeasured,
   };
+}
+
+/** Where a finding is, in one line. Never "null" where a route is known. */
+function whereClause(v) {
+  if (v.route) return ` at ${v.route}`;
+  const n = (v.affected_routes || []).length;
+  if (v.attribution === 'per_route' && n) {
+    const named = (v.affected_routes || []).slice(0, 4)
+      .map((r) => `${r}(${v.route_counts && v.route_counts[r] !== undefined ? v.route_counts[r] : '?'})`)
+      .join(' ');
+    return ` on ${n} route(s): ${named}${n > 4 ? ` +${n - 4}` : ''}`;
+  }
+  // Not attributable. Say which kind of not-attributable, never a bare null.
+  return ` [route not attributed: ${v.attribution || 'unknown'}]`;
+}
+
+/** Violations and waived findings, printed separately. Waived is never silent. */
+function printFindings(report) {
+  for (const v of report.violations) {
+    process.stdout.write(`  ${v.rule} [${v.layer}]${whereClause(v)} measured=`
+      + `${JSON.stringify(v.measured).slice(0, 160)} expected=`
+      + `${JSON.stringify(v.expected).slice(0, 160)}\n`);
+  }
+  for (const v of report.waived || []) {
+    process.stdout.write(`  WAIVED ${v.rule} [${v.layer}]${whereClause(v)} — `
+      + `${v.waiver.decided_by} on ${v.waiver.decided_on}: ${v.waiver.reason}\n`);
+  }
 }
 
 // ── serving ───────────────────────────────────────────────────────────────
@@ -312,7 +399,8 @@ async function main() {
     writeReport(outputDir, report);
     process.stdout.write(`CONFORMANCE GATE: ${report.status.toUpperCase()} — `
       + `${report.counts.fail} violation(s), ${report.counts.pass} rule(s) conform, `
-      + `${report.counts.not_measured} not measured\n`);
+      + `${report.counts.not_measured} not measured, ${report.counts.waived} waived\n`);
+    printFindings(report);
     return report.exit_code;
   }
 
@@ -406,7 +494,7 @@ async function main() {
         Object.assign({ base_url: baseUrl }, ctxPaths));
     }
     const reachedRoutes = reached.map((u) => u.slice(baseUrl.length) || '/');
-    const verdict = decide(payload.results, { routes: reachedRoutes });
+    const verdict = decide(payload.results, { routes: reachedRoutes, baseUrl });
     const report = baseReport(Object.assign({
       build_dir: buildDir,
       benchmark,
@@ -419,13 +507,9 @@ async function main() {
 
     process.stdout.write(`CONFORMANCE GATE: ${report.status.toUpperCase()} — `
       + `${report.counts.fail} violation(s), ${report.counts.pass} rule(s) conform, `
-      + `${report.counts.not_measured} not measured, over `
+      + `${report.counts.not_measured} not measured, ${report.counts.waived} waived, over `
       + `${reachedRoutes.length} route(s)\n`);
-    for (const v of report.violations) {
-      process.stdout.write(`  ${v.rule} [${v.layer}] measured=`
-        + `${JSON.stringify(v.measured).slice(0, 160)} expected=`
-        + `${JSON.stringify(v.expected).slice(0, 160)}\n`);
-    }
+    printFindings(report);
     return report.exit_code;
   } finally {
     stop();

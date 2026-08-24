@@ -67,7 +67,8 @@ def write_results(path: Path, results: list) -> Path:
     return path
 
 
-def rule(rule_id: str, state: str, observed=None, expected=None) -> dict:
+def rule(rule_id: str, state: str, observed=None, expected=None,
+         metadata: dict | None = None) -> dict:
     """A rule-result in the shape `conformance_runner.py` emits."""
     return {
         "rule_id": rule_id,
@@ -78,7 +79,8 @@ def rule(rule_id: str, state: str, observed=None, expected=None) -> dict:
         "prevalence": 0.5,
         "affected_pages": ["http://127.0.0.1:1/"],
         "evidence": [{"observed": observed, "expected": expected,
-                      "page_url": "http://127.0.0.1:1/", "selector": None}],
+                      "page_url": "http://127.0.0.1:1/", "selector": None,
+                      "metadata": metadata or {}}],
     }
 
 
@@ -204,6 +206,129 @@ def test_a_failure_with_no_measurement_is_not_reported_as_a_violation(tmp_path):
     assert [n["rule"] for n in report["not_measured"]] == ["dna_font_families"]
     assert code == EXIT_NOT_MEASURED
     assert report["status"] == "not_measured"
+
+
+# ── Attribution: the gate reports the route, and never invents one ────────
+
+def test_a_single_offending_route_is_named_on_the_violation(tmp_path):
+    """The whole point: a finding you can act on without grepping 65 routes."""
+    res = write_results(tmp_path / "r.json", [rule(
+        "dna_shadow_layers", "FAIL", {"5": 2}, "<= 1 layers",
+        metadata={"attribution": "per_route",
+                  "offending_routes": ["http://127.0.0.1:1/fees"],
+                  "route_counts": {"http://127.0.0.1:1/fees": 2}})])
+    out = tmp_path / "out"
+    out.mkdir()
+    code, report, _ = run_gate("--results-json", str(res), "--output", str(out))
+    assert code == EXIT_FAIL
+    v = report["violations"][0]
+    assert v["route"] == "/fees", v
+    assert v["affected_routes"] == ["/fees"]
+    assert v["route_counts"] == {"/fees": 2}
+
+
+def test_several_offending_routes_are_all_listed_and_none_is_singled_out(tmp_path):
+    """Picking one of three would be inventing a fact. All three, route null."""
+    res = write_results(tmp_path / "r.json", [rule(
+        "dna_type_scale", "FAIL", {"23": 61}, [64, 48],
+        metadata={"attribution": "per_route",
+                  "offending_routes": ["http://127.0.0.1:1/a", "http://127.0.0.1:1/b"],
+                  "route_counts": {"http://127.0.0.1:1/a": 9,
+                                   "http://127.0.0.1:1/b": 4}})])
+    out = tmp_path / "out"
+    out.mkdir()
+    code, report, _ = run_gate("--results-json", str(res), "--output", str(out))
+    v = report["violations"][0]
+    assert v["route"] is None
+    assert v["affected_routes"] == ["/a", "/b"]
+    assert v["route_counts"] == {"/a": 9, "/b": 4}
+
+
+def test_a_site_level_rule_keeps_route_null_and_says_why(tmp_path):
+    """A null route is only honest when it comes with a stated reason."""
+    res = write_results(tmp_path / "r.json", [rule(
+        "dna_palette_size", "FAIL", 37, "<= 20",
+        metadata={"attribution": "site_aggregate",
+                  "attribution_reason": "the union of colours over all routes",
+                  "offending_routes": [], "route_counts": {}})])
+    out = tmp_path / "out"
+    out.mkdir()
+    code, report, _ = run_gate("--results-json", str(res), "--output", str(out))
+    v = report["violations"][0]
+    assert v["route"] is None
+    assert v["attribution"] == "site_aggregate"
+    assert "union" in v["attribution_reason"]
+
+
+# ── Waivers: separate, never silent, never a pass ─────────────────────────
+
+def test_a_waived_violation_is_counted_and_kept_but_does_not_fail_the_build(tmp_path):
+    res = write_results(tmp_path / "r.json", [
+        rule("dna_heading_weight", "PASS", {"400": 12}, ["400"]),
+        rule("dna_font_families", "FAIL", {"Archivo": 389}, ["Poppins"],
+             metadata={"attribution": "per_route",
+                       "offending_routes": ["http://127.0.0.1:1/"],
+                       "route_counts": {"http://127.0.0.1:1/": 389},
+                       "waiver": {"rule": "dna_font_families", "reason": "Circular "
+                                  "cannot be licensed", "decided_by": "Craig",
+                                  "decided_on": "2026-08-24"}})])
+    out = tmp_path / "out"
+    out.mkdir()
+    code, report, _ = run_gate("--results-json", str(res), "--output", str(out))
+    assert code == EXIT_PASS, report
+    assert report["violations"] == []
+    # Never silently dropped: it is still in the artifact, with its provenance.
+    assert report["counts"]["waived"] == 1
+    assert len(report["waived"]) == 1
+    w = report["waived"][0]
+    assert w["rule"] == "dna_font_families"
+    assert w["route"] == "/"
+    assert w["waiver"]["decided_by"] == "Craig"
+    assert w["measured"] == {"Archivo": 389} and w["expected"] == ["Poppins"]
+
+
+def test_a_rejected_waiver_still_fails_the_build_and_says_it_expired(tmp_path):
+    """A waiver that no longer matches the build must not act as an exemption."""
+    res = write_results(tmp_path / "r.json", [rule(
+        "dna_font_families", "FAIL", {"Comic Sans MS": 4}, ["Poppins"],
+        metadata={"attribution": "per_route",
+                  "offending_routes": ["http://127.0.0.1:1/"],
+                  "route_counts": {"http://127.0.0.1:1/": 4},
+                  "waiver_rejected": {"field": "build_value",
+                                      "declared": ["Archivo"],
+                                      "measured": {"Comic Sans MS": 4}}})])
+    out = tmp_path / "out"
+    out.mkdir()
+    code, report, _ = run_gate("--results-json", str(res), "--output", str(out))
+    assert code == EXIT_FAIL, report
+    assert report["counts"]["waived"] == 0
+    assert report["violations"][0]["waiver_rejected"]["field"] == "build_value"
+
+
+def test_a_waiver_never_manufactures_a_pass_out_of_nothing(tmp_path):
+    """Waiving the only failure leaves NOT_MEASURED still NOT_MEASURED."""
+    res = write_results(tmp_path / "r.json", [
+        rule("dna_palette_size", "NOT_MEASURED"),
+        rule("dna_font_families", "FAIL", {"Archivo": 1}, ["Poppins"],
+             metadata={"waiver": {"rule": "dna_font_families", "reason": "r",
+                                  "decided_by": "Craig", "decided_on": "2026-08-24"}})])
+    out = tmp_path / "out"
+    out.mkdir()
+    code, report, _ = run_gate("--results-json", str(res), "--output", str(out))
+    assert code == EXIT_NOT_MEASURED, report
+    assert report["status"] == "not_measured"
+
+
+def test_the_live_deviations_sidecar_is_readable_and_fully_attributed():
+    """Guards the committed waiver: a decision needs a person, a date, a reason."""
+    sidecar = WEB_BUILDER / "benchmarks" / "enterprise-payments-bvnk.deviations.json"
+    if not sidecar.exists():          # nothing waived on this benchmark — fine
+        return
+    entries = json.loads(sidecar.read_text(encoding="utf-8"))["deviations"]
+    assert entries
+    for e in entries:
+        for key in ("rule", "build_value", "reason", "decided_by", "decided_on"):
+            assert str(e.get(key) or "").strip() or e.get(key) == [], f"{key}: {e}"
 
 
 def test_the_gate_exists_and_is_executable_by_node():

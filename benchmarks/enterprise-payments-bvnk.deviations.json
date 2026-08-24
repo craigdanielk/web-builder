@@ -1,0 +1,14 @@
+{
+  "_why_this_file_is_not_in_the_benchmark": "The benchmark beside this file is a CAPTURE: numbers measured off a reference site on a dated run, refreshed by re-capturing. A deviation is the opposite kind of fact — an operator decision, made on a date, by a named person, about one build, revised by deciding again. Keeping them in one file is how a benchmark stops being reproducible. design_conformance.load_benchmark() merges this sidecar under the benchmark's `deviations` key.",
+  "_contract": "Every entry needs rule, build_value, reason, decided_by, decided_on — a missing one raises at load, so a malformed waiver is reported as NOT_MEASURED rather than quietly honoured. A waived violation is still measured, still FAIL, and is counted and printed separately by conformance-gate.js. If the build no longer measures `build_value`, the waiver stops applying and the violation re-raises: this cannot rot into a blanket exemption.",
+  "deviations": [
+    {
+      "rule": "dna_font_families",
+      "benchmark_value": ["Poppins"],
+      "build_value": ["Archivo", "Instrument Sans", "IBM Plex Mono"],
+      "reason": "Circular cannot be licensed or served, so the benchmark already substitutes it (font_system.substitution_reason, Craig, 2026-08-17). Poppins is font_match.py's geometric-sans resolution of Circular, not an operator choice about this build — the gate was failing on a matcher's stand-in. Archivo carries the display voice the Poppins reproduction lacked; Instrument Sans is the text face and IBM Plex Mono the numeric/mono face. If the Lineto faces are ever licensed, delete this entry and the rule speaks for itself again.",
+      "decided_by": "Craig",
+      "decided_on": "2026-08-24"
+    }
+  ]
+}
