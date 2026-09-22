@@ -51,3 +51,8 @@ output/championgrip-co-za/site/public/media/champion-grip/lifestyle/
 output/championgrip-co-za/site/public/media/champion-grip/*.png
 !output/championgrip-co-za/site/public/media/champion-grip/brand-logo.png
 !output/championgrip-co-za/site/public/media/champion-grip/hero-outdoor.png
+
+# Ignore pipeline JSON/artifacts beside tracked site/
+output/championgrip-co-za/*
+!output/championgrip-co-za/site/
+!output/championgrip-co-za/site/**
