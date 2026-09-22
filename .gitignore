@@ -1,5 +1,5 @@
 # Generated output (raw pipeline output)
-output/
+# output/ handled below (Champion Grip exception)
 
 # Downloaded 21st.dev component library (large cache, re-crawlable)
 skills/animation-components/21st-dev-library/
@@ -35,3 +35,19 @@ logs/
 # Regenerable build artifacts inside generated output projects
 output/**/node_modules/
 output/**/.next/
+
+# Champion Grip local storefront (tracked)
+!output/
+output/*
+!output/championgrip-co-za/
+!output/championgrip-co-za/**
+output/championgrip-co-za/site/node_modules/
+output/championgrip-co-za/site/.next/
+output/championgrip-co-za/site/.env*
+output/championgrip-co-za/site/public/media/champion-grip/live/
+output/championgrip-co-za/site/public/media/champion-grip/generated/
+output/championgrip-co-za/site/public/media/champion-grip/lifestyle/
+# Prefer webp; keep logo + hero-outdoor PNG
+output/championgrip-co-za/site/public/media/champion-grip/*.png
+!output/championgrip-co-za/site/public/media/champion-grip/brand-logo.png
+!output/championgrip-co-za/site/public/media/champion-grip/hero-outdoor.png
