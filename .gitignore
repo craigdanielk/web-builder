@@ -62,3 +62,7 @@ output/championgrip-co-za/site/.env*
 output/championgrip-co-za/site/public/media/champion-grip/*.png
 !output/championgrip-co-za/site/public/media/champion-grip/brand-logo.png
 !output/championgrip-co-za/site/public/media/champion-grip/hero-outdoor.png
+
+output/championgrip-co-za/site/public/media/champion-grip/generated/
+output/championgrip-co-za/site/public/media/champion-grip/lifestyle/
+output/championgrip-co-za/site/public/media/champion-grip/live/
