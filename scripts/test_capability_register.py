@@ -348,6 +348,91 @@ def test_the_committed_scenarios_resolve_against_the_committed_register():
     assert ok, detail
 
 
+# ── required stations: a work list that cannot pretend to be a tool ───────
+
+def _station_doc():
+    return {
+        "version": 1,
+        "stations": [{
+            "id": "aurelix.extractor.not-built",
+            "kind": "extractor",
+            "name": "A station that does not exist yet",
+            "gap": "nothing declares this",
+            "task": "add the instrument, then delete this row",
+            "must_not": "pretend the crawl already did this",
+            "human_still_required": ["a credential"],
+        }],
+        "undeclared": [],
+        "repairs": [],
+    }
+
+
+def test_a_missing_station_passes_while_it_is_actually_missing(tmp_path):
+    from capability_register import validate_required_stations
+    assert validate_required_stations(_station_doc(), _entries(), tmp_path) == []
+
+
+def test_a_station_is_refused_once_the_instrument_exists(tmp_path):
+    """The row is a lie the moment the tool is declared. Leaving it would
+    make the factory look unfinished after the work was done."""
+    from capability_register import validate_required_stations
+    doc = _station_doc()
+    doc["stations"][0]["id"] = VALID["id"]
+    problems = validate_required_stations(doc, _entries(), tmp_path)
+    assert any("already in the register" in p for p in problems)
+
+
+def test_a_repair_must_name_an_instrument_that_exists(tmp_path):
+    from capability_register import validate_required_stations
+    doc = _station_doc()
+    doc["repairs"].append({
+        "id": "aurelix.compiler.imaginary",
+        "gap": "it does not finish",
+        "task": "make it finish",
+    })
+    problems = validate_required_stations(doc, _entries(), tmp_path)
+    assert any("not in the register" in p for p in problems)
+
+
+def test_an_undeclared_script_must_exist_and_carry_no_marker(tmp_path):
+    from capability_register import CAPABILITY_MARKER, validate_required_stations
+    script = tmp_path / "layer" / "publish.py"
+    script.parent.mkdir()
+    script.write_text("print('publish')\n", encoding="utf-8")
+    doc = _station_doc()
+    doc["stations"] = []
+    doc["undeclared"].append({
+        "id": "aurelix.migration.not-declared",
+        "kind": "migration",
+        "file": "layer/publish.py",
+        "gap": "the script is invisible",
+        "task": "add the marker, then delete this row",
+    })
+    assert validate_required_stations(doc, [], tmp_path) == []
+    script.write_text(f"# {CAPABILITY_MARKER}\n", encoding="utf-8")
+    problems = validate_required_stations(doc, [], tmp_path)
+    assert any(CAPABILITY_MARKER in p for p in problems)
+
+
+def test_deleting_the_work_list_is_a_failure(tmp_path):
+    """An empty list is how the factory says it is finished. A missing file
+    is how a finished-looking factory hides the work."""
+    from capability_register import check_required_stations
+    ok, detail = check_required_stations([], tmp_path / "required-stations.yaml")
+    assert ok is False
+    assert "not present" in detail
+
+
+def test_the_committed_work_list_matches_the_live_instruments():
+    """Station ids must not already be declared, and every repair must name
+    one that --describe still returns. The committed register can lag the
+    source; this check follows the instruments."""
+    from capability_register import check_required_stations
+    entries, _problems = build_entries(_declaring_files(), _evidence())
+    ok, detail = check_required_stations(entries)
+    assert ok, detail
+
+
 def _declaring_files():
     from capability_register import candidate_files
     return candidate_files()

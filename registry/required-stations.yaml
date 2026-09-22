@@ -1,0 +1,239 @@
+# Required stations — infra the factory does not have.
+#
+# This file is an open work list, not a register. Nothing here runs.
+# `python3 scripts/capability_register.py compile --check` fails when:
+#   - a station id is already declared by an instrument (delete the row;
+#     the station exists)
+#   - a repair names an id that is not in the register
+#   - an undeclared file has grown an AURELIX-CAPABILITY marker
+#   - a field is missing, or an id is malformed
+#   - this file is deleted
+#
+# A store rebuild on 2026-09-22 exposed these holes. The tasks belong to
+# the Aurelix system. They are not that tenant's backlog.
+#
+# `human_still_required` is what stays a person after the instrument
+# exists. Do not write a node that pretends to do those.
+
+version: 1
+
+stations:
+
+  - id: aurelix.extractor.wordpress-admin
+    kind: extractor
+    name: Export a WordPress or WooCommerce catalog from admin
+    gap: >
+      The public Store API (/wp-json/wc/store/v1/products) is the catalog
+      read and returns name, sku, price, and images. It does not return a
+      stock quantity. wc/v3 returns 401 until a consumer key exists. That
+      key is created at WooCommerce → Settings → Advanced → REST API.
+      Settings → Connectors is the MCP adapter, not the catalog.
+      api2cart_integration is not this station.
+    task: >
+      Add a declaring instrument that reads wc/v3 with a consumer key and
+      writes stock quantities. Customer and order records stay off unless
+      a separate flag is passed, and that flag is recorded in the output.
+    human_still_required:
+      - admin credentials
+      - the decision to export customer or order records
+    must_not: >
+      Invent a catalog by scraping rendered HTML, or export customer PII
+      by default.
+
+  - id: aurelix.migration.media-library
+    kind: migration
+    name: Download, dedupe, and ledger the source media library
+    gap: >
+      No instrument downloads a media library, hashes it, or records a
+      licence decision. A URL inside a crawl is not a library, and nothing
+      refuses an unsigned asset.
+    task: >
+      Add a declaring instrument that downloads the export's media, dedupes
+      by content hash, and writes a licence ledger. A row with no decision
+      fails the run.
+    human_still_required:
+      - the licence decision on each asset
+    must_not: >
+      Treat a hotlinked URL as an owned file, or mark an asset licensed
+      because it was reachable.
+
+  - id: aurelix.generator.brand-ci
+    kind: generator
+    name: Write a brand CI document from extracted tokens and files
+    gap: >
+      site-spec can emit colour and type tokens. Nothing writes the CI
+      document a person signs, and nothing collects logo or font files.
+      Two palettes for one store (mint from a scrape, forest and gold from
+      a brief) had no artifact that forced the disagreement into the open.
+    task: >
+      Add a declaring instrument. Inputs are extracted tokens plus logo
+      and font files. Output is a CI document. When two sources disagree,
+      the disagreement is the output. The instrument does not pick a winner.
+    human_still_required:
+      - signing one palette, one type system, and one logo
+    must_not: >
+      Resolve a palette conflict by preferring whichever source it read
+      last, or overwrite a signed CI document.
+
+  - id: aurelix.migration.shopify-customer-accounts
+    kind: migration
+    name: Apply the customer-accounts decision on a Shopify shop
+    gap: >
+      The storefront keeps a guest cart id in localStorage. No instrument
+      turns customer accounts on, and no instrument records that the
+      decision was "off".
+    task: >
+      Add a declaring instrument. Input is a recorded decision: new
+      customer accounts, classic accounts, or off. It applies that
+      decision through the Admin API and writes the decision back next
+      to shopify_config.json.
+    human_still_required:
+      - the choice of new, classic, or off
+    must_not: >
+      Enable accounts because a rebuild brief mentioned login, or create
+      customer records from an imported list.
+
+  - id: aurelix.compiler.sitemap-robots
+    kind: compiler
+    name: Emit sitemap.xml and robots.txt from the route list
+    gap: >
+      No instrument writes sitemap.xml or robots.txt. Without an explicit
+      route list, one crawled URL becomes one page, including tag and
+      attachment URLs that should stay out of the index.
+    task: >
+      Add a declaring instrument. Input is the signed route list plus an
+      indexability flag per route. Output is sitemap.xml and robots.txt.
+      A route with no flag fails the run.
+    human_still_required:
+      - which routes are indexable
+    must_not: >
+      Put every compiled path in the sitemap, or emit a robots file that
+      allows the whole host by default.
+
+  - id: aurelix.compiler.schema-org
+    kind: compiler
+    name: Emit JSON-LD from the site spec and live product data
+    gap: >
+      No instrument emits Product, Organization, or FAQ JSON-LD. The
+      compiler has no schema step.
+    task: >
+      Add a declaring instrument. Product nodes are filled from the
+      Storefront API. Organization and FAQ nodes are filled only from
+      slots the site spec already holds. A missing price or name omits
+      that node and records the omission.
+    human_still_required: []
+    must_not: >
+      Invent offers, ratings, or FAQ answers that are not in the spec
+      or the product record.
+
+  - id: aurelix.migration.pudo-fulfilment
+    kind: migration
+    name: Post-payment PUDO fulfilment worker
+    gap: >
+      No instrument calls a carrier after orders/paid or writes tracking
+      back to Shopify. Pickup-point selection inside checkout is a
+      Shopify CarrierService and is limited to Plus and development
+      stores. The worker that can exist on every plan does not.
+    task: >
+      Add a declaring instrument: a worker subscribed to orders/paid,
+      calling the carrier API named in its config, and writing the
+      fulfilment and tracking number back through the Admin API.
+    human_still_required:
+      - carrier credentials
+      - the decision to quote lockers at checkout or assign one after payment
+    must_not: >
+      Take payment, create the Shopify order, or embed a carrier widget
+      in the storefront checkout.
+
+  - id: aurelix.gate.commerce-ready
+    kind: gate
+    name: Refuse deploy until the shop can sell
+    gap: >
+      Deploy can proceed with no store, no headless publication, no
+      customer-accounts decision, and no active payment gateway. The
+      chain does not have a gate that stops there.
+    task: >
+      Add a declaring gate. It passes only when shopify_config.json
+      exists, a headless publication record exists, a customer-accounts
+      decision file exists, and the shop reports an active payment
+      gateway. Any missing record is NOT_MEASURED, never a pass.
+    human_still_required:
+      - creating the Shopify store
+      - payment-provider KYC
+    must_not: >
+      Create the store, submit KYC, or treat a missing config as a
+      successful skip.
+
+  - id: aurelix.gate.launch-ready
+    kind: gate
+    name: Refuse cutover until the records a launch needs are present
+    gap: >
+      Nothing stops a DNS change. Redirects, a signed CI document, a
+      licence ledger, a sitemap, and a paid test order are separate
+      jobs with no gate in front of cutover.
+    task: >
+      Add a declaring gate. It passes only when a redirect-upload record,
+      a signed CI document, a licence ledger with no unsigned rows, a
+      sitemap, and one paid test-order id are all present. Any missing
+      record is NOT_MEASURED, never a pass.
+    human_still_required:
+      - DNS cutover
+      - placing the paid test order
+      - the watch period after cutover
+    must_not: >
+      Change DNS, place an order, or treat the watch period as something
+      this gate can finish.
+
+# Scripts the register cannot see. publish_to_storefront_channel.py already
+# does its job. run_pipeline.py is the chain, and a skipped gate still
+# exits 0.
+undeclared:
+
+  - id: aurelix.harness.pipeline-chain
+    kind: harness
+    file: run_pipeline.py
+    gap: >
+      The committed register still lists this id, but run_pipeline.py
+      carries no AURELIX-CAPABILITY marker, so a fresh compile drops the
+      chain. The same file prints "Skip Gate D" and "Skip Gate E" when
+      no deploy URL is set, then returns 0. A skipped deployment check
+      is reported as a completed pipeline.
+    task: >
+      Declare the capability on run_pipeline.py. A missing deploy URL
+      on the gate_d or full stop must exit non-zero. A Vercel target
+      does not invoke Gate D or Gate E, and does not count their absence
+      as a pass. Recompile, then delete this row.
+
+  - id: aurelix.migration.shopify-headless-publish
+    kind: migration
+    file: shopify-integration-layer/scripts/publish_to_storefront_channel.py
+    gap: >
+      This script runs publishablePublish for products and collections.
+      It carries no AURELIX-CAPABILITY marker, so the register's 55
+      instruments do not include it. Imported products stay invisible
+      to the Storefront API until it runs.
+    task: >
+      Add the declaration to the script and recompile. Then delete this
+      row. Do not write a second publisher.
+
+# Instruments that exist and do not finish the job their name claims.
+repairs:
+
+  - id: aurelix.compiler.copy-findings
+    gap: >
+      The recorded run exited 0 with 266 findings in and 0 verdicts out
+      (145 rule-not-copy-actionable, 90 state-not-actionable, 31
+      no-section-map). A green exit here is not a copy review.
+    task: >
+      Emit a verdict per finding, or return NOT_MEASURED when every
+      finding is unroutable. Do not add a second copy scorer beside it.
+
+  - id: aurelix.generator.url-to-preset
+    gap: >
+      The instrument overwrites skills/presets/<name>.md with no diff
+      and no backup. The 294-line Cape Crypto preset was replaced by a
+      121-line generation and recovered only from git.
+    task: >
+      Refuse to overwrite an existing preset unless the operator passes
+      an explicit replace flag, and write the previous file aside before
+      any replace.

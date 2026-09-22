@@ -3968,6 +3968,21 @@ def _emit_section_artifact(
     )
 
 
+def content_policy_from_brief(brief: str | None) -> str | None:
+    """Read a written content_policy line from the brief.
+
+    Generation stays off unless the brief asks for it on its own line:
+    `content_policy: allow_generated`. A site-spec field still wins when set.
+    """
+    if not brief:
+        return None
+    match = re.search(
+        r"(?m)^content_policy:\s*(sourced_only|allow_generated)\s*$",
+        brief,
+    )
+    return match.group(1) if match else None
+
+
 def stage_sections(
     sections: list[dict],
     preset: str,
@@ -4107,9 +4122,14 @@ def stage_sections(
     # `allow_generated` restores the generation path for builds that have
     # explicitly asked for it in writing. Absent policy = sourced_only; the
     # permissive branch is never the one you get by saying nothing.
-    _content_policy = ((site_spec or {}).get("content_policy")
-                       or "sourced_only")
+    _content_policy = (
+        (site_spec or {}).get("content_policy")
+        or content_policy_from_brief(brief)
+        or "sourced_only"
+    )
     _allow_generated_sections = _content_policy == "allow_generated"
+    if _allow_generated_sections:
+        print("  ✓ content_policy allow_generated — empty harvest falls through to the section model")
 
     # Page-level audit-capture copy, allocated to the sections that have none
     # of their own. Computed once, before the loop, so the allocation is a
@@ -4287,7 +4307,7 @@ def stage_sections(
                 # demanded and the source page does not contain, unfillable
                 # from the moment it was appended — from a real harvest miss.
                 _omission = omission_cause_for(section, _fill_cov)
-                if _omission:
+                if _omission and not _allow_generated_sections:
                     _omit_reason, _omit_cause = _omission
                     print(f"        ⚠ omitted: {_omit_reason}")
                     _omitted_sections.append({
@@ -4310,37 +4330,44 @@ def stage_sections(
                         reason=_omit_reason, cause=_omit_cause))
                     continue
 
-                _record_outcome(i, section, filename, section_outcome(
-                    "template", file=filename, archetype=section["archetype"],
-                    variant=section.get("variant", ""), provenance=_fill_prov))
+                if _omission and _allow_generated_sections:
+                    _omit_reason, _omit_cause = _omission
+                    print(f"        ↳ harvest empty ({_omit_cause}) — calling the section model")
+                else:
+                    _record_outcome(i, section, filename, section_outcome(
+                        "template", file=filename, archetype=section["archetype"],
+                        variant=section.get("variant", ""), provenance=_fill_prov))
 
-                sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
-                out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
-                filepath = sections_base / out_name
-                filepath.parent.mkdir(parents=True, exist_ok=True)
-                filepath.write_text(template_code, encoding="utf-8")
-                section_files.append(filepath)
+                    sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
+                    out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
+                    filepath = sections_base / out_name
+                    filepath.parent.mkdir(parents=True, exist_ok=True)
+                    filepath.write_text(template_code, encoding="utf-8")
+                    section_files.append(filepath)
 
-                _emit_section_artifact(
-                    project_name=project_name,
-                    page_dir=sections_base.name,
-                    out_name=out_name,
-                    tsx=template_code,
-                    section=section,
-                    section_uid=section_uid,
-                    intensity=section_intensity,
-                    origin=_origin_for(tpl),
-                    provenance=_fill_prov,
-                )
-                continue  # Skip LLM generation for this section
+                    _emit_section_artifact(
+                        project_name=project_name,
+                        page_dir=sections_base.name,
+                        out_name=out_name,
+                        tsx=template_code,
+                        section=section,
+                        section_uid=section_uid,
+                        intensity=section_intensity,
+                        origin=_origin_for(tpl),
+                        provenance=_fill_prov,
+                    )
+                    continue  # Filled template; skip the section model
 
-        # ── Reaching here means no template resolved ──────────────────────
-        # Template sections are dropped when the harvest fills no slot (the
-        # `omit_section` branch above). A section generated here would carry
-        # ZERO provenance rows, because the model wrote every word — that is
-        # not "unmeasured content", it is INVENTED content, which is what this
-        # pipeline exists to stop shipping. On a licensed FSP's site it is a
-        # regulatory exposure, not a quality one.
+        # ── Reaching here means the section model writes this section ─────
+        # Either no template resolved, or a template resolved and the harvest
+        # filled nothing and the brief asked for generation. A sourced-only
+        # build never arrives here: empty harvest is omitted above, and a
+        # missing template is omitted just below.
+        #
+        # A section written here carries no harvest provenance rows. The model
+        # writes the copy. That is allowed only when the brief says
+        # `content_policy: allow_generated`. On a licensed FSP's site,
+        # unprovenanced copy is the exposure this pipeline exists to remove.
         #
         # The cause is nearly always a variant the library does not carry: the
         # planner asks for BLOG-PREVIEW/card-grid, the library holds
@@ -4788,7 +4815,22 @@ Component name: Section{num}{section['archetype'].replace('-', '')}"""
 
         sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
         out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
-
+        filepath = sections_base / out_name
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        filepath.write_text(code, encoding="utf-8")
+        section_files.append(filepath)
+        print(f"      ✓ wrote {out_name} ({len(code.splitlines())} lines)")
+        _emit_section_artifact(
+            project_name=project_name,
+            page_dir=sections_base.name,
+            out_name=out_name,
+            tsx=code,
+            section=section,
+            section_uid=section_uid,
+            intensity=section_intensity,
+            origin="llm",
+            provenance=[],
+        )
 
         if not output_subdir:
             save_checkpoint(OUTPUT_DIR / project_name, "sections", project_name, {"last_section_index": i, "section_count": len(sections)})
@@ -6715,6 +6757,7 @@ def _layer7_product_page_content() -> str:
     return '''import { shopifyFetch } from "@/lib/shopify/client";
 import { PRODUCT_BY_HANDLE } from "@/lib/shopify/queries";
 import type { ProductByHandleResult } from "@/lib/shopify/queries";
+import { AddToCartButton } from "@/lib/shopify/AddToCartButton";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -6750,6 +6793,7 @@ export default async function Page({ params }: { params: Promise<{ handle: strin
     );
   }
   const price = product.priceRange?.minVariantPrice;
+  const variantId = product.variants?.edges?.[0]?.node?.id ?? "";
   /* descriptionHtml: trusted content from Shopify Storefront API, authored by store owner */
   return (
     <main className="min-h-screen pt-24 px-6 pb-12 max-w-4xl mx-auto">
@@ -6772,6 +6816,7 @@ export default async function Page({ params }: { params: Promise<{ handle: strin
             </p>
           )}
           {product.description && <p className="text-neutral-600 whitespace-pre-wrap mb-6">{product.description}</p>}
+          {variantId ? <AddToCartButton variantId={variantId} /> : null}
         </div>
       </div>
     </main>
@@ -6964,8 +7009,10 @@ class ShopifyAdapter(DeployAdapter):
         token = (config.get("storefront_access_token") or "").strip()
         if domain:
             values["SHOPIFY_STORE_DOMAIN"] = domain
+            values["NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN"] = domain
         if token and not token.startswith("["):
             values["SHOPIFY_STOREFRONT_ACCESS_TOKEN"] = token
+            values["NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN"] = token
         manifest["values"] = values
         manifest["unvalued"] = [n for n in manifest["declared"] if n not in values]
         return manifest
@@ -7833,6 +7880,19 @@ export default function RootLayout({{ children }}: {{ children: React.ReactNode 
   );
 }}
 """
+    if has_commerce_routes:
+        layout_code = layout_code.replace(
+            'import "./globals.css";',
+            'import "./globals.css";\n'
+            'import { CartProvider } from "@/lib/shopify/cart-context";\n'
+            'import { CartDrawer } from "@/lib/shopify/CartDrawer";',
+            1,
+        )
+        layout_code = layout_code.replace(
+            "{children}",
+            "<CartProvider>\n        {children}\n        <CartDrawer />\n      </CartProvider>",
+            1,
+        )
     write_file(app_dir / "layout.tsx", layout_code)
 
     # ── Generate cn() utility (clsx + tailwind-merge) ──

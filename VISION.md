@@ -84,7 +84,7 @@ Analyze a source e-commerce store via API integration or URL crawling and output
 
 ### Current State
 - Generalized CLI tool with `analyze` and `validate` commands
-- API-first architecture: uses API2Cart for multi-platform extraction (OpenCart, WooCommerce, Magento) with URL crawling as fallback
+- Public-URL crawl. WooCommerce products come from the Store API (`/wp-json/wc/store/v1/products`). `api2cart_integration/` is a test fixture, not this path
 - Validated on opencart-demo dataset (102/102 tests passing)
 - Produces 5-6 output files: architecture.json, products.csv, brief.md, brand.json, media-manifest.json, analysis_report.md
 - Documented interface contract: aurelix-calculator/INTERFACE.md

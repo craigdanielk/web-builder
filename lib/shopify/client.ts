@@ -3,9 +3,20 @@
  * Initialize with env: SHOPIFY_STORE_DOMAIN, SHOPIFY_STOREFRONT_ACCESS_TOKEN.
  */
 
+function storefrontDomain(): string | undefined {
+  return process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN || process.env.SHOPIFY_STORE_DOMAIN;
+}
+
+function storefrontToken(): string | undefined {
+  return (
+    process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_ACCESS_TOKEN ||
+    process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN
+  );
+}
+
 const endpoint = (): string => {
-  const domain = process.env.SHOPIFY_STORE_DOMAIN;
-  const token = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+  const domain = storefrontDomain();
+  const token = storefrontToken();
   if (!domain || !token) {
     throw new Error("Missing SHOPIFY_STORE_DOMAIN or SHOPIFY_STOREFRONT_ACCESS_TOKEN");
   }
@@ -16,7 +27,7 @@ export async function shopifyFetch<T = unknown>(
   query: string,
   variables?: Record<string, unknown>
 ): Promise<T> {
-  const token = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+  const token = storefrontToken();
   const res = await fetch(endpoint(), {
     method: "POST",
     headers: {

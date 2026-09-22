@@ -46,6 +46,8 @@ USAGE
     python3 scripts/capability_register.py verify            # re-run --describe, record loadability
     python3 scripts/capability_register.py record --id <id> --argv '<cmd>' --exit <n> [--note ...]
     python3 scripts/capability_register.py record --id <id> --not-run 'needs a live Shopify store'
+    python3 scripts/capability_register.py stations           # open infra tasks
+    python3 scripts/capability_register.py stations --check  # fail if the work list rots
     python3 scripts/capability_register.py list [--status BROKEN]
 """
 from __future__ import annotations
@@ -64,7 +66,9 @@ import yaml  # noqa: E402
 
 from lib.capability import (  # noqa: E402
     COMPILER_OWNED,
+    KINDS,
     CapabilityInvalid,
+    _ID_RE,
     validate,
 )
 
@@ -73,6 +77,7 @@ REGISTRY_DIR = ROOT / "registry"
 REGISTER_PATH = REGISTRY_DIR / "capability-register.yaml"
 EVIDENCE_PATH = REGISTRY_DIR / "capability-evidence.json"
 SCENARIOS_PATH = REGISTRY_DIR / "scenarios.yaml"
+REQUIRED_STATIONS_PATH = REGISTRY_DIR / "required-stations.yaml"
 
 # A scenario step must say what it costs and what skipping it ships. A sequence
 # that lists tools without stating the consequence of omitting one is a list, and
@@ -80,6 +85,13 @@ SCENARIOS_PATH = REGISTRY_DIR / "scenarios.yaml"
 # their own directory.
 SCENARIO_STEP_REQUIRED = ("capability", "why", "cost", "skipping_ships")
 SCENARIO_REQUIRED = ("id", "question", "steps")
+
+# A required station is a claim that an instrument does not exist yet.
+# The fields are the ones an implementer needs, and no others: an optional
+# essay field is how a backlog stops being checkable.
+STATION_REQUIRED = ("id", "kind", "name", "gap", "task", "must_not", "human_still_required")
+UNDECLARED_REQUIRED = ("id", "kind", "file", "gap", "task")
+REPAIR_REQUIRED = ("id", "gap", "task")
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -359,7 +371,9 @@ def build_entries(paths: list[Path], evidence: dict[str, list[dict[str, Any]]]) 
             continue
         ident = str(spec["id"])
         if ident in seen:
-            problems.append(f"duplicate id {ident!r}: {rel} and {seen[ident].relative_to(ROOT.parent).as_posix()}")
+            problems.append(
+                f"duplicate id {ident!r}: {rel} and {_display_path(seen[ident])}"
+            )
             continue
         seen[ident] = path
         status, why = derive_status(spec, evidence.get(ident, []))
@@ -510,6 +524,169 @@ def check_scenarios(entries: list[dict[str, Any]], path: Path = SCENARIOS_PATH) 
 
 
 # --------------------------------------------------------------------------
+# required stations — the work list, checked so it cannot go stale
+# --------------------------------------------------------------------------
+
+def _nonempty_str(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def validate_required_stations(
+    doc: Any,
+    entries: list[dict[str, Any]],
+    service_root: Path,
+) -> list[str]:
+    """Every problem with `required-stations.yaml`, against the register.
+
+    A station names an instrument that does not exist. The moment that
+    instrument is declared, the row is a lie and this refuses. A repair
+    names an instrument that does exist. The moment it disappears, the
+    repair has nothing to point at and this refuses. An undeclared row
+    names a file that already does the job but carries no marker; once
+    the marker is added, the row is deleted.
+    """
+    known = {str(e["id"]) for e in entries if e.get("id")}
+    problems: list[str] = []
+    if not isinstance(doc, dict):
+        return [f"{REQUIRED_STATIONS_PATH.name}: expected a mapping at the top level"]
+    if doc.get("version") != 1:
+        problems.append(f"{REQUIRED_STATIONS_PATH.name}: `version` must be 1")
+
+    for key in ("stations", "undeclared", "repairs"):
+        if not isinstance(doc.get(key), list):
+            problems.append(f"{REQUIRED_STATIONS_PATH.name}: `{key}` must be a list")
+    if problems:
+        return problems
+
+    seen: set[str] = set()
+
+    def _take_id(row: Any, label: str) -> str | None:
+        if not isinstance(row, dict):
+            problems.append(f"{label}: expected a mapping")
+            return None
+        ident = row.get("id")
+        if not isinstance(ident, str) or not _ID_RE.match(ident):
+            problems.append(
+                f"{label}: id {ident!r} must be dotted lowercase, "
+                f"e.g. aurelix.gate.conformance"
+            )
+            return None
+        if ident in seen:
+            problems.append(f"{label}: duplicate id {ident}")
+        seen.add(ident)
+        return ident
+
+    for index, row in enumerate(doc["stations"]):
+        label = f"stations[{index}]"
+        ident = _take_id(row, label)
+        if not isinstance(row, dict):
+            continue
+        label = ident or label
+        for field in STATION_REQUIRED:
+            if field not in row:
+                problems.append(f"{label}: missing `{field}`")
+        if row.get("kind") not in KINDS:
+            problems.append(f"{label}: kind {row.get('kind')!r} is not a capability kind")
+        for field in ("name", "gap", "task", "must_not"):
+            if field in row and not _nonempty_str(row.get(field)):
+                problems.append(f"{label}: `{field}` must be a non-empty string")
+        humans = row.get("human_still_required")
+        if "human_still_required" in row:
+            if not isinstance(humans, list) or any(not _nonempty_str(s) for s in humans):
+                problems.append(
+                    f"{label}: `human_still_required` must be a list of non-empty strings"
+                )
+        if ident and ident in known:
+            problems.append(
+                f"{label}: {ident} is already in the register. "
+                f"The station exists — delete this row"
+            )
+
+    for index, row in enumerate(doc["undeclared"]):
+        label = f"undeclared[{index}]"
+        ident = _take_id(row, label)
+        if not isinstance(row, dict):
+            continue
+        label = ident or label
+        for field in UNDECLARED_REQUIRED:
+            if field not in row:
+                problems.append(f"{label}: missing `{field}`")
+        if row.get("kind") not in KINDS:
+            problems.append(f"{label}: kind {row.get('kind')!r} is not a capability kind")
+        for field in ("gap", "task"):
+            if field in row and not _nonempty_str(row.get(field)):
+                problems.append(f"{label}: `{field}` must be a non-empty string")
+        rel = row.get("file")
+        if not isinstance(rel, str) or not rel.strip() or rel.startswith(("/", "\\")) or ".." in Path(rel).parts:
+            problems.append(f"{label}: `file` must be a relative path inside the service repo")
+        else:
+            path = (service_root / rel).resolve()
+            if not path.is_relative_to(service_root.resolve()):
+                problems.append(f"{label}: `file` escapes the service repo")
+            elif not path.is_file():
+                problems.append(f"{label}: {rel} does not exist")
+            else:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                if CAPABILITY_MARKER in text:
+                    problems.append(
+                        f"{label}: {rel} now carries {CAPABILITY_MARKER}. "
+                        f"Declare it and delete this row"
+                    )
+        if ident and ident in known:
+            problems.append(
+                f"{label}: {ident} is already in the register. Delete this row"
+            )
+
+    for index, row in enumerate(doc["repairs"]):
+        label = f"repairs[{index}]"
+        ident = _take_id(row, label)
+        if not isinstance(row, dict):
+            continue
+        label = ident or label
+        for field in REPAIR_REQUIRED:
+            if field not in row:
+                problems.append(f"{label}: missing `{field}`")
+        for field in ("gap", "task"):
+            if field in row and not _nonempty_str(row.get(field)):
+                problems.append(f"{label}: `{field}` must be a non-empty string")
+        if ident and ident not in known:
+            problems.append(
+                f"{label}: {ident} is not in the register. "
+                f"A repair must name an instrument that exists"
+            )
+    return problems
+
+
+def check_required_stations(
+    entries: list[dict[str, Any]],
+    path: Path = REQUIRED_STATIONS_PATH,
+    service_root: Path | None = None,
+) -> tuple[bool, str]:
+    """`(ok, detail)`. Absence is a failure: deleting the work list would
+    make the factory look finished."""
+    if not path.exists():
+        return False, (
+            f"{path.name} is not present. The open-station list is required; "
+            f"an empty list is how the factory says it is finished, not a missing file"
+        )
+    try:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        return False, f"{path.name} is not readable YAML ({exc})"
+    root = service_root if service_root is not None else ROOT.parent
+    problems = validate_required_stations(doc, entries, root)
+    if problems:
+        return False, f"{path.name} is invalid:\n    - " + "\n    - ".join(problems)
+    n_stations = len(doc.get("stations") or [])
+    n_undeclared = len(doc.get("undeclared") or [])
+    n_repairs = len(doc.get("repairs") or [])
+    return True, (
+        f"{path.name}: {n_stations} missing station(s), "
+        f"{n_undeclared} undeclared script(s), {n_repairs} repair(s)"
+    )
+
+
+# --------------------------------------------------------------------------
 # commands
 # --------------------------------------------------------------------------
 
@@ -531,9 +708,11 @@ def cmd_compile(args: argparse.Namespace) -> int:
     if args.check:
         agrees, detail = check_register(entries)
         scen_ok, scen_detail = check_scenarios(entries)
-        ok = agrees and scen_ok and not problems
+        req_ok, req_detail = check_required_stations(entries)
+        ok = agrees and scen_ok and req_ok and not problems
         print(f"{TOOL}: {detail}", file=sys.stdout if agrees else sys.stderr)
         print(f"{TOOL}: {scen_detail}", file=sys.stdout if scen_ok else sys.stderr)
+        print(f"{TOOL}: {req_detail}", file=sys.stdout if req_ok else sys.stderr)
         if problems and agrees:
             print(f"{TOOL}: {len(problems)} declaration(s) refused", file=sys.stderr)
         return EXIT_OK if ok else EXIT_FAILED
@@ -547,8 +726,12 @@ def cmd_compile(args: argparse.Namespace) -> int:
     print(f"  instruments  {len(entries)} from {len(paths)} declaring file(s)")
     for status in sorted(counts):
         print(f"  {status:<13}{counts[status]}")
+    req_ok, req_detail = check_required_stations(entries)
+    print(f"{TOOL}: {req_detail}", file=sys.stdout if req_ok else sys.stderr)
     if problems:
         print(f"  REFUSED      {len(problems)} (see above) — not in the register")
+        return EXIT_FAILED
+    if not req_ok:
         return EXIT_FAILED
     return EXIT_OK
 
@@ -649,6 +832,32 @@ def cmd_scenarios(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_stations(args: argparse.Namespace) -> int:
+    """Print the open infra tasks, or validate them under --check."""
+    entries, _problems, _paths = _collect()
+    ok, detail = check_required_stations(entries)
+    if args.check:
+        print(f"{TOOL}: {detail}", file=sys.stdout if ok else sys.stderr)
+        return EXIT_OK if ok else EXIT_FAILED
+    if not ok:
+        print(f"{TOOL}: {detail}", file=sys.stderr)
+        return EXIT_FAILED
+    doc = yaml.safe_load(REQUIRED_STATIONS_PATH.read_text(encoding="utf-8")) or {}
+    print("MISSING STATIONS — no instrument declares these")
+    for row in doc.get("stations") or []:
+        print(f"  {row['id']}")
+        print(f"    {row['name']}")
+    print("UNDECLARED — the script exists, the register cannot see it")
+    for row in doc.get("undeclared") or []:
+        print(f"  {row['id']}")
+        print(f"    {row['file']}")
+    print("REPAIRS — the instrument exists and does not finish its job")
+    for row in doc.get("repairs") or []:
+        print(f"  {row['id']}")
+    print(f"{TOOL}: {detail}")
+    return EXIT_OK
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     if not REGISTER_PATH.exists():
         print(f"NOT_MEASURED: {REGISTER_PATH.name} does not exist. "
@@ -692,6 +901,13 @@ def main(argv: list[str] | None = None) -> int:
     p_scen.add_argument("--check", action="store_true", help="validate only; print nothing on success")
     p_scen.add_argument("--question", help="substring match on a scenario's question or id")
     p_scen.set_defaults(func=cmd_scenarios)
+
+    p_stations = sub.add_parser(
+        "stations",
+        help="print the open infra tasks (missing stations, undeclared scripts, repairs)",
+    )
+    p_stations.add_argument("--check", action="store_true", help="validate only")
+    p_stations.set_defaults(func=cmd_stations)
 
     p_list = sub.add_parser("list", help="print the register")
     p_list.add_argument("--status", help="filter: VERIFIED | BROKEN | NOT_RUN | NOT_VERIFIED")

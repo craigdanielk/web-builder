@@ -32,13 +32,11 @@ export function CartDrawer() {
       aria-label="Shopping cart"
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/30" onClick={closeCart} />
+      <div className="absolute inset-0 bg-black/50" onClick={closeCart} />
 
-      {/* Drawer panel */}
-      <div className="relative w-full max-w-md bg-white shadow-xl flex flex-col animate-slide-in-right">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">
+      <div className="relative w-full max-w-md bg-[#f7f4ee] text-[#111] shadow-xl flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-black/10">
+          <h2 className="text-sm tracking-[0.18em] uppercase font-semibold">
             Cart{cart?.totalQuantity ? ` (${cart.totalQuantity})` : ""}
           </h2>
           <button
@@ -107,7 +105,7 @@ export function CartDrawer() {
               type="button"
               onClick={handleCheckout}
               disabled={isLoading}
-              className="w-full py-3 px-4 bg-black text-white rounded font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+              className="w-full py-3.5 px-4 bg-[#0c8558] text-[#f7f4ee] tracking-[0.16em] uppercase text-sm font-semibold disabled:opacity-50"
             >
               {isLoading ? "Updating..." : "Checkout"}
             </button>
@@ -147,7 +145,7 @@ function CartLineItem({
         <img
           src={merch.image.url}
           alt={merch.image.altText ?? title}
-          className="w-16 h-16 object-cover rounded flex-shrink-0"
+          className="w-20 h-24 object-contain mix-blend-multiply flex-shrink-0"
         />
       )}
       <div className="flex-1 min-w-0">
@@ -177,7 +175,7 @@ function CartLineItem({
           <button
             type="button"
             onClick={onRemove}
-            className="text-sm text-red-600 hover:underline ml-2"
+            className="text-sm tracking-wide uppercase ml-2"
           >
             Remove
           </button>
