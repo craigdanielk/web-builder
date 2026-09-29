@@ -1350,3 +1350,9 @@ particles.forEach((dot, i) => {
 | 2026-02-11 | Added F. GSAP Plugin Patterns: SplitText, ScrambleText, Flip, DrawSVG, MorphSVG, MotionPath, Draggable, Observer, ScrollSmoother, CustomEase, matchMedia, EasePack | Pattern doc expansion |
 | 2026-02-10 | Added 11 VengenceUI patterns (9 new + 2 replacements), new effect/ and background/ categories, updated archetype map with affinity scores | Animation classification plan v0.7.0 |
 | 2026-02-08 | Initial library created from farm-minerals-site production patterns | farm-minerals-promo rebuild |
+
+## Scroll-film (anchored generative film sections)
+For scroll-scrubbed hero/chapter films generated with Higgsfield Seedance and resolved into an exact
+brand mark, use `skills/scroll-film/` (README = method + gates; `templates/ScrollFilm.tsx` = player;
+`tools/` = anchors, frames, fidelity, probe). Rule: the model never draws the logo — the player always
+dissolves into the vector-composited anchor still.

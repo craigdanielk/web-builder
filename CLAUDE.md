@@ -169,6 +169,7 @@ web-builder/
 │   ├── style-schema.md                ← 7 style dimensions with Tailwind mappings
 │   ├── animation-patterns.md          ← 20+ named GSAP/Framer Motion patterns
 │   ├── image-extraction.md            ← Image categorization spec (10 categories)
+│   ├── scroll-film/                     ← Anchored generative scroll-film kit: Higgsfield/Seedance anchors, frame pipeline, ScrollFilm.tsx player, QA probes (from Trend Digital hero, 2026-09-29)
 │   ├── animation-components/            ← Pre-built animation component library (1034 total)
 │   │   ├── component-registry.json (794) ← NEW v2.0.0: Unified registry with export names (48 components)
 │   │   ├── registry.json                ← DELETED v2.0.0 (legacy, no export names — replaced by component-registry.json)
