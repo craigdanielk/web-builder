@@ -120,3 +120,15 @@ Adapted from the aurelix-mvp extraction/validation system. Key adaptations:
 - Added preset comparison (web-builder specific)
 - Focused on analysis and reporting rather than generation
 - All tools are read-only against the existing pipeline — they report but don't modify
+
+### `media-policy.mjs` + `device-matrix.mjs` — Gate M: Device & Media Compatibility (canonical, 2026-10-01)
+
+- **Purpose:** block the failure class from the Trend Digital Android incident (hand-rolled WebCodecs decoder
+  starved Android's hardware decoder pool; emulated Android passed). Static policy (no WebCodecs video decoding,
+  no raw elementary streams in `public/`, autoplay video muted+playsInline) + headless matrix over
+  desktop-1440@2x / desktop-1280 / android-s24 / iphone / reduced-motion.
+- **Usage:** `python3 scripts/verify_gate_m.py --project-dir <site> --url <deployed> --routes /,/about`
+  (wired into `run_pipeline.py` after Gate E). Exit 0/1/3. Override only with operator permission:
+  `AURELIX_GATE_M_OVERRIDE="<reason>"`.
+- **Shared verbatim** with `trend-digital-website/scripts/qa/` — change both together.
+- **Cannot see real hardware decoders** — the manual S24 Ultra + iPhone Safari check remains required for media work.
