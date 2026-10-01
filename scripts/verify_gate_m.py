@@ -22,7 +22,16 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib.capability import describe  # noqa: E402
+try:
+    from lib.capability import describe  # noqa: E402  (capability register, where present)
+except ImportError:  # branches without scripts/lib/capability.py: same --describe behaviour, no register validation
+    import json as _json
+
+    def describe(spec: dict) -> bool:
+        if "--describe" not in sys.argv[1:]:
+            return False
+        sys.stdout.write(_json.dumps(spec, indent=2, default=str) + "\n")
+        return True
 
 NOT_MEASURED = 3
 QUALITY = Path(__file__).resolve().parent / "quality"
