@@ -10,6 +10,9 @@
  *  D6 no loading indicator still visible after the settle budget
  *  D7 no clipped text in interactive/heading elements
  *  D8 every role=tablist: clicking each tab selects exactly that tab
+ *  D9 route change lands at the TOP of the new page (scroll is reset), tested from the bottom of the page
+ *  D10 phones: a menu control exists in the header and opening it exposes navigation links
+ *  D11 the page's H1 is visible within the first viewport after the settle budget (no hero pushed off-screen)
  * Devices: desktop-1440@2x, desktop-1280@1x, android (Galaxy S24 Ultra UA), iphone, reduced-motion.
  *
  * LIMIT (stated, not hidden): emulation uses desktop Chrome's decoders. Real hardware decoder failures (the
@@ -71,6 +74,26 @@ const runOne = async (route, dev) => {
     return r;
   }, dev === "reduced-motion");
   f.push(...probe);
+  // D11 H1 within the first viewport
+  const h1 = await p.evaluate(() => { const h = document.querySelector("h1"); if (!h) return "none"; const b = h.getBoundingClientRect();
+    return b.height > 0 && b.top < innerHeight && b.bottom > 0 ? "ok" : `off-screen top=${Math.round(b.top)}`; });
+  if (h1 !== "ok" && h1 !== "none") f.push(`D11 H1 not in first viewport (${h1})`);
+  // D10 phones: header menu control opens navigation
+  if (/android|iphone/.test(dev)) {
+    // first VISIBLE candidate (desktop dropdown triggers also carry aria-expanded but are hidden on phones)
+    const cands = p.locator('header button[aria-label*="menu" i], header button[aria-expanded], header [aria-controls][aria-expanded]');
+    let menu = null;
+    for (let i = 0; i < await cands.count(); i++) if (await cands.nth(i).isVisible().catch(() => false)) { menu = cands.nth(i); break; }
+    if (!menu) f.push("D10 no visible menu control in the header on a phone");
+    else {
+      const before = await p.evaluate(() => [...document.querySelectorAll("a[href^='/']")].filter((a) => { const b = a.getBoundingClientRect(); return b.width && b.height && b.top >= 0 && b.top < innerHeight && getComputedStyle(a).visibility !== "hidden"; }).length);
+      await menu.click({ timeout: 3000 }).catch(() => {}); await p.waitForTimeout(700);
+      const after = await p.evaluate(() => [...document.querySelectorAll("a[href^='/']")].filter((a) => { const b = a.getBoundingClientRect(); return b.width && b.height && b.top >= 0 && b.top < innerHeight && getComputedStyle(a).visibility !== "hidden"; }).length);
+      if (after <= before) f.push(`D10 opening the menu exposed no navigation links (${before} -> ${after})`);
+    }
+    // reset: an open menu sheet would intercept every later click — start the remaining checks from a fresh load
+    await p.goto(base + route, { waitUntil: "load", timeout: 60000 }).catch(() => {}); await p.waitForTimeout(Math.min(settle, 5000));
+  }
   // D8 tablists (visible ones only)
   const lists = p.locator("[role=tablist]");
   for (let li = 0; li < await lists.count(); li++) {
@@ -86,6 +109,18 @@ const runOne = async (route, dev) => {
   const film = await p.evaluate(() => [...document.querySelectorAll("video")].map((v) => v.currentSrc.split("/").pop()).filter(Boolean).join(","));
   const shot = path.join(out, `${route === "/" ? "home" : route.replace(/\//g, "_").replace(/^_/, "")}-${dev}.png`.replace(/@/g, "_"));
   await p.screenshot({ path: shot }).catch(() => {});
+  // D9 route change from the bottom of the page must land at the top (client-side navigation)
+  if (!/reduced/.test(dev)) {
+    const target = await p.evaluate((route) => { const a = [...document.querySelectorAll("footer a[href^='/'], a[href^='/']")].find((x) => { const h = x.getAttribute("href"); return h && h !== route && !h.startsWith("/#") && !/\.(pdf|png|jpg|webp|mp4)$/.test(h); }); return a ? a.getAttribute("href") : null; }, route);
+    if (target) {
+      await p.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)); await p.waitForTimeout(600);
+      await p.evaluate((h) => { const a = [...document.querySelectorAll("a")].find((x) => x.getAttribute("href") === h); a?.click(); }, target);
+      await p.waitForURL((u) => u.pathname === target.split("?")[0].split("#")[0], { timeout: 15000 }).catch(() => {});
+      await p.waitForTimeout(1500);
+      const y = await p.evaluate(() => Math.round(window.scrollY));
+      if (y > 80) f.push(`D9 navigating ${route} -> ${target} landed at scrollY=${y} (should reset to top)`);
+    }
+  }
   const uniq = [...new Set(f)]; failures += uniq.length;
   report.results.push({ route, device: dev, pass: !uniq.length, media: film, failures: uniq, screenshot: shot });
   console.log(`${uniq.length ? "FAIL" : "PASS"} ${route} @ ${dev}${film ? ` [${film}]` : ""}${uniq.map((x) => "\n   - " + x).join("")}`);
