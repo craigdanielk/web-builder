@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "vocabularies": {
+    "PageTypeId": {
+      "HOME": { "label": "Home", "status": "valid" },
+      "PRODUCT_DETAIL": { "label": "Product Detail", "status": "valid" },
+      "COLLECTION": { "label": "Collection", "status": "valid" },
+      "ABOUT": { "label": "About", "status": "valid" },
+      "CONTACT": { "label": "Contact", "status": "valid" },
+      "LEGAL": { "label": "Legal", "status": "valid" },
+      "EDITORIAL": { "label": "Editorial", "status": "valid" },
+      "CUSTOM": { "label": "Custom", "status": "valid" }
+    },
+    "SectionTypeId": {
+      "HERO": { "label": "Hero", "status": "valid" },
+      "PRODUCT_SHOWCASE": { "label": "Product Showcase", "status": "valid" },
+      "FEATURE": { "label": "Feature", "status": "valid" },
+      "BENEFITS": { "label": "Benefits", "status": "valid" },
+      "MEDIA": { "label": "Media", "status": "valid" },
+      "CTA": { "label": "Call to Action", "status": "valid" },
+      "FAQ": { "label": "FAQ", "status": "valid" },
+      "FOOTER": { "label": "Footer", "status": "valid" },
+      "HEADER": { "label": "Header", "status": "valid" },
+      "TEXT_BLOCK": { "label": "Text Block", "status": "valid" },
+      "CUSTOM": { "label": "Custom", "status": "valid" },
+      "GALLERY": { "label": "Gallery", "status": "unratified" },
+      "TESTIMONIAL": { "label": "Testimonial", "status": "unratified" },
+      "STATS": { "label": "Stats", "status": "unratified" },
+      "TEAM": { "label": "Team", "status": "unratified" },
+      "CONTACT": { "label": "Contact", "status": "unratified" },
+      "COMPARISON": { "label": "Comparison", "status": "unratified" },
+      "PRICING": { "label": "Pricing", "status": "unratified" },
+      "TRUST": { "label": "Trust", "status": "unratified" },
+      "PROCESS": { "label": "Process", "status": "unratified" },
+      "POST_LIST": { "label": "Post List", "status": "unratified" },
+      "PORTFOLIO": { "label": "Portfolio", "status": "unratified" },
+      "COLLECTION": { "label": "Collection (as section)", "status": "legacy-invalid" },
+      "PROFILE": { "label": "Profile", "status": "legacy-invalid" },
+      "COMMERCE_BLOCK": { "label": "Commerce Block", "status": "legacy-invalid" }
+    },
+    "ElementTypeId": {
+      "section": { "label": "Section", "status": "unratified" },
+      "item": { "label": "Item", "status": "unratified" },
+      "heading": { "label": "Heading", "status": "unratified" },
+      "image": { "label": "Image", "status": "unratified" },
+      "button": { "label": "Button", "status": "unratified" },
+      "list": { "label": "List", "status": "unratified" }
+    },
+    "ObjectTypeId": {
+      "product": { "label": "Product", "status": "unratified" },
+      "person": { "label": "Person", "status": "unratified" },
+      "testimonial": { "label": "Testimonial", "status": "unratified" },
+      "faq": { "label": "FAQ Item", "status": "unratified" },
+      "stat": { "label": "Statistic", "status": "unratified" },
+      "plan": { "label": "Plan", "status": "unratified" },
+      "step": { "label": "Step", "status": "unratified" },
+      "post": { "label": "Post", "status": "unratified" },
+      "badge": { "label": "Badge", "status": "unratified" }
+    },
+    "FieldTypeId": {
+      "headline": { "label": "Headline", "status": "valid" },
+      "subheadline": { "label": "Subheadline", "status": "valid" },
+      "lead": { "label": "Lead", "status": "valid" },
+      "media": { "label": "Media", "status": "valid" },
+      "cta": { "label": "CTA", "status": "valid" }
+    },
+    "BehaviourTypeId": {
+      "accordion": { "label": "Accordion", "status": "unratified" },
+      "carousel": { "label": "Carousel", "status": "unratified" },
+      "tabs": { "label": "Tabs", "status": "unratified" },
+      "counter": { "label": "Counter", "status": "unratified" },
+      "marquee": { "label": "Marquee", "status": "unratified" },
+      "timeline": { "label": "Timeline", "status": "unratified" },
+      "sticky": { "label": "Sticky", "status": "unratified" },
+      "drawer": { "label": "Drawer", "status": "unratified" }
+    },
+    "ActionTypeId": {
+      "subscribe": { "label": "Subscribe", "status": "unratified" },
+      "add-to-cart": { "label": "Add to Cart", "status": "unratified" },
+      "checkout": { "label": "Checkout", "status": "unratified" },
+      "signup": { "label": "Sign Up", "status": "unratified" },
+      "contact": { "label": "Contact", "status": "unratified" },
+      "navigate": { "label": "Navigate", "status": "unratified" }
+    },
+    "LayoutPrimitiveId": {
+      "grid": { "label": "Grid", "status": "unratified" },
+      "split": { "label": "Split", "status": "unratified" },
+      "full-bleed": { "label": "Full Bleed", "status": "unratified" },
+      "centered": { "label": "Centered", "status": "unratified" },
+      "sidebar": { "label": "Sidebar", "status": "unratified" },
+      "masonry": { "label": "Masonry", "status": "unratified" },
+      "table": { "label": "Table", "status": "unratified" }
+    }
+  },
+  "_note": "Code/config projection of the canonical semantic catalogue. Compatible with the AURION/control-tower authority model (it projects the vocabulary nodes that live in system_components/programme-graph); it is NOT a database. Minimal seed only: the ontology is intentionally incomplete and must be ratified before expansion."
+}

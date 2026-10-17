@@ -3675,6 +3675,16 @@ def expand_repeaters(code: str, repeat_rows: dict[str, list[dict[str, str]]]) ->
     return "\n".join(out) + ("\n" if code.endswith("\n") else "")
 
 
+def content_bind(request: dict) -> dict:
+    """Wrapper implementing ContentBindRequest -> ContentBindResult"""
+    try:
+        val, cov, prov = build_template_fill(request["section_plan"], request["template_code"], request.get("slot_schema"))
+        bound = apply_template_fill(request["template_code"], val, cov)
+        return {"success": True, "bound_code": bound, "values": val, "coverage": cov, "provenance": prov, "error": None}
+    except Exception as e:
+        return {"success": False, "bound_code": request["template_code"], "values": {}, "coverage": {}, "provenance": [], "error": str(e)}
+
+
 def apply_template_fill(code: str, values: dict[str, str], coverage: dict | None = None) -> str:
     """Substitute harvested values into a template, trimming arrays to the harvest.
 
@@ -4267,11 +4277,18 @@ def stage_sections(
                     get_slot_schema(section["archetype"], section["variant"], _tpl_cache)
                     if get_slot_schema else None
                 )
-                _fill_values, _fill_cov, _fill_prov = build_template_fill(
-                    section, template_code, _slot_schema
-                )
-                template_code = apply_template_fill(template_code, _fill_values, _fill_cov)
-                _slot_provenance.extend(_fill_prov)
+
+                _cb_req = {
+                    "section_plan": section,
+                    "template_code": template_code,
+                    "slot_schema": _slot_schema
+                }
+                _cb_res = content_bind(_cb_req)
+                if not _cb_res["success"]: raise RuntimeError(_cb_res["error"])
+                template_code = _cb_res["bound_code"]
+                _fill_cov = _cb_res["coverage"]
+                _fill_values = _cb_res["values"]
+                _slot_provenance.extend(_cb_res["provenance"])
                 _tpl_fill_stats.append({
                     "file": filename,
                     "section_uid": section.get("section_uid"),
@@ -4336,7 +4353,7 @@ def stage_sections(
                 else:
                     _record_outcome(i, section, filename, section_outcome(
                         "template", file=filename, archetype=section["archetype"],
-                        variant=section.get("variant", ""), provenance=_fill_prov))
+                        variant=section.get("variant", ""), provenance=_cb_res["provenance"]))
 
                     sections_base = OUTPUT_DIR / project_name / (output_subdir or "sections")
                     out_name = section_file_names[i] if section_file_names and i < len(section_file_names) else filename
@@ -4354,7 +4371,7 @@ def stage_sections(
                         section_uid=section_uid,
                         intensity=section_intensity,
                         origin=_origin_for(tpl),
-                        provenance=_fill_prov,
+                        provenance=_cb_res["provenance"],
                     )
                     continue  # Filled template; skip the section model
 
@@ -9001,6 +9018,23 @@ async function downloadOne(url) {{
         )
     elif _rails_declared_cms:
         print(f"  · CMS declared '{_rails_declared_cms}' — no rails emitted (recorded).")
+
+    # ── Project Contract Emission ──
+    print("  Emitting Project Contract and semantic identity map...")
+    from lib import project_contract_emit
+    sa_dir = OUTPUT_DIR / project_name / "section-artifacts"
+    contract_path = site_dir / "project-contract.json"
+    if sa_dir.is_dir():
+        project_contract_emit.emit_project_contract(
+            section_artifacts_dir=sa_dir,
+            rails_emission_path=None,
+            output_path=contract_path,
+            project_id=project_name,
+            name=project_name.replace("-", " ").title()
+        )
+        print("  ✓ Project Contract emitted")
+    else:
+        print("  ⚠ No section-artifacts found; skipping Project Contract emission")
 
     # ── Install dependencies ──
     print("  Installing dependencies (npm install)...")
