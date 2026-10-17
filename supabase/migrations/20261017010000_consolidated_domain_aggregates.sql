@@ -47,7 +47,7 @@ ALTER TABLE build_log
 CREATE TABLE IF NOT EXISTS agency_executions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
     pipeline_name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'queued' 
         CHECK (status IN ('queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
@@ -120,7 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_tr_source ON tenant_redirects(source_path);
 CREATE TABLE IF NOT EXISTS runtime_deployments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
     target_platform TEXT NOT NULL 
         CHECK (target_platform IN ('shopify', 'vercel', 'cloudflare', 'local_rsc')),
     environment TEXT NOT NULL DEFAULT 'production' 
