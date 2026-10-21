@@ -382,6 +382,26 @@ function firstHref(frag, baseUrl) {
 }
 
 /** Turn one cycle of sibling elements into an item record. */
+/** Field names a source may declare with `data-field` — also the slot-field pattern. */
+const DECLARED_FIELD_NAME = /^[a-z][a-z_]{0,31}$/;
+
+/**
+ * `{name: text}` for elements the source explicitly marks `data-field="<name>"`.
+ * A declaration, not an inference: an operator-authored page names its values
+ * (price, origin); a crawled page that names nothing yields `{}`.
+ */
+function extractDeclaredFields(frag) {
+  const out = {};
+  const re = /<([a-zA-Z][a-zA-Z0-9]*)\b([^>]*\bdata-field\s*=[^>]*)>([\s\S]*?)<\/\1>/g;
+  let m;
+  while ((m = re.exec(frag || '')) !== null) {
+    const name = getAttr(m[2], 'data-field');
+    const text = stripTags(m[3]);
+    if (DECLARED_FIELD_NAME.test(name) && text && !(name in out)) out[name] = text;
+  }
+  return out;
+}
+
 function buildItem(elements, baseUrl, period) {
   const frag = elements.map(serializeElement).join('');
   const headings = extractHeadings(frag);
@@ -433,6 +453,7 @@ function buildItem(elements, baseUrl, period) {
       body_text: bodyText,
       ctas,
       images,
+      fields: extractDeclaredFields(frag),
     },
   };
 }

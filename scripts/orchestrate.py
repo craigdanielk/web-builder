@@ -3366,6 +3366,13 @@ def build_template_fill(
             return ""
         item = items[i]
 
+        # A value the source DECLARED for this field (`data-field="price"`) is
+        # a join by name, not an inference — it wins over the type heuristics.
+        declared_fields = item.get("fields") if isinstance(item.get("fields"), dict) else {}
+        declared = declared_fields.get(field)
+        if isinstance(declared, str) and declared.strip():
+            return declared.strip()
+
         # ── Nested repeaters ──────────────────────────────────────────────
         # FOOTER/mega spells its link columns `{col_1_link_2_href}`: an array
         # (`col`) whose entries hold an array of their own. `template_contract`

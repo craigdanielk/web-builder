@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "generated": "2026-08-17",
+  "generated": "2026-10-21",
   "generated_by": "scripts/build_section_template_manifest.py",
   "sources": {
     "local": "section-templates/<ARCHETYPE>/<variant>.tsx (resolved first)",
@@ -9,8 +9,8 @@
   "total_archetypes": 26,
   "total_variants": 76,
   "templates_available": 76,
-  "templates_local": 15,
-  "templates_db_only": 61,
+  "templates_local": 16,
+  "templates_db_only": 60,
   "variants_without_template": 0,
   "archetypes": {
     "ABOUT": {
@@ -590,11 +590,11 @@
         },
         {
           "name": "hover-cards",
-          "resolution": "db",
+          "resolution": "local",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/PRODUCT-SHOWCASE/hover-cards.tsx",
           "db_has_template": true,
-          "local_file": null
+          "local_file": "hover-cards.tsx"
         },
         {
           "name": "related-products",
