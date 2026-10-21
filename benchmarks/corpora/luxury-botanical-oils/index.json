@@ -1,0 +1,32 @@
+[
+  {
+    "slug": "amouage-home-ae",
+    "url": "https://amouage.com/en-ae",
+    "why": "HERO, NAV, house hierarchy, editorial pacing, gifting cues",
+    "ok": true,
+    "dom_elements": 500,
+    "text_nodes": 269,
+    "motion_level": "expressive",
+    "animation_profile_error": null
+  },
+  {
+    "slug": "aesop-marrakech",
+    "url": "https://www.aesop.com/fragrance/marrakech-intense-eau-de-parfum/FR39.html",
+    "why": "PRODUCT-DETAIL, buy box, ingredient disclosure, typography",
+    "ok": true,
+    "dom_elements": 500,
+    "text_nodes": 269,
+    "motion_level": "expressive",
+    "animation_profile_error": null
+  },
+  {
+    "slug": "aesop-fragrance-category",
+    "url": "https://www.aesop.com/fragrance",
+    "why": "PRODUCT-SHOWCASE, card system, card padding",
+    "ok": true,
+    "dom_elements": 500,
+    "text_nodes": 331,
+    "motion_level": "expressive",
+    "animation_profile_error": null
+  }
+]

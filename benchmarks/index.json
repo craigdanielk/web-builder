@@ -2,8 +2,8 @@
   "_meta": {
     "generated_by": "scripts/benchmark_library.py index",
     "note": "GENERATED \u2014 do not hand-edit. Regenerate with `python3 scripts/benchmark_library.py index`; `--check` fails if this disagrees with the files on disk. There is no timestamp here on purpose: an unchanged library must regenerate to identical bytes.",
-    "market_count": 4,
-    "file_count": 4
+    "market_count": 6,
+    "file_count": 6
   },
   "markets": {
     "consumer-crypto-exchange": {
@@ -30,6 +30,17 @@
       "corpus": null,
       "loads": true
     },
+    "enterprise-payments-bvnk.deviations": {
+      "file": "enterprise-payments-bvnk.deviations.json",
+      "slug": "enterprise-payments-bvnk.deviations",
+      "market": "enterprise-payments-bvnk.deviations",
+      "aliases": [],
+      "ratified": false,
+      "ratification": "unratified",
+      "captured_at": null,
+      "corpus": null,
+      "loads": false
+    },
     "enterprise-stablecoin-payments": {
       "file": "enterprise-payments-bvnk.json",
       "slug": "enterprise-payments-bvnk",
@@ -52,6 +63,17 @@
       "ratification": "declared",
       "captured_at": "2026-08-18",
       "corpus": "benchmarks/corpora/enterprise-stablecoin-payments-measured",
+      "loads": true
+    },
+    "luxury-botanical-oils": {
+      "file": "luxury-botanical-oils.json",
+      "slug": "luxury-botanical-oils",
+      "market": "luxury-botanical-oils",
+      "aliases": [],
+      "ratified": true,
+      "ratification": "declared",
+      "captured_at": "2026-10-21",
+      "corpus": "benchmarks/corpora/luxury-botanical-oils",
       "loads": true
     }
   },

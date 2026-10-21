@@ -63,7 +63,7 @@ measured type ratio (1.143) and heading weight (400) are kept. Read by
     "accent": "#241F1B", "on_accent": "#F4F0E8"
   },
   "type_scale": {"base_px": 17},
-  "rhythm": {"section_py_px": 140},
+  "rhythm": {"section_py_px": 140, "block_gap_px": 64, "card_pad_px": 40},
   "border_radius": {"button": "0px", "card": "0px"},
   "fonts": {"heading": "Bodoni Moda", "body": "Inter"}
 }
