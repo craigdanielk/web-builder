@@ -108,6 +108,26 @@ def _footer_pairs(page: dict):
                 yield cta.get("text"), cta.get("href")
 
 
+def derive_footer_text(pages: list) -> list:
+    """Non-link footer lines (legal entity, descriptor), verbatim, first FOOTER wins.
+
+    Read from the FOOTER section's own body text so the copyright line is the
+    source's, not a generator literal. Lines carrying control characters are
+    dropped (same trust boundary as the links). `[]` when nothing was harvested.
+    """
+    for page in pages or []:
+        for section in page.get("sections") or []:
+            if (section.get("archetype") or "").upper() != "FOOTER":
+                continue
+            content = section.get("content") or {}
+            lines = content.get("section_body_text") or content.get("body_text") or []
+            out = [ln.strip() for ln in lines
+                   if isinstance(ln, str) and ln.strip() and _is_safe_text(ln)]
+            if out:
+                return out
+    return []
+
+
 def derive_nav(pages: list, rejected: list | None = None) -> list:
     """Primary navigation, in first-seen order across harvested pages.
 

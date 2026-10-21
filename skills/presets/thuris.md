@@ -4,6 +4,7 @@ Tenant: THURIS — botanical fragrance house (Aweku Laboratories (Pty) Ltd, Sout
 Lead market: UAE. Target: Shopify (headless, Vercel front end).
 
 Sequence authority: tenant
+Brand mark: none
 
 > **Tenant preset.** Values come from the operator, not from a crawl — THURIS is a
 > greenfield brand (`source_platform: none`). Authority, in order:

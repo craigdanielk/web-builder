@@ -65,6 +65,7 @@ from lib.capability import describe as _describe_capability
 from lib.nav_harvest import (
     derive_nav as _derive_harvested_nav,
     derive_footer as _derive_harvested_footer,
+    derive_footer_text as _derive_footer_text,
     localise_hrefs as _localise_hrefs,
     source_host_from_pages as _source_host_from_pages,
 )
@@ -5348,10 +5349,37 @@ def _inject_footer_props(code: str) -> str:
     return code
 
 
+def parse_brand_mark(preset_content: str) -> str | None:
+    """`Brand mark: none` in a preset — the operator declared no logo may ship."""
+    m = re.search(r"^Brand mark:\s*([a-z-]+)", preset_content or "", re.M)
+    return m.group(1) if m else None
+
+
+def root_metadata_block(page_meta: dict | None, project_name: str) -> str:
+    """`export const metadata` for layout.tsx.
+
+    `page_meta` is the harvested home page (title / description). A harvested
+    build emits only the fields the source carries; with no harvest the title
+    is the project name and there is no description — never a pipeline
+    self-description shipped to the public.
+    """
+    fields: dict[str, str] = {}
+    if page_meta is not None:
+        for key in ("title", "description"):
+            val = page_meta.get(key)
+            if isinstance(val, str) and val.strip():
+                fields[key] = val.strip()
+    else:
+        fields["title"] = project_name.replace("-", " ").title()
+    body = "".join(f"  {k}: {json.dumps(v, ensure_ascii=False)},\n" for k, v in fields.items())
+    return f"export const metadata: Metadata = {{\n{body}}};"
+
+
 def _build_nav_template(
     project_name: str,
     adapter: DeployAdapter | None = None,
     harvested_nav: list[dict] | None = None,
+    brand_mark: str | None = None,
 ) -> str:
     """Return a complete Navigation.tsx React component with real defaults.
     When adapter is set, platform-specific default links are used.
@@ -5384,6 +5412,28 @@ def _build_nav_template(
         for lbl, url in _nav_links
     )
     _defaults_block = f"[\n  {_nav_links_str},\n]" if _nav_links_str else "[]"
+    # `Brand mark: none` (preset) is an operator declaration that no logo may
+    # ship yet. Then there is no brand slot at all — not the slug title-cased,
+    # which is text no input contains.
+    if brand_mark == "none":
+        _brand_block = '          <div className="flex-shrink-0" aria-hidden="true" />'
+    else:
+        _brand_block = f"""          <Link href="/" className="flex-shrink-0">
+            {{logo?.url ? (
+              <img
+                src={{logo.url}}
+                alt={{logo.altText || shopName || '{display_name}'}}
+                className="h-8 w-auto"
+              />
+            ) : (
+              <span
+                className="text-xl tracking-tight"
+                style={{{{ fontFamily: 'var(--font-heading, inherit)', fontWeight: 600 }}}}
+              >
+                {{shopName || '{display_name}'}}
+              </span>
+            )}}
+          </Link>"""
     return f'''\
 'use client';
 
@@ -5423,22 +5473,7 @@ export default function Navigation({{ menu, logo, shopName }}: {{
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 md:h-20">
           {{/* Logo */}}
-          <Link href="/" className="flex-shrink-0">
-            {{logo?.url ? (
-              <img
-                src={{logo.url}}
-                alt={{logo.altText || shopName || '{display_name}'}}
-                className="h-8 w-auto"
-              />
-            ) : (
-              <span
-                className="text-xl tracking-tight"
-                style={{{{ fontFamily: 'var(--font-heading, inherit)', fontWeight: 600 }}}}
-              >
-                {{shopName || '{display_name}'}}
-              </span>
-            )}}
-          </Link>
+{_brand_block}
 
           {{/* Desktop links */}}
           <div className="hidden md:flex items-center gap-8">
@@ -5512,8 +5547,15 @@ def _build_footer_template(
     adapter: DeployAdapter | None = None,
     harvested_footer: list[dict] | None = None,
     disclaimers: list[str] | None = None,
+    footer_text: list[str] | None = None,
 ) -> str:
     """Return a complete Footer.tsx React component with real defaults.
+
+    `footer_text` — the harvested FOOTER section's own lines
+    (`nav_harvest.derive_footer_text`). When it is not None this is a harvested
+    build: those lines render verbatim and the generated
+    `© <year> <slug>. All rights reserved.` line is NOT emitted (an empty list
+    renders no legal line at all). None keeps the generic line.
     When adapter is set, platform-specific default columns are used.
 
     `harvested_footer` — flat links derived from the real site-spec.json
@@ -5570,6 +5612,29 @@ def _build_footer_template(
         for col in _footer_cols
     )
     _columns_block = f"[\n{_footer_cols_str},\n]" if _footer_cols_str else "[]"
+    _legal_style = 'style={{ borderColor: HAIRLINE, color: MUTED, fontFamily: "var(--font-body, inherit)" }}'
+    if footer_text is not None:
+        _lines = "\n".join(
+            f"          <p key={{{i}}}>{{{json.dumps(t, ensure_ascii=False)}}}</p>"
+            for i, t in enumerate(footer_text)
+        )
+        _legal_block = (
+            '        <div\n'
+            '          className="mt-12 pt-8 border-t text-center text-sm space-y-1"\n'
+            f'          {_legal_style}\n'
+            '        >\n'
+            f'{_lines}\n'
+            '        </div>\n'
+        ) if footer_text else ""
+    else:
+        _legal_block = (
+            '        <div\n'
+            '          className="mt-12 pt-8 border-t text-center text-sm"\n'
+            f'          {_legal_style}\n'
+            '        >\n'
+            f"          &copy; {{new Date().getFullYear()}} {{shopName || '{display_name}'}}. All rights reserved.\n"
+            '        </div>\n'
+        )
     return f'''\
 'use client';
 
@@ -5629,13 +5694,7 @@ export default function Footer({{ menu, shopName }}: {{
             </div>
           ))}}
         </div>
-{_disclaimer_block}        <div
-          className="mt-12 pt-8 border-t text-center text-sm"
-          style={{{{ borderColor: HAIRLINE, color: MUTED, fontFamily: "var(--font-body, inherit)" }}}}
-        >
-          &copy; {{new Date().getFullYear()}} {{shopName || '{display_name}'}}. All rights reserved.
-        </div>
-      </div>
+{_disclaimer_block}{_legal_block}      </div>
     </footer>
   );
 }}
@@ -5653,6 +5712,7 @@ def stage_shared_components(
     harvested_footer: list[dict] | None = None,
     disclaimers: list[str] | None = None,
     disclaimer_status: str | None = None,
+    footer_text: list[str] | None = None,
 ) -> list[Path]:
     """Layer 6: Generate Navigation and Footer once as shared layout components.
 
@@ -5675,10 +5735,11 @@ def stage_shared_components(
     nav_path = shared_dir / "Navigation.tsx"
     footer_path = shared_dir / "Footer.tsx"
 
-    nav_code = _build_nav_template(project_name, adapter=adapter, harvested_nav=harvested_nav)
+    nav_code = _build_nav_template(project_name, adapter=adapter, harvested_nav=harvested_nav,
+                                   brand_mark=parse_brand_mark(preset_file_text(preset)))
     footer_code = _build_footer_template(
         project_name, adapter=adapter, harvested_footer=harvested_footer,
-        disclaimers=disclaimers,
+        disclaimers=disclaimers, footer_text=footer_text,
     )
     if disclaimers:
         print(f"  ✓ Footer carries {len(disclaimers)} declared disclaimer(s) from phase 0")
@@ -6625,6 +6686,37 @@ def font_import_name(font_name: str) -> str:
 
 _FONT_FACE_VAR = {"heading": "--font-heading-face", "body": "--font-body-face"}
 _DEFAULT_FONT_WEIGHTS = {"heading": ["400"], "body": ["400", "500", "700"]}
+
+
+def preset_file_text(preset: str | None) -> str:
+    """The operator-authored preset file's text, or "" when there is none.
+
+    `preset` is a NAME everywhere it is threaded through the stages, and an
+    `--industry` build replaces `preset_content` with a synthetic preset from
+    Supabase — so a tenant declaration (font weights, brand mark) must be read
+    from the file itself.
+    """
+    if not preset:
+        return ""
+    path = SKILLS_DIR / "presets" / f"{preset}.md"
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def fetched_font_weights(preset_text: str, fallback_content: str, role: str,
+                         compiled_weight: int | str | None) -> list[str]:
+    """Weights to fetch: the tenant preset's `<role>_weights:` list when declared,
+    else whatever `fallback_content` declares — always including the compiled
+    weight CSS will actually ask for, so `--heading-weight` is never unfetched."""
+    if re.search(rf"^[ \t]*{role}_weights:", preset_text or "", re.M):
+        weights = parse_font_weights(preset_text, role)
+    else:
+        weights = parse_font_weights(fallback_content, role)
+    if compiled_weight is not None and str(compiled_weight) not in weights:
+        weights = sorted(set(weights) | {str(compiled_weight)})
+    return weights
 
 
 def parse_font_weights(preset_content: str, role: str) -> list[str]:
@@ -7675,6 +7767,7 @@ def stage_deploy(
     design_style: dict | None = None,
     tenant_context: dict | None = None,
     market: str | None = None,
+    page_meta: dict | None = None,
 ):
     """Stage 5: Deploy sections into a runnable Next.js project at output/{project}/site/.
     When site_manifest and section_files_by_page are set (Layer 6), deploys multi-route app
@@ -7979,9 +8072,12 @@ def stage_deploy(
     # Keeping a second hand-maintained set here is how a font gets resolved to
     # a served name that this function then fails to import, emitting
     # `font-family: '<name>', system-ui` and falling back silently.
+    _preset_file = preset_file_text(preset)
     fl = font_loader(heading_font, body_font,
-                     parse_font_weights(preset_content, "heading"),
-                     parse_font_weights(preset_content, "body"))
+                     fetched_font_weights(_preset_file, preset_content, "heading",
+                                          _scale.get("heading_weight")),
+                     fetched_font_weights(_preset_file, preset_content, "body",
+                                          _scale.get("body_weight")))
     for family in fl["unservable"]:
         print(f"    ⚠ font {family!r} is not servable by next/font/google — "
               "it will NOT load; extend lib.font_match.CATALOG or change the declaration")
@@ -8009,10 +8105,7 @@ def stage_deploy(
             footer_tag = "Footer"
         layout_code = f"""{chr(10).join(import_lines)}
 {font_config}
-export const metadata: Metadata = {{
-  title: "{project_name.replace('-', ' ').title()}",
-  description: "Built with web-builder pipeline",
-}};
+{root_metadata_block(page_meta, project_name)}
 
 export default function RootLayout({{ children }}: {{ children: React.ReactNode }}) {{
   return (
@@ -8029,10 +8122,7 @@ export default function RootLayout({{ children }}: {{ children: React.ReactNode 
     else:
         layout_code = f"""{chr(10).join(import_lines)}
 {font_config}
-export const metadata: Metadata = {{
-  title: "{project_name.replace('-', ' ').title()}",
-  description: "Built with web-builder pipeline",
-}};
+{root_metadata_block(page_meta, project_name)}
 
 export default function RootLayout({{ children }}: {{ children: React.ReactNode }}) {{
   return (
@@ -12069,6 +12159,13 @@ def main():
     # demo build with no real source site to harvest from.
     _harvested_nav = _derive_harvested_nav(site_spec.get("pages") or []) if site_spec else None
     _harvested_footer = _derive_harvested_footer(site_spec.get("pages") or []) if site_spec else None
+    _footer_text = _derive_footer_text(site_spec.get("pages") or []) if site_spec else None
+    # The harvested home page supplies <title>/<meta description>; None = no harvest.
+    _page_meta = None
+    if site_spec:
+        _spec_pages = site_spec.get("pages") or []
+        _page_meta = next((pg for pg in _spec_pages if pg.get("route") == "/"),
+                          _spec_pages[0] if _spec_pages else {})
 
     # ── Harvested hrefs point at the SOURCE site ──────────────────────────
     # Left alone, every nav click on the generated site sends the visitor back
@@ -12169,7 +12266,7 @@ def main():
         # footer states only what the tenant record declares, and states nothing
         # when the record declares nothing.
         _declared_disclaimers, _disclaimer_status = declared_disclaimers(tenant_context)
-        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce, adapter=_resolve_adapter(args.target_platform), harvested_nav=_harvested_nav, harvested_footer=_harvested_footer, disclaimers=_declared_disclaimers, disclaimer_status=_disclaimer_status)
+        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce, adapter=_resolve_adapter(args.target_platform), harvested_nav=_harvested_nav, harvested_footer=_harvested_footer, disclaimers=_declared_disclaimers, disclaimer_status=_disclaimer_status, footer_text=_footer_text)
         save_checkpoint(output_dir, "shared_components", args.project)
         site_manifest = stage_scaffold_multipage(site_manifest, args.project, industry, preset=preset)
         save_checkpoint(output_dir, "scaffold_mp", args.project)
@@ -12316,6 +12413,7 @@ def main():
                     design_style=(site_spec or {}).get("style"),
                     tenant_context=tenant_context,
                     market=_build_market,
+                    page_meta=_page_meta,
                 )
                 run_compliance_gate(
                     OUTPUT_DIR / args.project / SITE_DIR_NAME,
@@ -12621,7 +12719,7 @@ def main():
                     "validate", "pre-flight validation blocked the requested deploy (no --force)"
                 )
         if validation['passed'] or args.force:
-            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform, harvested_nav=_harvested_nav, design_style=(site_spec or {}).get("style"), tenant_context=tenant_context, market=_build_market)
+            stage_deploy(sections, section_files, preset, args.project, extraction_dir, build_cache=build_cache, target_platform=args.target_platform, harvested_nav=_harvested_nav, design_style=(site_spec or {}).get("style"), tenant_context=tenant_context, market=_build_market, page_meta=_page_meta)
             run_compliance_gate(
                 OUTPUT_DIR / args.project / SITE_DIR_NAME,
                 getattr(args, "tenant", None),

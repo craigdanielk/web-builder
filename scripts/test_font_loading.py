@@ -31,7 +31,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lib.font_match import SERVABLE, classify  # noqa: E402
-from orchestrate import font_loader, font_stack, parse_font_weights  # noqa: E402
+from orchestrate import (  # noqa: E402
+    fetched_font_weights, font_loader, font_stack, parse_font_weights, preset_file_text)
 
 
 def test_bodoni_moda_is_servable_and_a_didone():
@@ -90,3 +91,18 @@ def test_generator_emits_no_inline_body_font_and_applies_loader_variables():
 def test_weights_line_does_not_swallow_the_next_line():
     text = "heading_weights: 400, 500\n700_line: x"
     assert parse_font_weights(text, "heading") == ["400", "500"]
+
+
+def test_tenant_preset_weights_win_over_a_synthetic_industry_preset():
+    # An --industry build swaps preset_content for Supabase's synthetic preset
+    # (body weight 300 for luxury-premium); the tenant file's list must win.
+    tenant = "heading_weights: 400, 500\nbody_weights: 400, 500, 600"
+    synthetic = "heading_weight: 400\nbody_weight: 300"
+    assert fetched_font_weights(tenant, synthetic, "body", 400) == ["400", "500", "600"]
+    assert fetched_font_weights("", synthetic, "body", 400) == ["300", "400"]
+
+
+def test_thuris_preset_file_is_read_by_name():
+    text = preset_file_text("thuris")
+    assert "heading_weights: 400, 500" in text
+    assert preset_file_text("no-such-preset-xyz") == ""

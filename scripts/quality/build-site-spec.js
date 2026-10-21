@@ -737,6 +737,7 @@ function buildPage(rawPage, componentRegistry, animationAnalysis) {
     route: rawPage.route,
     source_url: rawPage.source_url,
     title: rawPage.title,
+    description: rawPage.description || '',
     nav: rawPage.nav,
     sections,
     confidence_stats: stats,

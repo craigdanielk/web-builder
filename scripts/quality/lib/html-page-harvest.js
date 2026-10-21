@@ -631,6 +631,18 @@ function harvestNav(html, baseUrl) {
   return { links };
 }
 
+/** `<meta name="description" content>` verbatim, or '' — never a default. */
+function extractMetaDescription(html) {
+  const metaRe = /<meta\b([^>]*)>/gi;
+  let m;
+  while ((m = metaRe.exec(html || '')) !== null) {
+    if (getAttr(m[1], 'name').toLowerCase() === 'description') {
+      return getAttr(m[1], 'content').trim();
+    }
+  }
+  return '';
+}
+
 function extractTitle(html) {
   const m = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html || '');
   return m ? stripTags(m[1]) : '';
@@ -787,6 +799,7 @@ function harvestPage(capture) {
     })(),
     source_url: url,
     title: extractTitle(capture.html),
+    description: extractMetaDescription(capture.html),
     nav: harvestNav(capture.html, url),
     blocks: harvestBlocks(capture.html, url),
     harvest: {
