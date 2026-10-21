@@ -164,11 +164,12 @@ export default function SectionCenteredCTA({
           <div className="relative mx-auto flex w-full max-w-3xl flex-col items-center">
             {ctaHeadline && (
               <h2
-                // 32 → 44 → 56px in discrete steps. A type scale is a closed
-                // set, so the ramp is breakpoints; a clamp() would render sizes
-                // between the rungs at most real viewport widths.
-                className="text-balance text-[2rem] md:text-[2.75rem] lg:text-[3.5rem]"
+                // The size is the benchmark's top heading tier (--type-h1): a
+                // type scale is a closed set, and a template naming its own
+                // display sizes cannot carry a benchmark's.
+                className="text-balance"
                 style={{
+                  fontSize: "var(--type-h1, 3.5rem)",
                   fontFamily: "var(--font-heading, inherit)",
                   fontWeight: "var(--heading-weight, 500)" as unknown as number,
                   lineHeight: 1.1,

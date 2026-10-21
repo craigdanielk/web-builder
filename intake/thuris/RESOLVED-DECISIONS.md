@@ -88,3 +88,14 @@ Front end built now; store wired when operator creates store + re-auths Shopify 
   `dna_type_scale` (templates hardcoding heading px instead of the type scale) stays a real finding.
 - **Intake lives in a tracked path:** `web-builder/intake/thuris/` (moved from the gitignored
   `output/intake/thuris/`).
+
+## Session 2026-10-21 (c) — operator answers
+- **Type scale: snap templates to the scale.** Headings read type-scale tokens derived from the
+  benchmark's measured heading sizes (luxury-botanical-oils tops out at 32px); no hardcoded
+  48/56/96px display sizes.
+- **Shopify product model: 3 products + a Shopify Bundle.** Frankincense, Neroli, Rose Geranium
+  as products (30 each); the complete Founding Collection as a Bundle of the three, so inventory
+  draws from each pool natively.
+- **Cart/checkout wording: agent-written interim wording authorised** ("add relevant wording for
+  now"). Every such string is marked interim in the source and listed here until replaced.
+- **Live store writes authorised** (thuris.myshopify.com), confirming each irreversible step.

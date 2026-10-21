@@ -120,8 +120,9 @@ export default function ProductShowcaseHoverCards({
             )}
             {title && (
               <h2
-                className="text-[2rem] leading-[1.1] tracking-tight md:text-[3rem]"
+                className="leading-[1.1] tracking-tight"
                 style={{
+                  fontSize: "var(--type-h2, 3rem)",
                   fontFamily: "var(--font-heading, inherit)",
                   fontWeight: "var(--heading-weight, 400)" as unknown as number,
                 }}

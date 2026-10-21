@@ -209,15 +209,12 @@ export default function HeroCentered({
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          // 48 → 64 → 96px in DISCRETE steps. This was a clamp() across the
-          // same endpoints, which reads as the same intent but is not: clamp
-          // interpolates, so every viewport between ~750px and 1500px rendered
-          // a size that is on no step of the declared scale — at the 1440px
-          // audit viewport, 92px. A type scale is a closed set, not a
-          // continuum, so the ramp is breakpoints and every rung is a
-          // scale_px value.
-          className="text-balance text-[3rem] md:text-[4rem] lg:text-[6rem]"
+          // The size is the benchmark's top heading tier (--type-h1), not a
+          // ramp of display sizes the template names itself: a type scale is a
+          // closed set, and every rung must be one the benchmark measured.
+          className="text-balance"
           style={{
+            fontSize: "var(--type-h1, 6rem)",
             fontFamily: "var(--font-heading, inherit)",
             fontWeight: "var(--heading-weight, 500)" as unknown as number,
             lineHeight: 1.05,
@@ -232,8 +229,9 @@ export default function HeroCentered({
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.04, ease: "easeOut" }}
-            className="text-balance text-[1.5rem] md:text-[2rem]"
+            className="text-balance"
             style={{
+              fontSize: "var(--type-h2, 2rem)",
               fontFamily: "var(--font-heading, inherit)",
               fontWeight: "var(--heading-weight, 500)" as unknown as number,
               lineHeight: 1.2,

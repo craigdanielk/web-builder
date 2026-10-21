@@ -5183,6 +5183,12 @@ def anchor_by_section_stem(sections: list[dict]) -> dict[str, str]:
     return out
 
 
+def type_tier_vars(type_scale: dict | None) -> dict[str, str]:
+    """`--type-h1..h4` from the compiled `type_scale.heading_tiers_px`; {} without."""
+    tiers = (type_scale or {}).get("heading_tiers_px") or []
+    return {f"--type-h{i + 1}": f"{int(px)}px" for i, px in enumerate(tiers[:4])}
+
+
 def tone_css_lines(palette_light: dict | None) -> list[str]:
     """`[data-tone="light"]` re-declaring every role, or nothing without a light set.
 
@@ -8059,6 +8065,7 @@ def stage_deploy(
         "--card-pad": f'{_rhythm.get("card_pad_px", 32)}px',
         "--radius-card": _radius.get("card", "8px"),
         "--radius-button": _radius.get("button", "6px"),
+        **type_tier_vars(_scale),
     }
     if _pal:
         print(f"    ✓ tokens from {_ds.get('design_source', 'unknown')}: "

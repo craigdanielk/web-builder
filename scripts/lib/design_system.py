@@ -268,6 +268,26 @@ def lower_motion_evidence(benchmark: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def heading_tiers(benchmark: dict[str, Any], count: int = 4) -> list[int]:
+    """The reference's heading tiers, largest first: the `count` most-used
+    measured heading sizes (ties to the larger size), else the `count` largest
+    declared sizes. `[]` when the benchmark declares no sizes at all."""
+    dist = (benchmark.get("_distributions") or {}).get("heading_sizes_px") or {}
+    counts: dict[int, int] = {}
+    for size, n in dist.items():
+        try:
+            counts[int(float(size))] = counts.get(int(float(size)), 0) + int(n)
+        except (TypeError, ValueError):
+            continue
+    if counts:
+        top = sorted(counts, key=lambda s: (counts[s], s), reverse=True)[:count]
+        return sorted(top, reverse=True)
+    ts = benchmark.get("type_system") or {}
+    declared = ts.get("heading_sizes_px") or ts.get("scale_px") or []
+    sizes = sorted({int(float(v)) for v in declared if isinstance(v, (int, float))}, reverse=True)
+    return sizes[:count]
+
+
 def compile_style(
     benchmark: dict[str, Any],
     brand_accent: str | None = None,
@@ -338,6 +358,11 @@ def compile_style(
 
     scale = _apply_overrides(benchmark["type_scale"], over.get("type_scale"),
                              "type_scale", override_log)
+    # Heading sizes are part of the scale: templates read these as --type-h1..h4
+    # rather than naming display sizes the benchmark never measured.
+    tiers = heading_tiers(benchmark)
+    if tiers:
+        scale = {**scale, "heading_tiers_px": tiers}
     rhythm = _apply_overrides(benchmark["rhythm"], over.get("rhythm"), "rhythm", override_log)
     fonts = (benchmark.get("font_system") or {}).get("families") or ["Inter"]
     font_over = over.get("fonts") or {}

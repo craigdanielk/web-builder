@@ -108,8 +108,9 @@ export default function FeaturesIconGrid({
             )}
             {sectionTitle && (
               <h2
-                className="text-[2rem] md:text-[3rem] leading-[1.1] tracking-tight"
+                className="leading-[1.1] tracking-tight"
                 style={{
+                  fontSize: "var(--type-h2, 3rem)",
                   fontFamily: "var(--font-heading, inherit)",
                   fontWeight: "var(--heading-weight, 400)" as unknown as number,
                 }}
