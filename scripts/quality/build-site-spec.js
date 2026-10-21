@@ -706,6 +706,7 @@ function buildPage(rawPage, componentRegistry, animationAnalysis) {
   const ctasByIndex = new Map(rawPage.blocks.map((b) => [b.index, b.content.ctas || []]));
   const toneByIndex = new Map(rawPage.blocks.map((b) => [b.index, b.tone || null]));
   const anchorByIndex = new Map(rawPage.blocks.map((b) => [b.index, b.anchor || null]));
+  const kickerByIndex = new Map(rawPage.blocks.map((b) => [b.index, b.content.kicker || null]));
   const takenUids = new Set();
   for (const section of sections) {
     const tier = section.confidence_tier || getTier(section.confidence);
@@ -713,6 +714,7 @@ function buildPage(rawPage, componentRegistry, animationAnalysis) {
     section.content.cta_links = ctasByIndex.get(section.index) || [];
     section.tone = toneByIndex.get(section.index) || null;
     section.anchor = anchorByIndex.get(section.index) || null;
+    section.content.kicker = kickerByIndex.get(section.index) || null;
 
     // Position of this section in the SOURCE page (0..n-1, source order).
     // `index` carries the same value today, but source_index is explicit and

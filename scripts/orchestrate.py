@@ -3246,6 +3246,20 @@ def build_template_fill(
     items = [it for it in (content.get("items") or []) if isinstance(it, dict)]
     grouped = bool(items)
 
+    # The harvest's kicker (the short line before the first heading) is the
+    # eyebrow. The flat lists still carry it, so subtract it once here or it
+    # also fills the subtitle — the eyebrow rendering under the headline.
+    kicker = content.get("kicker")
+    kicker = kicker.strip() if isinstance(kicker, str) and kicker.strip() else ""
+
+    def _without_kicker(lines: list[str]) -> list[str]:
+        if kicker and kicker in lines:
+            i = lines.index(kicker)
+            return lines[:i] + lines[i + 1:]
+        return lines
+
+    bodies = _without_kicker(bodies)
+
     if grouped:
         # `item_count` is the harvester's own arity for the section. Trusting it
         # over `len(items)` would let a spec whose two fields disagree size the
@@ -3258,9 +3272,10 @@ def build_template_fill(
 
         sect_headings = [h.strip() for h in (content.get("section_headings") or [])
                          if isinstance(h, str) and h.strip()]
-        sect_bodies = [b.strip() for b in (content.get("section_body_text") or [])
-                       if isinstance(b, str) and b.strip()]
+        sect_bodies = _without_kicker([b.strip() for b in (content.get("section_body_text") or [])
+                                       if isinstance(b, str) and b.strip()])
         section_title = sect_headings[0] if sect_headings else ""
+        section_tagline = sect_headings[1] if len(sect_headings) > 1 else ""
         section_subtitle = sect_bodies[0] if sect_bodies else ""
         # A section-level CTA is one no item claimed. Without this subtraction a
         # card grid's first card link becomes the section's own button.
@@ -3275,6 +3290,7 @@ def build_template_fill(
         pairing_inferred = False
     else:
         section_title = headings[0] if headings else ""
+        section_tagline = headings[1] if len(headings) > 1 else ""
         item_titles = headings[1:]
         # A body string per item, plus possibly one leading section subtitle.
         # When the counts differ this is a guess, not a join — see the docstring
@@ -3312,10 +3328,14 @@ def build_template_fill(
         """
         if name in ("headline", "section_title", "title", "page_title", "section_label"):
             return section_title, "text-short"
+        if name == "eyebrow":
+            return kicker, "text-short"
+        if name == "tagline":
+            return section_tagline, "text-short"
         if name in ("subheadline", "section_subtitle", "section_body", "subtitle",
                     "description", "page_subtitle"):
             return section_subtitle, "text-long"
-        if name == "section_body_2":
+        if name in ("section_body_2", "supporting_text"):
             return (item_bodies[0] if item_bodies else ""), "text-long"
         if name in ("cta_text", "primary_cta_text"):
             return (section_ctas[0][0] if section_ctas else ""), "cta"

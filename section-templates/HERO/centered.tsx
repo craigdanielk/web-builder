@@ -57,7 +57,9 @@ import { motion } from "framer-motion";
  * Slots:
  *   {eyebrow}            → "Licensed FSP"              (optional)
  *   {headline}           → "Buy Bitcoin South Africa"
+ *   {tagline}            → second heading, a one-line idea (optional)
  *   {subheadline}        → "Lowest trade fees in SA…"
+ *   {supporting_text}    → a second paragraph, e.g. an edition fact (optional)
  *   {primary_cta_text}   → "Sign up"
  *   {primary_cta_url}    → "https://trade.capecrypto.com/signup"
  *   {secondary_cta_text} → optional
@@ -68,7 +70,7 @@ import { motion } from "framer-motion";
 // line beginning `// Tokens:` (or a bracketed placeholder block) — the prose
 // list above is neither, so without this line the contract falls back to a
 // permissive brace sweep and substitutes this file's own JS identifiers away.
-// Tokens: {eyebrow} {headline} {subheadline} {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url} {backdrop_url}
+// Tokens: {eyebrow} {headline} {tagline} {subheadline} {supporting_text} {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url} {backdrop_url}
 
 // The DEMAND declaration, read by `asset_resolver.art_declarations()`.
 //
@@ -88,7 +90,9 @@ import { motion } from "framer-motion";
 interface HeroCenteredProps {
   eyebrow?: string;
   headline?: string;
+  tagline?: string;
   subheadline?: string;
+  supportingText?: string;
   primaryCtaText?: string;
   primaryCtaUrl?: string;
   secondaryCtaText?: string;
@@ -108,7 +112,9 @@ const WASH = `color-mix(in srgb, ${ACCENT} 9%, transparent)`;
 export default function HeroCentered({
   eyebrow = "{eyebrow}",
   headline = "{headline}",
+  tagline = "{tagline}",
   subheadline = "{subheadline}",
+  supportingText = "{supporting_text}",
   primaryCtaText = "{primary_cta_text}",
   primaryCtaUrl = "{primary_cta_url}",
   secondaryCtaText = "{secondary_cta_text}",
@@ -221,6 +227,23 @@ export default function HeroCentered({
           {headline}
         </motion.h1>
 
+        {tagline && (
+          <motion.h2
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.04, ease: "easeOut" }}
+            className="text-balance text-[1.5rem] md:text-[2rem]"
+            style={{
+              fontFamily: "var(--font-heading, inherit)",
+              fontWeight: "var(--heading-weight, 500)" as unknown as number,
+              lineHeight: 1.2,
+              marginTop: "var(--block-gap, 24px)",
+            }}
+          >
+            {tagline}
+          </motion.h2>
+        )}
+
         {subheadline && (
           <motion.p
             initial={{ opacity: 0, y: 14 }}
@@ -236,6 +259,24 @@ export default function HeroCentered({
             }}
           >
             {subheadline}
+          </motion.p>
+        )}
+
+        {supportingText && (
+          <motion.p
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.12, ease: "easeOut" }}
+            className="text-pretty leading-relaxed"
+            style={{
+              color: MUTED,
+              fontFamily: "var(--font-body, inherit)",
+              fontSize: "1rem",
+              marginTop: "calc(var(--block-gap, 24px) * 0.5)",
+              maxWidth: "58ch",
+            }}
+          >
+            {supportingText}
           </motion.p>
         )}
 

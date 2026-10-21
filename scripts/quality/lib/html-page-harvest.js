@@ -548,6 +548,23 @@ function classFragments(attrs) {
  * become the blocks, mirroring the recursive descent that
  * `extract-reference.js` performs on the live DOM.
  */
+/** Longest line still read as a kicker rather than an opening paragraph. */
+const KICKER_MAX_CHARS = 80;
+
+/**
+ * The single short line a section opens with before its first heading — an
+ * eyebrow. A DOM-order fact: the flat headings/body_text lists lose it, and it
+ * then fills the subtitle. Null when there is no heading, no pre-heading text,
+ * more than one pre-heading line, or a line too long to be a label.
+ */
+function extractKicker(inner) {
+  const h = /<h[1-6]\b/i.exec(inner || '');
+  if (!h) return null;
+  const before = extractBodyText(inner.slice(0, h.index));
+  if (before.length !== 1 || before[0].length > KICKER_MAX_CHARS) return null;
+  return before[0];
+}
+
 function harvestBlocks(html, baseUrl) {
   const cleaned = cleanHtml(html);
   const bodyMatch = /<body\b[^>]*>([\s\S]*)<\/body>/i.exec(cleaned);
@@ -619,6 +636,7 @@ function harvestBlocks(html, baseUrl) {
         item_grouping: group ? group.grouping : null,
         section_headings: subtractClaimed(headings, claimedHeadings),
         section_body_text: subtractClaimed(bodyText, claimedBody),
+        kicker: extractKicker(block.inner),
       },
       images,
       metrics: { nodes: [] },
