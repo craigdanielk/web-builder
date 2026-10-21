@@ -121,3 +121,22 @@ benchmark's measured 32px ceiling); content max-width 1200, gutters 24–72, sec
   (the engraved TT monogram read as holes/slots). gpt_image_2_5, high, reference = pack master.
 - **Provenance: species, countries of origin and the on-bottle statement are all documented** —
   they stay. Ritual copy is trimmed to remove application/wearing implications (launch-copy HOLD).
+
+## Session 2026-10-21 (f) — Architectural House Overhaul V2 (operator brief) + answers
+- **Design PDF = THURIS_Brand_CI_Guide_v1.0.pdf.** No separate sandstone/House document exists.
+- **Build path: hand-authored in the tenant repo** (`~/Developer/GitHub/tenants/thuris`), multi-route.
+  The pipeline rsync no longer applies to THURIS — a pipeline build would overwrite the overhaul.
+- **Prices (brief V2, pending final commercial approval; supersede (e)):** Frankincense AED 1,495 ·
+  Neroli AED 1,295 · Rose Geranium AED 1,295 · The Founding Collection AED 3,895. One source in the
+  site (`src/lib/house.ts`). Shopify prices NOT mutated.
+- **OilGrow: named with one generic factual line** — no founder name, no quotation, no credentials.
+- **Rose Geranium origin: keep "South Africa".**
+- **Shipped 2026-10-21 (tenant repo febdd45, live).** Type scale V2 supersedes V1's H1 56–68:
+  display clamp 52–132px, H1 44–92, H2 34–62 (brief: "avoid small, timid display headlines").
+- **New imagery (Higgsfield gpt_image_2_5, reference = capfix lineup):** entrance desktop/mobile,
+  house gallery, three material macros, object glass-base, ritual alcove, closing room →
+  tenant `public/house/`. Pack images 03/04/05/07/08/09/12/13/14/15 kept; 01/02 superseded as
+  entrance (02 reused on /collection); 06/10/11 not used (old cap / held).
+- **Not on the site, by design:** contact channel (none on file), dispatch window, shipping,
+  duties, refund policy, directions for use, batch documentation. /service lists the first four
+  as "published before reservations open". `RESERVATIONS_OPEN=false` gates every Reserve control.
