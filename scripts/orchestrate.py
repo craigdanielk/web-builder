@@ -11851,7 +11851,16 @@ def main():
             # stack off a filename would make a rename change what ships.
             _build_market = (_bm.get("_meta") or {}).get("market") or _bm_market
             _crawled = (site_spec.get("style") or {}).get("palette") or {}
-            site_spec["style"] = compile_style(_bm)
+            from lib.design_system import parse_tenant_design_overrides
+            _tenant_overrides = None
+            if getattr(args, "preset", None):
+                _preset_md = SKILLS_DIR / "presets" / f"{args.preset}.md"
+                if _preset_md.exists():
+                    _tenant_overrides = parse_tenant_design_overrides(
+                        _preset_md.read_text(encoding="utf-8"))
+            site_spec["style"] = compile_style(_bm, tenant_overrides=_tenant_overrides)
+            for _ov in site_spec["style"].get("tenant_overrides", []):
+                print(f"      ✎ tenant override {_ov['field']}: {_ov['was']} -> {_ov['value']}")
             _p = site_spec["style"]["palette"]
             # Persist. The compiled style lived only in memory, so
             # site-spec.json on disk kept `design_source: null` and the

@@ -42,6 +42,7 @@ partial benchmarks are the normal early state.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,19 @@ REQUIRED_ROLES = (
 )
 REQUIRED_RHYTHM = ("section_py_px", "block_gap_px", "card_pad_px", "grid_px")
 REQUIRED_TYPE_SCALE = ("ratio", "base_px", "heading_weight", "body_weight")
+
+#: Keys a tenant preset may override (operator decision 2026-10-21, THURIS).
+#: Anything else stays benchmark-owned; an unlisted key is refused, not ignored.
+#: `palette_light` is a second, complete role set for sections that opt into the
+#: light tone — it never partially inherits the base set.
+TENANT_OVERRIDABLE: dict[str, tuple[str, ...]] = {
+    "palette_roles": REQUIRED_ROLES + ("surface_inverse",),
+    "palette_light": REQUIRED_ROLES,
+    "type_scale": REQUIRED_TYPE_SCALE,
+    "rhythm": REQUIRED_RHYTHM,
+    "border_radius": ("button", "card"),
+    "fonts": ("heading", "body"),
+}
 
 #: WCAG AA for body text. Below this the tenant's own brand colour is
 #: unreadable against the benchmark's surfaces, which is a build failure and
@@ -258,6 +272,7 @@ def compile_style(
     benchmark: dict[str, Any],
     brand_accent: str | None = None,
     brand_font: str | None = None,
+    tenant_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Benchmark + tenant identity -> the `site-spec.style` block.
 
@@ -267,6 +282,9 @@ def compile_style(
     benchmark's role palette: nothing is invented, and benchmark precedence
     holds because the replacement is benchmark-owned data.
     """
+    _check_tenant_overrides(tenant_overrides)
+    over = tenant_overrides or {}
+    override_log: list[dict] = []
     roles = dict(benchmark["palette_roles"])
     roles.pop("_source", None)
     adjustments: list[dict] = []
@@ -306,26 +324,25 @@ def compile_style(
                     "palette can carry this brand."
                 )
 
-    # Body text must be readable on both surfaces. This is the check that would
-    # have caught `accent: #ffffff` on day one.
-    # `surface` is included because it is where card body copy lands. Omitting
-    # it let a measured dark palette ship `surface: #ffffff` alongside
-    # `text_primary: #ffffff` — white on white, passing every other pair.
-    for role, bg in (("text_primary", "bg_primary"),
-                     ("text_muted", "bg_primary"),
-                     ("text_primary", "bg_secondary"),
-                     ("text_primary", "surface"),
-                     ("text_muted", "surface")):
-        ratio = contrast_ratio(roles[role], roles[bg])
-        if ratio < MIN_CONTRAST:
-            raise BenchmarkError(
-                f"benchmark palette fails WCAG AA: {role} on {bg} is "
-                f"{ratio:.2f}:1, below {MIN_CONTRAST}:1"
-            )
+    roles = _apply_overrides(roles, over.get("palette_roles"), "palette_roles", override_log)
+    _check_readable(roles, "benchmark palette")
+    # A tenant-declared accent must carry its own CTA label. Checked only on
+    # declared sets: measured benchmarks predate this rule.
+    if {"accent", "on_accent"} & set(over.get("palette_roles") or {}):
+        _check_label(roles, "tenant palette_roles")
+    palette_light = None
+    if "palette_light" in over:
+        palette_light = dict(over["palette_light"])
+        _check_readable(palette_light, "tenant palette_light")
+        _check_label(palette_light, "tenant palette_light")
 
-    scale = benchmark["type_scale"]
-    rhythm = benchmark["rhythm"]
+    scale = _apply_overrides(benchmark["type_scale"], over.get("type_scale"),
+                             "type_scale", override_log)
+    rhythm = _apply_overrides(benchmark["rhythm"], over.get("rhythm"), "rhythm", override_log)
     fonts = (benchmark.get("font_system") or {}).get("families") or ["Inter"]
+    font_over = over.get("fonts") or {}
+    if font_over.get("heading"):
+        brand_font = font_over["heading"]
 
     # The measured family is usually the reference's proprietary face, which no
     # build can serve. Resolve it to something servable and RECORD the
@@ -358,7 +375,18 @@ def compile_style(
                 "ratified substitute."
             )
 
-    return {
+    body_family = font_over.get("body") or heading_family
+    for role in ("heading", "body"):
+        if font_over.get(role):
+            override_log.append({"field": f"fonts.{role}", "value": font_over[role],
+                                 "was": fonts[0] if fonts else None})
+    radius = {
+        "button": f"{min((benchmark.get('cta_buttons') or {}).get('radius_px') or [8])}px",
+        "card": f"{max((benchmark.get('card_system') or {}).get('radius_px') or [8])}px",
+    }
+    radius = _apply_overrides(radius, over.get("border_radius"), "border_radius", override_log)
+
+    style = {
         "design_source": "benchmark",
         "benchmark": {
             "market": (benchmark.get("_meta") or {}).get("market"),
@@ -370,8 +398,8 @@ def compile_style(
             "heading": {"extracted": heading_family,
                         "google_fallback": heading_family,
                         "weight": scale["heading_weight"]},
-            "body": {"extracted": heading_family,
-                     "google_fallback": heading_family,
+            "body": {"extracted": body_family,
+                     "google_fallback": body_family,
                      "weight": scale["body_weight"]},
         },
         "type_scale": scale,
@@ -381,10 +409,7 @@ def compile_style(
             "internal_gap": f"{rhythm['block_gap_px']}px",
             "scale": benchmark["density"],
         },
-        "border_radius": {
-            "button": f"{min((benchmark.get('cta_buttons') or {}).get('radius_px') or [8])}px",
-            "card": f"{max((benchmark.get('card_system') or {}).get('radius_px') or [8])}px",
-        },
+        "border_radius": radius,
         "shadow": {
             "max_layers": (benchmark.get("shadow_system") or {}).get("max_layers", 2),
         },
@@ -401,3 +426,93 @@ def compile_style(
         "density": benchmark["density"],
         "adjustments": adjustments,
     }
+    if tenant_overrides is not None:
+        style["tenant_overrides"] = override_log
+    if palette_light is not None:
+        style["palette_light"] = palette_light
+    return style
+
+
+def _check_tenant_overrides(overrides: dict[str, Any] | None) -> None:
+    """Refuse any key outside TENANT_OVERRIDABLE, naming it."""
+    if overrides is None:
+        return
+    if not isinstance(overrides, dict):
+        raise BenchmarkError("tenant design overrides must be an object")
+    for group, values in overrides.items():
+        if group not in TENANT_OVERRIDABLE:
+            raise BenchmarkError(
+                f"tenant override group {group!r} is benchmark-owned; overridable: "
+                f"{', '.join(TENANT_OVERRIDABLE)}")
+        if not isinstance(values, dict):
+            raise BenchmarkError(f"tenant override {group} must be an object")
+        for key in values:
+            if key not in TENANT_OVERRIDABLE[group]:
+                raise BenchmarkError(
+                    f"tenant override {group}.{key} is not overridable; allowed: "
+                    f"{', '.join(TENANT_OVERRIDABLE[group])}")
+    light = overrides.get("palette_light")
+    if light is not None:
+        missing = [r for r in REQUIRED_ROLES if r not in light]
+        if missing:
+            raise BenchmarkError(
+                f"tenant palette_light must declare every role; missing {missing}")
+
+
+def _apply_overrides(base: dict[str, Any], values: dict[str, Any] | None,
+                     group: str, log: list[dict]) -> dict[str, Any]:
+    out = dict(base)
+    for key, value in (values or {}).items():
+        log.append({"field": f"{group}.{key}", "value": value, "was": out.get(key)})
+        out[key] = value
+    return out
+
+
+def _check_readable(roles: dict[str, Any], label: str) -> None:
+    """Body text must be readable on every ground it lands on.
+
+    This is the check that would have caught `accent: #ffffff` on day one.
+    `surface` is included because it is where card body copy lands. Omitting
+    it let a measured dark palette ship `surface: #ffffff` alongside
+    `text_primary: #ffffff` — white on white, passing every other pair.
+    """
+    for role, bg in (("text_primary", "bg_primary"),
+                     ("text_muted", "bg_primary"),
+                     ("text_primary", "bg_secondary"),
+                     ("text_primary", "surface"),
+                     ("text_muted", "surface")):
+        ratio = contrast_ratio(roles[role], roles[bg])
+        if ratio < MIN_CONTRAST:
+            raise BenchmarkError(
+                f"{label} fails WCAG AA: {role} on {bg} is "
+                f"{ratio:.2f}:1, below {MIN_CONTRAST}:1"
+            )
+
+
+def _check_label(roles: dict[str, Any], label: str) -> None:
+    ratio = contrast_ratio(roles["on_accent"], roles["accent"])
+    if ratio < MIN_CONTRAST:
+        raise BenchmarkError(
+            f"{label} fails WCAG AA: on_accent on accent is {ratio:.2f}:1, "
+            f"below {MIN_CONTRAST}:1 — CTA labels would be unreadable")
+
+
+_OVERRIDES_BLOCK = re.compile(
+    r"^## Tenant Design Overrides\s*\n.*?```json\s*\n(.*?)```", re.DOTALL | re.MULTILINE)
+
+
+def parse_tenant_design_overrides(markdown: str) -> dict[str, Any] | None:
+    """The preset's `## Tenant Design Overrides` JSON block, or None when absent.
+
+    A present-but-malformed block raises: an override the operator wrote and the
+    build silently skipped would ship the benchmark value under their name.
+    """
+    match = _OVERRIDES_BLOCK.search(markdown or "")
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(1))
+    except json.JSONDecodeError as exc:
+        raise BenchmarkError(f"## Tenant Design Overrides is not valid JSON: {exc}") from exc
+    _check_tenant_overrides(data)
+    return data
