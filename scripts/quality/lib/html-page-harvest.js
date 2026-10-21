@@ -651,6 +651,9 @@ function harvestBlocks(html, baseUrl) {
       classNames: getAttr(block.attrs, 'class') || '',
       id: getAttr(block.attrs, 'id') || '',
       anchor: safeAnchor(getAttr(block.attrs, 'id')),
+      // A source-declared layout; the mapper honours it only if the taxonomy lists it.
+      declaredVariant: /^[a-z][a-z0-9-]{0,40}$/.test(getAttr(block.attrs, 'data-variant'))
+        ? getAttr(block.attrs, 'data-variant') : null,
       // Declared ground for a two-mode palette; null when the source says nothing.
       // Allowlisted: the value is untrusted and is later written into .tsx.
       tone: SECTION_TONES.has(getAttr(block.attrs, 'data-tone')) ? getAttr(block.attrs, 'data-tone') : null,

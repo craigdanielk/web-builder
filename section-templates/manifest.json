@@ -7,10 +7,10 @@
     "db": "Supabase section_archetypes.code_template where has_template = true"
   },
   "total_archetypes": 26,
-  "total_variants": 76,
-  "templates_available": 76,
-  "templates_local": 16,
-  "templates_db_only": 60,
+  "total_variants": 77,
+  "templates_available": 77,
+  "templates_local": 18,
+  "templates_db_only": 59,
   "variants_without_template": 0,
   "archetypes": {
     "ABOUT": {
@@ -141,6 +141,14 @@
           "template_path": "db:section_archetypes.code_template",
           "db_has_template": true,
           "local_file": null
+        },
+        {
+          "name": "split-with-image",
+          "resolution": "local",
+          "has_template": true,
+          "template_path": "section-templates/CTA/split-with-image.tsx",
+          "db_has_template": false,
+          "local_file": "split-with-image.tsx"
         }
       ]
     },
@@ -334,11 +342,11 @@
         },
         {
           "name": "product-hero",
-          "resolution": "db",
+          "resolution": "local",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/HERO/product-hero.tsx",
           "db_has_template": true,
-          "local_file": null
+          "local_file": "product-hero.tsx"
         },
         {
           "name": "split-image",

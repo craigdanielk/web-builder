@@ -53,6 +53,7 @@ CONVERTED = [
     "HERO/centered.tsx", "ABOUT/editorial-split.tsx", "PRODUCT-SHOWCASE/hover-cards.tsx",
     "FEATURES/icon-grid.tsx", "HOW-IT-WORKS/numbered-steps.tsx", "FAQ/accordion.tsx",
     "CTA/dark-band.tsx", "CTA/centered.tsx",
+    "HERO/product-hero.tsx", "CTA/split-with-image.tsx",
 ]
 
 

@@ -173,6 +173,10 @@ function matchClassSignals(section) {
 function selectVariant(archetype, section, archetypes) {
   const arch = archetypes.find((a) => a.name === archetype);
   if (!arch || arch.variants.length === 0) return arch?.variants[0] || 'default';
+  // A declared variant wins when the taxonomy lists it for this archetype.
+  if (section.declaredVariant && arch.variants.includes(section.declaredVariant)) {
+    return section.declaredVariant;
+  }
 
   const label = (section.label || '').toLowerCase();
   const tag = (section.tag || '').toLowerCase();
