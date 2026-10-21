@@ -210,6 +210,16 @@ def test_source_unknown_is_a_declared_value_not_an_absence(resolve_source):
     assert_refuses(resolve_source, ctx(), "source_platform")
 
 
+def test_source_none_is_greenfield_and_distinct_from_unknown(resolve_source):
+    """"There is no existing site" is a third collected answer.
+
+    A greenfield brand has nothing to crawl. Declaring it `unknown` would say
+    "we looked and could not tell", which is false — we know there is none.
+    """
+    assert resolve_source(ctx(source_platform="none")) == "none"
+    assert resolve_source(ctx(source_platform="unknown")) == "unknown"
+
+
 def test_declaration_is_case_and_whitespace_normalised(resolve_target, resolve_source):
     assert resolve_target(ctx(target_platform="  Vercel ")) == "vercel"
     assert resolve_source(ctx(source_platform="GHOST")) == "ghost"

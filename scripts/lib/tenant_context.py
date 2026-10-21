@@ -194,9 +194,10 @@ TARGET_PLATFORMS = ("shopify", "vercel")
 
 #: What the tenant's existing site runs on. `unknown` is a DECLARED value — an
 #: operator saying "we looked and could not tell" — which is a different state
-#: from the field being absent, and the two must not collapse.
+#: from the field being absent, and the two must not collapse. `none` is a
+#: greenfield brand with no existing site — known to be absent, not unknown.
 SOURCE_PLATFORMS = (
-    "shopify", "woocommerce", "magento", "wordpress", "ghost", "custom", "unknown",
+    "shopify", "woocommerce", "magento", "wordpress", "ghost", "custom", "unknown", "none",
 )
 
 #: Load statuses that mean the platform fields were never actually read.
