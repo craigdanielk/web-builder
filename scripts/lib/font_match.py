@@ -44,7 +44,7 @@ CATALOG: dict[str, tuple[str, ...]] = {
                       "Source Sans Pro"),
     "grotesk-display": ("Space Grotesk", "Plus Jakarta Sans", "DM Sans", "Geist"),
     "transitional-serif": ("Libre Baskerville", "Merriweather"),
-    "didone-serif": ("Playfair Display", "Cormorant Garamond"),
+    "didone-serif": ("Playfair Display", "Cormorant Garamond", "Bodoni Moda"),
     "mono": ("Geist Mono", "Space Mono", "IBM Plex Mono"),
 }
 

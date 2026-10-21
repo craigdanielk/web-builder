@@ -110,8 +110,10 @@ typography:
   pairing: didone-display + neo-grotesk-ui
   heading_font: Bodoni Moda
   heading_weight: 400          # 500 max — never bold Didone
+  heading_weights: 400, 500    # fetched faces (RESOLVED-DECISIONS: Bodoni Moda 400/500)
   body_font: Inter
   body_weight: 400
+  body_weights: 400, 500, 600  # fetched faces (RESOLVED-DECISIONS: Inter 400/500/600)
   scale_ratio: 1.333
   weight_distribution: hierarchy by size and space, not weight
   eyebrow: Inter 500, uppercase, letter-spacing 0.18–0.28em

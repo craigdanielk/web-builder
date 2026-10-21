@@ -6623,6 +6623,75 @@ def font_import_name(font_name: str) -> str:
     return font_name.replace(" ", "_")
 
 
+_FONT_FACE_VAR = {"heading": "--font-heading-face", "body": "--font-body-face"}
+_DEFAULT_FONT_WEIGHTS = {"heading": ["400"], "body": ["400", "500", "700"]}
+
+
+def parse_font_weights(preset_content: str, role: str) -> list[str]:
+    """Weights to fetch for a role: `<role>_weights: 400, 500` wins over the
+    single `<role>_weight:`; neither falls back to the historical defaults."""
+    many = re.search(rf"^[ \t]*{role}_weights:[ \t]*\[?([\d, \t]+)\]?", preset_content, re.M)
+    if many:
+        return [w for w in re.findall(r"\d{3}", many.group(1))]
+    one = re.search(rf"^[ \t]*{role}_weight:[ \t]*(\d{{3}})", preset_content, re.M)
+    if one:
+        return [one.group(1)]
+    return list(_DEFAULT_FONT_WEIGHTS[role])
+
+
+def font_loader(heading_font: str, body_font: str,
+                heading_weights: list[str], body_weights: list[str]) -> dict:
+    """next/font/google loader code for the two type roles.
+
+    next/font serves a HASHED family name, so CSS naming "Inter" matches
+    nothing; each role's loader therefore exposes a CSS variable, and the
+    variables must be applied on <html> (`html_class`) for globals.css to reach
+    the fetched face. An unservable family is returned in `unservable` for the
+    caller to report — it is never silently dropped.
+    """
+    from lib.font_match import SERVABLE
+
+    imports: list[str] = []
+    const_lines: list[str] = []
+    class_parts: list[str] = []
+    unservable: list[str] = []
+    seen_ids: set[str] = set()
+    for role, family, weights in (("heading", heading_font, heading_weights),
+                                  ("body", body_font, body_weights)):
+        if family not in SERVABLE:
+            unservable.append(family)
+            continue
+        loader = font_import_name(family)
+        if loader not in imports:
+            imports.append(loader)
+        ident = loader.lower()
+        if ident in seen_ids:
+            ident = f"{ident}_{role}"
+        seen_ids.add(ident)
+        weight_list = ", ".join(f'"{w}"' for w in weights)
+        const_lines.append(
+            f'const {ident} = {loader}({{ subsets: ["latin"], weight: [{weight_list}], '
+            f'variable: "{_FONT_FACE_VAR[role]}", display: "swap" }});'
+        )
+        class_parts.append(f"{ident}.variable")
+    import_line = (f'import {{ {", ".join(imports)} }} from "next/font/google";'
+                   if imports else "")
+    html_class = ("{`" + " ".join("${" + c + "}" for c in class_parts) + "`}"
+                  if class_parts else "")
+    return {"import_line": import_line, "const_lines": const_lines,
+            "html_class": html_class, "unservable": unservable}
+
+
+def font_stack(role: str, family: str) -> str:
+    """CSS value for --font-<role>: the loader's variable first, then the
+    family name, then a generic chosen by genre (a Didone must not fall back
+    to a sans)."""
+    from lib.font_match import classify
+
+    generic = "serif" if (classify(family) or "").endswith("serif") else "sans-serif"
+    return f'var({_FONT_FACE_VAR[role]}), "{family}", {generic}'
+
+
 def _layer7_collection_page_content() -> str:
     """Layer 7: Collection page that fetches from Storefront API."""
     return '''import { shopifyFetch } from "@/lib/shopify/client";
@@ -7836,8 +7905,8 @@ def stage_deploy(
         # palette — as a fallback it is the darkest ground the compiled
         # vocabulary can supply, and it is a real measured surface.
         "--surface-inverse": _tok("surface_inverse", _tok("text_primary", "#1c1917")),
-        "--font-heading": f'"{_heading_font}", sans-serif',
-        "--font-body": f'"{_body_font}", sans-serif',
+        "--font-heading": font_stack("heading", _heading_font),
+        "--font-body": font_stack("body", _body_font),
         "--heading-weight": str(_scale.get("heading_weight", 600)),
         "--body-weight": str(_scale.get("body_weight", 400)),
         "--section-py": f'{_rhythm.get("section_py_px", 96)}px',
@@ -7864,7 +7933,7 @@ def stage_deploy(
         "body {",
         "  background: var(--background);",
         "  color: var(--foreground);",
-        f'  font-family: "{_body_font}", sans-serif;',
+        "  font-family: var(--font-body);",
         "  font-weight: var(--body-weight);",
         "  -webkit-font-smoothing: antialiased;",
         "  -moz-osx-font-smoothing: grayscale;",
@@ -7910,48 +7979,22 @@ def stage_deploy(
     # Keeping a second hand-maintained set here is how a font gets resolved to
     # a served name that this function then fails to import, emitting
     # `font-family: '<name>', system-ui` and falling back silently.
-    from lib.font_match import SERVABLE as GOOGLE_FONTS
+    fl = font_loader(heading_font, body_font,
+                     parse_font_weights(preset_content, "heading"),
+                     parse_font_weights(preset_content, "body"))
+    for family in fl["unservable"]:
+        print(f"    ⚠ font {family!r} is not servable by next/font/google — "
+              "it will NOT load; extend lib.font_match.CATALOG or change the declaration")
 
-    heading_is_google = heading_font in GOOGLE_FONTS
-    body_is_google = body_font in GOOGLE_FONTS
-
-    heading_import = font_import_name(heading_font) if heading_is_google else None
-    body_import = font_import_name(body_font) if body_is_google else None
-
-    # Extract weights from preset
-    heading_weights = '"400"'
-    body_weights = '["400", "500", "700"]'
-    h_weight_match = re.search(r"heading_weight:\s*(\d+)", preset_content)
-    if h_weight_match:
-        heading_weights = f'"{h_weight_match.group(1)}"'
-
-    # Build layout.tsx
     import_lines = ['import type { Metadata } from "next";']
-    google_imports = []
-    if heading_import:
-        google_imports.append(heading_import)
-    if body_import and body_import != heading_import:
-        google_imports.append(body_import)
-    if google_imports:
-        import_lines.append(f'import {{ {", ".join(google_imports)} }} from "next/font/google";')
+    if fl["import_line"]:
+        import_lines.append(fl["import_line"])
     import_lines.append('import "./globals.css";')
 
-    font_config_lines = []
-    if heading_import:
-        font_config_lines.append(
-            f'const {heading_import.lower()} = {heading_import}({{ subsets: ["latin"], weight: {heading_weights} }});'
-        )
-    if body_import and body_import != heading_import:
-        font_config_lines.append(
-            f'const {body_import.lower()} = {body_import}({{ subsets: ["latin"], weight: {body_weights} }});'
-        )
-
-    # Build font-family CSS fallback for non-Google fonts
-    font_family = f"'{heading_font}', system-ui, sans-serif"
-
-    font_config = chr(10).join(font_config_lines) if font_config_lines else ""
+    font_config = chr(10).join(fl["const_lines"])
     if font_config:
         font_config = chr(10) + font_config + chr(10)
+    html_class_attr = f' className={fl["html_class"]}' if fl["html_class"] else ""
 
     if is_multipage:
         if has_commerce_routes:
@@ -7973,8 +8016,8 @@ export const metadata: Metadata = {{
 
 export default function RootLayout({{ children }}: {{ children: React.ReactNode }}) {{
   return (
-    <html lang="en">
-      <body className="antialiased" style={{{{ fontFamily: "{font_family}" }}}}>
+    <html lang="en"{html_class_attr}>
+      <body className="antialiased">
         <{nav_tag} />
         {{children}}
         <{footer_tag} />
@@ -7993,8 +8036,8 @@ export const metadata: Metadata = {{
 
 export default function RootLayout({{ children }}: {{ children: React.ReactNode }}) {{
   return (
-    <html lang="en">
-      <body className="antialiased" style={{{{ fontFamily: "{font_family}" }}}}>
+    <html lang="en"{html_class_attr}>
+      <body className="antialiased">
         {{children}}
       </body>
     </html>
