@@ -487,14 +487,20 @@ def compliance_declaration(tenant_context: dict | None) -> dict[str, Any]:
     lists are empty when the tenant declares nothing, and `declared` is False.
     """
     values = (tenant_context or {}).get("phase0_field_values") or {}
+    status = (tenant_context or {}).get("phase0_fill_status") or {}
     regulator = values.get("regulatory_body")
+    # Rendered verbatim on the page, so an unconfirmed row is not yet a
+    # declaration. (Prohibited lists are restrictions and stay enforced.)
+    unconfirmed = [k for k in ("required_disclaimers",) if status.get(k) == "needs_confirm"]
     out = {
-        "required_disclaimers": _str_list(values.get("required_disclaimers")),
+        "required_disclaimers": ([] if "required_disclaimers" in unconfirmed
+                                 else _str_list(values.get("required_disclaimers"))),
         "prohibited_terms": _str_list(values.get("prohibited_terms")),
         "prohibited_language": _str_list(values.get("prohibited_language")),
         "licenses": _str_list(values.get("licenses")),
         "regulatory_body": regulator.strip() if isinstance(regulator, str) else "",
     }
+    out["unconfirmed"] = unconfirmed
     out["regulated"] = bool(out["licenses"] or out["regulatory_body"])
     out["declared"] = bool(
         out["required_disclaimers"] or out["prohibited_terms"] or out["regulated"]
@@ -710,11 +716,14 @@ def load_tenant_context(coordinate: str) -> dict[str, Any]:
         errors,
     )
     phase0: dict[str, Any] = {}
+    fill_status: dict[str, Any] = {}
     for r in p0_rows:
         k = r.get("field_key")
         if k:
             phase0[k] = _unwrap(r.get("value"))
+            fill_status[k] = r.get("fill_status")
     ctx["phase0_field_values"] = phase0
+    ctx["phase0_fill_status"] = fill_status
 
     # creative_assets — tenant media.
     ctx["creative_assets"] = _safe_get(

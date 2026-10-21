@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from lib.tenant_context import compliance_declaration  # noqa: E402
 from orchestrate import declared_disclaimers  # noqa: E402
 
 
@@ -36,3 +37,30 @@ def test_declared_list_is_returned_and_blank_entries_dropped():
 def test_declared_empty_list_is_declared_none():
     ctx = {"tenant_id": "x", "phase0_field_values": {"required_disclaimers": []}}
     assert declared_disclaimers(ctx) == ([], "declared")
+
+
+# A fourth state (2026-10-21, operator): THURIS's required_disclaimers were an
+# `amendment` row with fill_status `needs_confirm` -- internal compliance notes
+# that shipped verbatim in the footer. An unconfirmed declaration is not a
+# declaration: it renders nothing, is reported as itself, and the compliance
+# gate does not demand it on the page.
+
+UNCONFIRMED = {"tenant_id": "x",
+               "phase0_field_values": {"required_disclaimers": ["Internal note."]},
+               "phase0_fill_status": {"required_disclaimers": "needs_confirm"}}
+
+
+def test_needs_confirm_disclaimers_are_unconfirmed_and_never_rendered():
+    assert declared_disclaimers(UNCONFIRMED) == ([], "unconfirmed")
+
+
+def test_the_compliance_gate_does_not_require_unconfirmed_disclaimers():
+    decl = compliance_declaration(UNCONFIRMED)
+    assert decl["required_disclaimers"] == []
+    assert decl["unconfirmed"] == ["required_disclaimers"]
+
+
+def test_a_filled_declaration_still_renders():
+    ctx = {**UNCONFIRMED, "phase0_fill_status": {"required_disclaimers": "filled"}}
+    assert declared_disclaimers(ctx) == (["Internal note."], "declared")
+    assert compliance_declaration(ctx)["required_disclaimers"] == ["Internal note."]
