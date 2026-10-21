@@ -10230,6 +10230,7 @@ def run_conformance_gate(
     benchmark: str | None = None,
     results_json=None,
     output_dir=None,
+    style: dict | None = None,
 ) -> dict:
     """Pre-deploy design-conformance gate. A measured violation fails the build.
 
@@ -10251,6 +10252,12 @@ def run_conformance_gate(
     (dna_type_scale, dna_font_families, dna_shadow_layers) and the build is
     therefore red until the templates and the benchmark's font declaration are
     reconciled. That is the gate working.
+
+    `style` — the compiled `site-spec.style`. When it carries tenant overrides
+    or a declared light palette, the gate is held to the EFFECTIVE benchmark
+    (benchmark + `style.tenant_overrides`, operator decision 2026-10-21),
+    written beside the report as `effective-benchmark.json`; the report's
+    `expectation` block names it and lists every declared deviation.
     """
     print("\n═══ DESIGN CONFORMANCE GATE ═══\n")
     gate_script = ROOT / "scripts" / "quality" / "conformance-gate.js"
@@ -10268,6 +10275,35 @@ def run_conformance_gate(
     # A stale report from a previous run must not be mistaken for this one's.
     if report_path.exists():
         report_path.unlink()
+
+    expectation = {"kind": "benchmark", "benchmark": str(benchmark) if benchmark else None}
+    _style = style or {}
+    if benchmark and (_style.get("tenant_overrides") or _style.get("palette_light")):
+        from lib.effective_benchmark import effective_benchmark
+        try:
+            raw_bm = json.loads(Path(benchmark).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return _unmeasured(f"benchmark unreadable for the effective expectation: {exc}")
+        eff = effective_benchmark(raw_bm, _style)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        eff_path = out_dir / "effective-benchmark.json"
+        eff_path.write_text(json.dumps(eff, indent=2, ensure_ascii=False), encoding="utf-8")
+        # Ratified waivers live beside the benchmark as `<stem>.deviations.json`;
+        # they must travel with it or the effective run silently drops them.
+        waivers = Path(benchmark).with_name(Path(benchmark).stem + ".deviations.json")
+        if waivers.exists():
+            _shutil.copyfile(waivers, out_dir / "effective-benchmark.deviations.json")
+        expectation = {
+            "kind": "effective",
+            "benchmark": str(benchmark),
+            "effective_benchmark": str(eff_path),
+            "basis": eff["_effective"]["basis"],
+            "tones": eff["_effective"]["tones"],
+            "declared_deviations": eff["_effective"]["declared_deviations"],
+        }
+        print(f"  expectation: effective style — {len(expectation['declared_deviations'])} "
+              f"declared override(s), tones {expectation['tones']}")
+        benchmark = eff_path
 
     cmd = ["node", str(gate_script), "--output", str(out_dir)]
     if results_json:
@@ -10295,6 +10331,8 @@ def run_conformance_gate(
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
         return _unmeasured(f"unreadable conformance.json: {exc}")
+    report["expectation"] = expectation
+    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
     status = report.get("status", "not_measured")
     if status == "fail":
@@ -12483,6 +12521,7 @@ def main():
                     run_conformance_gate(
                         OUTPUT_DIR / args.project / SITE_DIR_NAME,
                         benchmark=_benchmark_path_for_gate,
+                        style=(site_spec or {}).get("style"),
                     )
                 else:
                     record_gate_result(
@@ -12784,6 +12823,7 @@ def main():
                 run_conformance_gate(
                     OUTPUT_DIR / args.project / SITE_DIR_NAME,
                     benchmark=_benchmark_path_for_gate,
+                    style=(site_spec or {}).get("style"),
                 )
             else:
                 record_gate_result(
