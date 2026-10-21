@@ -203,6 +203,41 @@ def _download(url: str, dest: Path) -> int:
         return 0
 
 
+#: Extensions an operator media directory may serve as page imagery.
+_OPERATOR_MEDIA_EXTS = {".webp", ".jpg", ".jpeg", ".png", ".avif", ".gif", ".svg"}
+
+
+def operator_media(media_dir: Path, source_host: str, fallback=None):
+    """Operator-supplied imagery for a greenfield tenant, resolved from disk.
+
+    An operator-authored source page references `/media/<file>`; the harvest
+    absolutises that onto the source host, which serves nothing. Returns
+    `(entries, download_fn)`: `entries` are asset records on the source host
+    (so the resolver recognises those URLs), and `download_fn(url, dest)`
+    COPIES a URL that names a file in `media_dir` and defers anything else to
+    `fallback` (the network downloader). Only files actually listed in the
+    directory map — a URL that walks out of it is deferred, never copied.
+    """
+    fallback = fallback or _download
+    media_dir = Path(media_dir)
+    by_url: dict[str, Path] = {}
+    if media_dir.is_dir():
+        for f in sorted(media_dir.iterdir()):
+            if f.is_file() and f.suffix.lower() in _OPERATOR_MEDIA_EXTS:
+                by_url[f"https://{source_host}/media/{f.name}"] = f
+    entries = [{"src": url, "origin": "operator-media"} for url in by_url]
+
+    def download_fn(url: str, dest: Path) -> int:
+        src = by_url.get(url.split("?", 1)[0])
+        if src is None:
+            return fallback(url, dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest)
+        return dest.stat().st_size
+
+    return entries, download_fn
+
+
 def _entries(extraction_data: dict) -> list:
     """Flatten every asset record that carries a resolvable URL.
 

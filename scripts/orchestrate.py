@@ -37,6 +37,7 @@ import re
 import subprocess
 import time as _time
 import uuid
+import urllib.parse
 from pathlib import Path
 from datetime import datetime
 
@@ -1457,6 +1458,11 @@ def declared_disclaimers(tenant_context: dict | None) -> tuple[list[str] | None,
     raw = values.get("required_disclaimers")
     if not isinstance(raw, list):
         return None, "undeclared"
+    # `unconfirmed` — declared, but the row is still `needs_confirm`: page text
+    # nobody has approved is not rendered.
+    status = (tenant_context.get("phase0_fill_status") or {}).get("required_disclaimers")
+    if status == "needs_confirm":
+        return [], "unconfirmed"
     return [d for d in raw if isinstance(d, str) and d.strip()], "declared"
 
 
@@ -5800,6 +5806,9 @@ def stage_shared_components(
     )
     if disclaimers:
         print(f"  ✓ Footer carries {len(disclaimers)} declared disclaimer(s) from phase 0")
+    elif disclaimer_status == "unconfirmed":
+        print("  ⊘ Footer carries NO disclaimers — required_disclaimers is declared but still "
+              "needs_confirm; unapproved page text is not rendered.")
     elif disclaimer_status == "undeclared":
         print("  ⊘ Footer carries NO disclaimers — tenant record read, but it does NOT "
               "declare required_disclaimers. NOT_MEASURED: unknown, not 'none required'.")
@@ -6558,7 +6567,7 @@ def stage_resolve_assets(output_dir: Path, extraction_data: dict | None,
     ACCUMULATED and doubled on a repeat run of the same page).
     """
     from lib.section_artifact import SectionArtifact
-    from lib.asset_resolver import resolve_assets, gaps, art_refusals
+    from lib.asset_resolver import resolve_assets, gaps, art_refusals, operator_media
     from lib.image_jobs import brand_from_style, lower_gaps, UncompiledStyle
     from lib.media_cache import (
         cache_root, resolve_cached, publish_to_site, place_slot)
@@ -6589,6 +6598,29 @@ def stage_resolve_assets(output_dir: Path, extraction_data: dict | None,
         print(f"  ⚠ No compiled design system — commissioning nothing ({e})")
 
     cache_dir = Path(media_cache_dir) if media_cache_dir else cache_root(ROOT, tenant)
+
+    # Operator-supplied imagery (greenfield tenants): `intake/<tenant>/assets/
+    # media/` files referenced from the operator-authored source as
+    # `/media/<file>` resolve from disk. Without this the harvest's absolutised
+    # source-host URL is fetched over HTTP, 404s, and every slot stays empty.
+    resolve_kwargs: dict = {}
+    _media_dir = ROOT / "intake" / tenant / "assets" / "media"
+    _spec_path = output_dir / "site-spec.json"
+    if _media_dir.is_dir() and _spec_path.exists():
+        try:
+            _spec = json.loads(_spec_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            _spec = {}
+        _src = _spec.get("source_url") or next(
+            (pg.get("source_url") for pg in _spec.get("pages") or [] if pg.get("source_url")), None)
+        _host = urllib.parse.urlsplit(_src).netloc if _src else ""
+        if _host:
+            _entries, _fetch = operator_media(_media_dir, _host)
+            if _entries:
+                extraction_data = dict(extraction_data or {})
+                extraction_data["images"] = list(extraction_data.get("images") or []) + _entries
+                resolve_kwargs["download_fn"] = _fetch
+                print(f"  ✓ operator media: {len(_entries)} file(s) from {_media_dir}")
 
     def _write_records(lowered_all: dict, hits: int, misses: int) -> None:
         write_file(output_dir / "asset-coverage.json", json.dumps(counts, indent=2))
@@ -6631,7 +6663,8 @@ def stage_resolve_assets(output_dir: Path, extraction_data: dict | None,
         # existing, already-finalized tally is reused as-is.
         dirty = False
         if not a.assets:
-            a = resolve_assets(a, extraction_data or {}, public_dir, section_index=a.section_index)
+            a = resolve_assets(a, extraction_data or {}, public_dir, section_index=a.section_index,
+                               **resolve_kwargs)
             dirty = True
 
         # ── Place commissioned art, if it has already been commissioned ──
