@@ -5674,6 +5674,16 @@ def stage_scaffold_multipage(
     if not get_section_sequence and not preset:
         print("  ⚠ Supabase not available and no preset; cannot load per-page sections. Use --preset for single-page.")
         return manifest
+    # A tenant preset outranks the industry registry only when it says so.
+    tenant_authority = False
+    if preset and site_manifest_lib is not None:
+        _preset_path = SKILLS_DIR / "presets" / f"{preset}.md"
+        if _preset_path.exists():
+            tenant_authority = site_manifest_lib.preset_sequence_authority(
+                _preset_path.read_text(encoding="utf-8")
+            ) == "tenant"
+    if tenant_authority:
+        print(f"  ✓ preset {preset} declares Sequence authority: tenant — it outranks the registry")
     for page in manifest.get("pages", []):
         page_type = page.get("page_type", "homepage")
         page_id = page.get("id", "")
@@ -5692,7 +5702,15 @@ def stage_scaffold_multipage(
             if site_manifest_lib
             else {"handle": page_type, "status": "identity"}
         )
-        if get_section_sequence and registry_pt["handle"]:
+        authority = "registry"
+        if tenant_authority:
+            declared = resolve_preset_section_sequence(preset, page_type)
+            if declared["sections"]:
+                raw = declared["sections"]
+                source = f"preset:{preset}{declared['source']}"
+                status = f"preset_{declared['status']}"
+                authority = "tenant"
+        if not raw and get_section_sequence and registry_pt["handle"]:
             raw = get_section_sequence(industry, registry_pt["handle"]) or []
             if raw:
                 source = f"registry:{industry}/{registry_pt['handle']}"
@@ -5707,6 +5725,7 @@ def stage_scaffold_multipage(
         page["sections"] = site_manifest_lib.filter_nav_footer_from_sections(raw) if site_manifest_lib else raw
         page["sequence_source"] = source
         page["sequence_status"] = status
+        page["sequence_authority"] = authority
         if registry_pt["handle"] is None:
             # Recorded, not silently skipped: this page could never have
             # matched a registry row, whatever the industry.

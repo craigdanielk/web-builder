@@ -293,6 +293,19 @@ def _sequence_from_lines(lines: List[str]) -> List[Dict[str, Any]]:
     return result
 
 
+#: A preset claims rank over the industry registry only by this exact line.
+#: Opt-in, so a tenant preset that never made the claim keeps its old rank.
+_SEQUENCE_AUTHORITY_RE = re.compile(
+    r"^\s*\**\s*Sequence authority:\s*\**\s*(tenant)\s*$", re.IGNORECASE | re.MULTILINE
+)
+
+
+def preset_sequence_authority(markdown: str) -> Optional[str]:
+    """`"tenant"` when the preset declares `Sequence authority: tenant`, else None."""
+    match = _SEQUENCE_AUTHORITY_RE.search(markdown or "")
+    return match.group(1).lower() if match else None
+
+
 def parse_sequence_blocks(markdown: str) -> Dict[str, List[Dict[str, Any]]]:
     """Every declared section sequence in a preset, keyed by page type.
 

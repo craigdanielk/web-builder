@@ -267,3 +267,74 @@ def test_not_found_is_not_applicable_rather_than_empty(monkeypatch, tmp_path):
     )
     nf = next(p for p in out["pages"] if p["id"] == "not-found")
     assert nf["sequence_status"] == "not_applicable"
+
+
+# ---------------------------------------------------------------------------
+# Tenant sequence authority — opt-in, per preset
+# ---------------------------------------------------------------------------
+#
+# The registry is keyed by industry and outranks a preset by default, so a
+# tenant's own declared page structure loses to the generic industry sequence.
+# A preset may claim authority with `Sequence authority: tenant`; only then does
+# it outrank the registry. Opt-in so an existing tenant preset that never made
+# that claim (cape-crypto) keeps its current registry-led homepage.
+
+_AUTHORITY_PRESET = """# Preset: Authority Test (tenant)
+
+Sequence authority: tenant
+
+## Default Section Sequence
+
+```
+1. HERO                 | minimal-text
+2. FAQ                  | accordion
+3. CTA                  | dark-band
+```
+"""
+
+
+def _with_preset(monkeypatch, tmp_path, name, text):
+    import orchestrate
+
+    skills = tmp_path / "skills"
+    (skills / "presets").mkdir(parents=True)
+    (skills / "presets" / f"{name}.md").write_text(text, encoding="utf-8")
+    monkeypatch.setattr(orchestrate, "SKILLS_DIR", skills)
+
+
+def test_preset_declaring_tenant_authority_outranks_the_registry(monkeypatch, tmp_path):
+    registry_row = [{"position": 1, "archetype": "TESTIMONIALS", "variant": "wall"}]
+    orchestrate = _stub_registry(monkeypatch, {("fintech", "homepage"): registry_row}, tmp_path)
+    _with_preset(monkeypatch, tmp_path, "authority-test", _AUTHORITY_PRESET)
+
+    out = orchestrate.stage_scaffold_multipage(
+        _manifest(), "seq-test", "fintech", preset="authority-test"
+    )
+    home = next(p for p in out["pages"] if p["id"] == "homepage")
+    assert [s["archetype"] for s in home["sections"]] == ["HERO", "FAQ", "CTA"]
+    assert home["sequence_source"].startswith("preset:authority-test")
+    assert home["sequence_authority"] == "tenant"
+
+
+def test_preset_without_the_declaration_still_loses_to_the_registry(monkeypatch, tmp_path):
+    """Scope guard: cape-crypto never claimed authority, so its homepage stays
+    registry-led. If this fails, every tenant preset silently changed rank."""
+    registry_row = [{"position": 1, "archetype": "TESTIMONIALS", "variant": "wall"}]
+    orchestrate = _stub_registry(monkeypatch, {("fintech", "homepage"): registry_row}, tmp_path)
+
+    out = orchestrate.stage_scaffold_multipage(
+        _manifest(), "seq-test", "fintech", preset="cape-crypto"
+    )
+    home = next(p for p in out["pages"] if p["id"] == "homepage")
+    assert home["sequence_status"] == "registry"
+    assert home["sequence_authority"] == "registry"
+
+
+def test_authority_is_read_only_from_the_declaration_line():
+    assert sm.preset_sequence_authority(_AUTHORITY_PRESET) == "tenant"
+    assert sm.preset_sequence_authority("**Sequence authority:** tenant") == "tenant"
+    # Prose that merely mentions the words is not a claim.
+    assert sm.preset_sequence_authority(
+        "Tenant preset. Sequence authority is discussed elsewhere."
+    ) is None
+    assert sm.preset_sequence_authority(CAPE_PRESET.read_text(encoding="utf-8")) is None
