@@ -1,0 +1,52 @@
+brand: THURIS
+rule: Alt text must describe what is actually visible after generation. If generated output differs from this target, update
+  alt text before publish.
+assets:
+- file: assets/media/thuris-hero-2400.jpg
+  status: TO_GENERATE
+  alt: THURIS Founding Edition bottles in dark violet-black glass with brushed champagne metal caps on a charcoal stone setting.
+  source: operator-approved product/CI direction
+- file: assets/media/thuris-frankincense-clean-01.jpg
+  status: TO_GENERATE
+  alt: THURIS Frankincense 10 ml bottle on a clean warm neutral background.
+  source: product architecture
+- file: assets/media/thuris-neroli-clean-01.jpg
+  status: TO_GENERATE
+  alt: THURIS Neroli 10 ml bottle on a clean warm neutral background.
+  source: product architecture
+- file: assets/media/thuris-rose-geranium-clean-01.jpg
+  status: TO_GENERATE
+  alt: THURIS Rose Geranium 10 ml bottle on a clean warm neutral background.
+  source: product architecture
+- file: assets/media/thuris-trio-clean-01.jpg
+  status: TO_GENERATE
+  alt: The three THURIS Founding Edition 10 ml bottles shown together on a clean warm neutral background.
+  source: product architecture
+- file: assets/media/thuris-cap-detail-clean-01.jpg
+  status: TO_GENERATE
+  alt: Close view of the THURIS brushed champagne metal cap and dark glass bottle neck.
+  source: operator-approved packaging direction
+- file: assets/media/thuris-box-clean-01.jpg
+  status: TO_GENERATE
+  alt: THURIS 10 ml bottle beside its charcoal presentation box on a clean background.
+  source: operator-approved packaging direction
+- file: assets/media/thuris-dropper-clean-01.jpg
+  status: TO_GENERATE
+  alt: THURIS bottle with concealed glass pipette dropper shown against a clean background.
+  source: operator-approved concealed-dropper packaging direction
+- file: assets/media/thuris-lifestyle-stone-01.jpg
+  status: TO_GENERATE
+  alt: THURIS Founding Edition bottles on dark stone in warm directional light.
+  source: brand image direction
+- file: assets/media/thuris-lifestyle-box-01.jpg
+  status: TO_GENERATE
+  alt: THURIS presentation box and bottle arranged as a luxury gifting object.
+  source: brand image direction
+- file: assets/media/thuris-lifestyle-trio-01.jpg
+  status: TO_GENERATE
+  alt: The THURIS Founding Trio arranged together in a dark editorial still life.
+  source: brand image direction
+- file: assets/media/thuris-og-1200x630.jpg
+  status: TO_GENERATE
+  alt: THURIS wordmark and the Founding Edition trio on a dark violet-black background.
+  source: SEO/social image requirement

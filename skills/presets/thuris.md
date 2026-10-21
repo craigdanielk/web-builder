@@ -7,10 +7,10 @@ Sequence authority: tenant
 
 > **Tenant preset.** Values come from the operator, not from a crawl — THURIS is a
 > greenfield brand (`source_platform: none`). Authority, in order:
-> `output/intake/thuris/RESOLVED-DECISIONS.md` (operator answers 2026-10-21) >
+> `intake/thuris/RESOLVED-DECISIONS.md` (operator answers 2026-10-21) >
 > `THURIS_Brand_CI_Guide_v1.0.pdf` > the planning-agent handoff YAML.
-> The page copy is `output/intake/thuris/THURIS-launch-copy.md`, delivered to the
-> build as an operator-authored capture (`output/intake/thuris/capture-bundle/`).
+> The page copy is `intake/thuris/THURIS-launch-copy.md`, delivered to the
+> build as an operator-authored capture (`intake/thuris/capture-bundle/`).
 
 ---
 

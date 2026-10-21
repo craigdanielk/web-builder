@@ -12,8 +12,8 @@ presents the house and the Founding Collection and takes paid-in-full pre-orders
 disabled until the dispatch window, policies, shipping, tax and payments are approved.
 
 ## Key Requirements
-- Page copy is operator-authored and supplied as a capture: `output/intake/thuris/capture-bundle/`.
-  Copy source: `output/intake/thuris/THURIS-launch-copy.md`. Nothing is invented; `[HOLD]` items
+- Page copy is operator-authored and supplied as a capture: `intake/thuris/capture-bundle/`.
+  Copy source: `intake/thuris/THURIS-launch-copy.md`. Nothing is invented; `[HOLD]` items
   never render.
 - Pre-order via a Shopify selling plan, pay in full at checkout; per-essence cap of 30; the complete
   collection draws one unit from each essence and is disabled when any one is fully reserved.
@@ -32,8 +32,8 @@ disabled until the dispatch window, policies, shipping, tax and payments are app
 - Quietly authoritative — demonstrates rather than claims luxury
 
 ## Specific Requests
-- Brand CI: `output/intake/thuris/assets/logos/THURIS_Brand_CI_Guide_v1.0.pdf`, with the operator's
-  two-mode colour system and decisions in `output/intake/thuris/RESOLVED-DECISIONS.md`.
+- Brand CI: `intake/thuris/assets/logos/THURIS_Brand_CI_Guide_v1.0.pdf`, with the operator's
+  two-mode colour system and decisions in `intake/thuris/RESOLVED-DECISIONS.md`.
 - Logo: temporary raster crops from the CI guide (`assets/logos/pdf-raster/`) until production
   vectors exist.
 - No generated media — image slots stay empty and are recorded.

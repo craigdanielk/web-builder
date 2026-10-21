@@ -1,0 +1,852 @@
+schema_version: '1.0'
+build_target:
+  value: Single-page headless Shopify pre-order site; Next.js on Vercel; Shopify Storefront API.
+  source: operator-declared in current request
+internal_build_directives:
+- Do not render source metadata.
+- Do not render UNKNOWN values as customer-facing copy.
+- Do not enable checkout or publish the pre-order state while any launch_blocker is unresolved.
+- Do not invent reviews, certifications, press, shipping dates, regulatory approvals, product claims, dimensions, weights,
+  analytics IDs, access credentials, or domain ownership.
+- Use the supplied SVG identity assets. Product media is generation-authorized but must follow assets/media-generation-brief.md
+  and assets/alt-text-manifest.yaml.
+launch_blockers:
+- item: confirmed dispatch date/window
+  reason: No production or fulfilment date has been approved.
+  source: 'operator-declared: no ship date supplied in conversation'
+- item: UAE product registration/import route
+  reason: Dubai fragrance products intended for the local market must be registered in Montaji; registration/importing party
+    is not yet identified.
+  source: https://www.dm.gov.ae/wp-content/uploads/2022/07/DM-HSD-GU117-FP2_Technical-Guidelines-for-Fragrance-Products_V1.pdf
+- item: batch-specific supplier documentation
+  reason: COA/GC-MS and the exact meaning of the supplier term “Standardised” for Neroli have not been supplied to the build
+    agent.
+  source: OilGrow March 2026 price list supplied by operator; operator discussion in this conversation
+- item: exact product usage/safety directions
+  reason: Final product classification, formulation documentation and destination-market label review are incomplete.
+  source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+- item: cancellation/refund policy approval
+  reason: No final operator-approved cross-market policy has been supplied.
+  source: 'operator-declared gap; US pre-order timing/refund baseline: https://www.ftc.gov/legal-library/browse/rules/mail-internet-or-telephone-order-merchandise-rule'
+- item: shipping zones/rates/tax/payment gateway
+  reason: No carrier, 3PL, gateway or landed-cost configuration has been approved.
+  source: operator-declared gap
+- item: Shopify/Vercel access
+  reason: No THURIS store, Headless channel, Admin API app, or Vercel project access details have been supplied.
+  source: operator-declared gap
+- item: custom domain
+  reason: No domain has been purchased/confirmed for THURIS.
+  source: operator-declared gap
+identity_legal:
+  slug:
+    value: thuris
+    source: operator-declared selection in this conversation
+  trading_name:
+    value: THURIS
+    source: operator-declared selection in this conversation
+  legal_name:
+    value: Aweku Laboratories (Pty) Ltd
+    source: operator-declared in prior project conversation
+  registration_number:
+    value: UNKNOWN
+    reason: South African company registration number has not been supplied in this conversation or project context.
+  jurisdiction:
+    value: South Africa
+    source: operator-declared legal entity jurisdiction in prior project conversation
+  domain:
+    value: UNKNOWN
+    reason: THURIS custom domain has not been purchased or registrar-confirmed. thuris.com and thuris.co are occupied; thurisparfums.com
+      and thuris.ae were discussed as candidates only.
+  preferred_domain_candidates:
+  - value: thurisparfums.com
+    status: candidate-only; availability not registrar-confirmed
+    source: research/recommendation in this conversation
+  - value: thuris.ae
+    status: candidate-only; availability not registrar-confirmed
+    source: research/recommendation in this conversation
+  industry:
+    value: luxury-premium
+    source: operator-declared upper-echelon luxury positioning
+  target_markets:
+  - value: United Arab Emirates
+    priority: primary launch market
+    source: operator-declared throughout this conversation
+  - value: United States
+    priority: secondary expansion market
+    source: operator-declared throughout this conversation
+  operating_countries:
+  - value: South Africa
+    source: operator-declared legal/operating base
+  currencies:
+  - value: AED
+    role: primary customer-facing launch currency
+    source: operator-declared UAE-first strategy and approved financial model
+  - value: USD
+    role: planned secondary market currency; do not enable until US launch is approved
+    source: operator-declared US secondary market
+  - value: ZAR
+    role: internal planning/accounting currency; do not present as launch storefront currency
+    source: operator-declared financial model
+  restricted_markets:
+    value: UNKNOWN
+    reason: No approved cross-border shipping/compliance matrix exists yet. Do not infer countries that can legally receive
+      fragrance oils.
+  required_disclaimers:
+    value: UNKNOWN
+    reason: Exact legally required website/label disclaimers depend on final product classification, batch documentation,
+      directions for use and destination-market compliance review.
+  prohibited_terms:
+  - value: therapeutic grade
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: healing
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: cures
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: treats
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: anti-inflammatory
+    source: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/it-cosmetic-drug-or-both-or-it-soap
+  - value: anxiety relief
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: sleep aid
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: immune support
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: medical
+    source: https://www.fda.gov/cosmetics/cosmetics-laws-regulations/it-cosmetic-drug-or-both-or-it-soap
+  prohibited_language:
+  - value: Any statement that diagnoses, treats, prevents or cures disease, or claims to affect body structure/function.
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: Any unverified purity, organic, ethical-sourcing, sustainability, clinical, certification or testing claim.
+    source: operator governance rule in current request; supplier batch evidence not yet provided
+  - value: Any statement implying all three botanicals are South African.
+    source: 'OilGrow March 2026 price list supplied by operator: Frankincense India; Neroli France; Rose Geranium South Africa'
+  regulatory_body_licences:
+  - body: Dubai Municipality — Montaji
+    requirement: Fragrance products placed on the Dubai local market are subject to consumer-product registration; the applicant
+      must hold a relevant UAE licence.
+    status: UNKNOWN — applicant/importer and THURIS product registrations are not yet established.
+    source: https://www.dm.gov.ae/wp-content/uploads/2022/07/DM-HSD-GU117-FP2_Technical-Guidelines-for-Fragrance-Products_V1.pdf
+  - body: Dubai Municipality — consumer-product e-commerce/import controls
+    requirement: Consumer products intended for Dubai are required to be registered before importation under the cited e-commerce
+      guidance.
+    status: UNKNOWN — route to market has not been finalised.
+    source: https://www.dm.gov.ae/wp-content/uploads/2022/12/DM-HSD-GU18-ECOM2_Technical-Guidelines-for-Consumer-Products-E-Commerce_V1.pdf
+  - body: United States FDA/FTC
+    requirement: If marketed only as fragrance/cosmetic, claims must remain cosmetic; therapeutic claims can change regulatory
+      status. Internet sellers must have a reasonable basis for stated ship timing and handle delays/refunds as required by
+      the FTC rule.
+    status: US is secondary market; compliance work not completed.
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy ; https://www.ftc.gov/legal-library/browse/rules/mail-internet-or-telephone-order-merchandise-rule
+brand_ci:
+  logo:
+    primary:
+      file: assets/logos/thuris-primary.svg
+      source: design synthesis from operator-approved THURIS name and dark-violet/champagne-metal CI direction
+    mono:
+      file: assets/logos/thuris-mono.svg
+      source: same as primary
+    inverse:
+      file: assets/logos/thuris-inverse.svg
+      source: same as primary
+    icon:
+      file: assets/logos/thuris-icon.svg
+      source: same as primary
+    favicon:
+      file: assets/logos/thuris-favicon.svg
+      source: same as primary
+    clear_space_rule:
+      value: Keep clear space on every side equal to at least 50% of the wordmark cap height.
+      source: design specification for this handoff
+    min_size_rule:
+      value: 'Wordmark: 120 CSS px minimum width on screen. Icon: 24 CSS px minimum. Do not use the full wordmark as a favicon.'
+      source: design specification for this handoff
+  palette:
+    bg_primary:
+      value: '#09070B'
+      source: design synthesis from operator-approved near-black/violet direction
+    bg_secondary:
+      value: '#120D14'
+      source: design synthesis from operator-approved near-black/violet direction
+    surface:
+      value: '#18111A'
+      source: design synthesis from operator-approved near-black/violet direction
+    surface_inverse:
+      value: '#F1E9DB'
+      source: 'design synthesis: warm parchment contrast surface'
+    text_primary:
+      value: '#F4EEE4'
+      source: 'design synthesis: warm ivory text'
+    text_muted:
+      value: '#A69A91'
+      source: 'design synthesis: muted warm neutral'
+    accent:
+      value: '#C1A36B'
+      source: design synthesis from operator-approved brushed champagne metal / gold typography direction
+    on_accent:
+      value: '#0B080C'
+      source: contrast pairing for accent
+    border:
+      value: '#312832'
+      source: 'design synthesis: restrained violet-charcoal border'
+    accent_secondary:
+      value: '#5A3145'
+      source: design synthesis from operator-approved dark violet glass direction
+  typography:
+    heading_font:
+      value: EB Garamond
+      weights:
+      - 400
+      - 500
+      - 600
+      source: design specification; Google Fonts family under SIL Open Font License 1.1
+    body_font:
+      value: Inter
+      weights:
+      - 400
+      - 500
+      - 600
+      source: design specification; Google Fonts family under SIL Open Font License 1.1
+    mono:
+      value: none
+      source: design specification
+    font_files:
+      value: none bundled; load via Google Fonts or self-host project-approved OFL builds. Do not copy font files from this
+        handoff environment.
+      source: build requirement
+    google_fonts:
+      value:
+      - EB Garamond
+      - Inter
+      source: design specification
+  radius:
+    buttons:
+      value: 0px
+      source: 'design specification: architectural, not soft SaaS styling'
+    cards:
+      value: 0px
+      source: design specification
+  density:
+    value: airy
+    source: operator-approved upper-echelon luxury direction
+  motion:
+    intensity:
+      value: subtle
+      source: design specification
+    character:
+      value: Slow, weighted reveals; restrained fades and vertical translation; no bouncy easing, autoplay carousels, cursor
+        gimmicks or aggressive parallax. Respect prefers-reduced-motion.
+      source: design specification aligned to operator luxury direction
+  image_direction:
+    treatment:
+      value: Cinematic product still life with deep violet-black glass, brushed champagne metal, charcoal/stone surfaces,
+        warm directional highlights, deep controlled shadows and generous negative space. Botanical material appears as restrained
+        evidence of origin, not wellness decoration.
+      source: operator-approved bottle/CI direction plus homepage design discussion
+    lighting:
+      value: Low-key studio light; warm side/rim light on metal and glass; readable label plane; no blown highlights.
+      source: design specification
+    backgrounds:
+      value: Obsidian, charcoal stone, smoked plum, near-black; occasional warm parchment product-detail surface.
+      source: design specification
+    do:
+    - value: Make the bottle the hero object and preserve material realism.
+      source: operator-approved luxury object positioning
+    - value: Use macro details of glass thickness, cap finish, box texture and botanical material only when those details
+        match the final production specification.
+      source: operator-approved packaging focus
+    - value: Keep UAE relevance sophisticated and indirect through fragrance culture, materiality and ritual.
+      source: https://www.visitdubai.com/articles/oud-and-bakhoor
+    dont:
+    - value: No generic spa imagery, towels, candles, yoga poses, diffuser clichés or wellness stock photography.
+      source: operator-declared rejection of commodity wellness positioning
+    - value: No pseudo-Arabic ornament, mosque imagery, desert stereotypes, or unapproved Arabic calligraphy.
+      source: 'brand strategy: culturally respectful UAE positioning'
+    - value: No fake certification seals, medals, review stars, press logos or laboratory imagery.
+      source: 'operator build rule: real proof only'
+  brand_voice:
+    value: Restrained, precise, sensory, provenance-first, assured without hype. Write like a fragrance house describing materials,
+      not a wellness brand promising outcomes.
+    source: operator-declared positioning and UAE cultural research
+  content_tone:
+    value: Short declarative lines, editorial pacing, specific nouns, minimal adjectives. Luxury comes from detail and restraint
+      rather than superlatives.
+    source: design/content strategy for this handoff
+  words_we_use:
+  - value: THURIS
+    source: operator-declared brand name
+  - value: Founding Edition
+    source: operator-approved founding-release architecture
+  - value: botanical oil
+    source: supplier/product category and operator positioning
+  - value: provenance
+    source: operator positioning
+  - value: origin
+    source: operator positioning
+  - value: edition
+    source: operator positioning
+  - value: ritual
+    source: UAE fragrance-culture positioning; https://www.visitdubai.com/articles/oud-and-bakhoor
+  - value: trace
+    source: brand concept developed in this conversation
+  - value: 10 ml
+    source: operator-approved product format / supplier price list
+  words_never_use:
+  - value: miracle
+    source: brand governance
+  - value: healing
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: therapeutic grade
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: detox
+    source: brand governance; avoid unsupported health claims
+  - value: cure
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - value: clinical
+    source: no clinical evidence supplied
+  - value: 100% pure
+    source: do not publish until batch-specific supplier documentation supports the exact claim
+  - value: single-origin
+    source: do not publish until supplier chain-of-custody documentation supports it for the specific batch
+design_benchmark:
+- url: https://amouage.com/en-ae
+  take_from: House-level hierarchy, exceptional-product framing, generous editorial pacing, premium gifting cues and UAE/KSA
+    luxury-commerce expectations. Do not copy its layouts or language.
+  source: https://amouage.com/en-ae
+- url: https://www.aesop.com/fragrance/marrakech-intense-eau-de-parfum/FR39.html
+  take_from: Product-first storytelling, high information density without visual clutter, disciplined typography, clear price/size/add-to-cart
+    structure, ingredient/usage disclosure and editorial image sequencing. Do not copy its layouts or language.
+  source: https://www.aesop.com/fragrance/marrakech-intense-eau-de-parfum/FR39.html
+- url: https://www.lelabofragrances.com/santal-33-147.html?size=100ml
+  take_from: Restraint, strong product naming, personalization/detail hierarchy and confident whitespace. Do not copy its
+    layouts or language.
+  source: https://www.lelabofragrances.com/santal-33-147.html?size=100ml
+market_cro_research:
+  positioning_statement:
+    text: THURIS is a limited botanical-oil house for fragrance-literate customers who value material, provenance, ritual
+      and collectible presentation over mass-market wellness language.
+    source: operator-declared upper-echelon UAE positioning + https://www.visitdubai.com/articles/oud-and-bakhoor
+  primary_value_prop:
+    text: Three origin-led botanical oils, presented as one numbered founding release.
+    source: operator-approved three-product launch and 90-bottle opening model
+  core_benefits:
+  - text: Three clearly named botanicals with declared source countries.
+    source: OilGrow March 2026 price list supplied by operator
+  - text: A 10 ml format designed as a luxury object rather than a commodity essential-oil bottle.
+    source: operator-approved packaging direction and product format
+  - text: 'A launch cap of 90 filled bottles: 30 Frankincense, 30 Neroli and 30 Rose Geranium.'
+    source: operator-approved financial planner v9 / current conversation
+  - text: Available individually or as the complete three-bottle Founding Trio.
+    source: operator-approved commercial model in this conversation
+  market_context:
+  - claim: Fragrance is a prominent part of Arabian life in Dubai, with oud and bakhoor embedded in personal scent and home/hospitality
+      culture.
+    source: https://www.visitdubai.com/articles/oud-and-bakhoor
+  - claim: Dubai Municipality treats perfumes as consumer products subject to registration and health/safety controls for
+      the local market.
+    source: https://www.dm.gov.ae/dubai-municipalitys-montaji-app/
+  competitors:
+  - name: Delune Dubai
+    usp: Premium pure-essential-oil presentation with batch-quality positioning; Neroli 10 ml is listed at AED 449 and was
+      shown sold out in the cited page.
+    source: https://delune.ae/products/neroli-pure-essential-oil
+    how_thuris_wins: Do not claim product superiority. Differentiate through a tighter three-product founding edition, numbered
+      scarcity, stronger object/packaging theatre and a frankincense-led house narrative.
+    strategy_source: operator-approved brand and launch strategy
+  - name: Nagaad
+    usp: Frankincense-specialist assortment with multiple Boswellia species, accessible pricing and established customer-review
+      volume; Carterii 10 ml is listed at AED 112 on the cited page.
+    source: https://nagaad.ae/products/frankincense-carterii-essential-oil
+    how_thuris_wins: Do not compete on breadth or therapeutic claims. Compete on restrained luxury presentation, a curated
+      three-product edition and gift/collector appeal.
+    strategy_source: operator-approved positioning; Nagaad source above
+  - name: Aroma Tierra
+    usp: Broad organic essential-oil catalogue, accessible price points and quick UAE delivery; Rose Geranium 10 ml is listed
+      at AED 85 on the cited page.
+    source: https://www.aromatierra.com/products/geranium-organic-essential-oil
+    how_thuris_wins: Do not compete as a wellness catalogue. Position THURIS as a limited luxury house with fewer products,
+      stronger art direction and collectible packaging.
+    strategy_source: operator-approved positioning; Aroma Tierra source above
+  - name: Amouage
+    usp: High perfumery from Oman with strong regional heritage, exceptional extraits, attars, gifting and premium service.
+    source: https://amouage.com/en-ae
+    how_thuris_wins: Amouage is a benchmark, not a head-to-head target. THURIS differs through single-botanical-format products,
+      lower entry format and a small founding release rather than composed fine fragrance.
+    strategy_source: operator-approved product architecture + Amouage source above
+  buyer_personas:
+  - name: UAE fragrance connoisseur
+    demographics: Affluent adult fragrance buyer in the UAE; exact age, gender split and income are UNKNOWN because THURIS
+      has no first-party customer data yet.
+    fear: Paying luxury pricing for commodity-grade oil or unsubstantiated marketing.
+    wish: To discover a distinctive, beautifully presented aromatic material with a credible story and limited availability.
+    hate: Wellness clichés, discount language, fake scarcity, fake science and generic amber-dropper packaging.
+    trust_signals:
+    - clear botanical name and source country
+    - batch-specific documentation when available
+    - transparent pre-order timing
+    - premium physical presentation
+    - clear cancellation/shipping terms
+    purchase_triggers:
+    - limited founding allocation
+    - material/packaging quality
+    - frankincense/incense cultural resonance
+    - gifting suitability
+    - provenance detail
+    source: CRO hypothesis derived from operator-declared upper-echelon UAE ICP + https://www.visitdubai.com/articles/oud-and-bakhoor;
+      no THURIS customer data yet
+  - name: Luxury gifting buyer
+    demographics: Adult UAE gifting buyer; exact demographic profile is UNKNOWN because THURIS has no first-party customer
+      data yet.
+    fear: A gift that feels generic, inexpensive or difficult to understand.
+    wish: A compact, premium object with a strong presentation moment and a clear story.
+    hate: Cheap promotional cues, cluttered packaging and unclear delivery dates.
+    trust_signals:
+    - presentation-box photography
+    - clear inclusion list
+    - gift-ready product presentation
+    - dispatch window
+    - secure checkout
+    purchase_triggers:
+    - Founding Trio
+    - limited allocation
+    - presentation quality
+    - occasion-independent luxury
+    source: 'CRO hypothesis from operator-declared luxury/gifting strategy; Amouage gifting benchmark: https://amouage.com/en-ae'
+  - name: International niche-fragrance buyer
+    demographics: Adult niche-fragrance customer; United States is the planned secondary market. Exact demographics are UNKNOWN
+      because THURIS has no first-party customer data yet.
+    fear: Unfamiliar brand, unclear product use and uncertain cross-border delivery.
+    wish: A new house with a distinct point of view and transparent product detail.
+    hate: Overclaiming, vague ingredients and hidden shipping/tax surprises.
+    trust_signals:
+    - exact product naming
+    - transparent origin
+    - clear product classification/use instructions
+    - shipping/tax clarity
+    - straightforward pre-order policy
+    purchase_triggers:
+    - new-house discovery
+    - limited edition
+    - design quality
+    - product specificity
+    source: 'CRO hypothesis from operator-declared US expansion target; regulatory claim caution: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy'
+  preorder_objections:
+  - question: Why pre-order instead of buying in stock?
+    answer: The Founding Edition is planned as a capped opening release. Pre-ordering reserves stock from that opening allocation
+      before dispatch.
+    source: operator-approved limited-release/pre-order strategy and 90-bottle financial model
+  - question: When will my order ship?
+    answer: UNKNOWN
+    reason: No defensible dispatch window has been approved. Do not open paid pre-orders until one exists.
+    source: 'operator-declared gap; US timing baseline: https://www.ftc.gov/legal-library/browse/rules/mail-internet-or-telephone-order-merchandise-rule'
+  - question: What exactly am I buying?
+    answer: 'A 10 ml THURIS botanical oil in one of three editions: Frankincense, Neroli or Rose Geranium; the complete Founding
+      Trio contains one of each.'
+    source: OilGrow March 2026 price list supplied by operator + operator-approved three-product commercial model
+  - question: Is this an eau de parfum?
+    answer: No. THURIS is launching these products as 10 ml botanical oils, not eau de parfum.
+    source: operator-approved product architecture / supplier product format
+  - question: Can I apply it directly to my skin?
+    answer: UNKNOWN
+    reason: Final directions for use must follow product classification and batch-specific safety documentation.
+    source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+  - question: How do I know the oils are pure?
+    answer: THURIS will not publish a purity claim until batch-specific supplier documentation supports it. The supplier states
+      that certificates of analysis are available on request, but those batch documents are not yet in the build input.
+    source: OilGrow March 2026 price list supplied by operator
+  - question: What does “Standardised” mean for the Neroli?
+    answer: UNKNOWN
+    reason: The supplier uses “Standardised” in its price list, but the formulation meaning has not yet been clarified. This
+      must be resolved before product-detail copy is final.
+    source: OilGrow March 2026 price list supplied by operator
+  - question: Can I cancel a pre-order?
+    answer: UNKNOWN
+    reason: Exact operator-approved cancellation/refund terms have not been finalised.
+    source: 'operator-declared gap; US delay/refund baseline: https://www.ftc.gov/legal-library/browse/rules/mail-internet-or-telephone-order-merchandise-rule'
+  - question: Where do you ship?
+    answer: UNKNOWN
+    reason: No approved 3PL/carrier/compliance shipping matrix exists.
+    source: operator-declared gap
+  - question: Are duties and taxes included?
+    answer: UNKNOWN
+    reason: No approved tax/importer-of-record/landed-duty treatment exists.
+    source: operator-declared gap
+  proof:
+    value: NONE
+    reason: THURIS is a pre-launch brand with no approved customer reviews, beta quotes, press, awards or brand-level certifications.
+      Supplier claims are not THURIS proof and must not be presented as such.
+    source: 'operator-declared pre-launch state and build rule: REAL ONLY'
+page_copy:
+  hero:
+    eyebrow:
+      text: THE FOUNDING EDITION
+      source: operator-approved release architecture
+    headline:
+      text: A trace of origin.
+      source: brand concept developed in this conversation
+    subhead:
+      text: 'THURIS presents its first release: Frankincense, Neroli and South African Rose Geranium in 10 ml botanical oils,
+        offered by pre-order in a limited opening edition.'
+      source: OilGrow March 2026 price list supplied by operator + operator-approved launch model
+    cta_label:
+      text: Reserve the Founding Edition
+      source: operator-declared pre-order objective
+    ship_date_line:
+      text: UNKNOWN
+      reason: No confirmed dispatch date/window exists. Paid pre-order CTA must remain disabled until resolved.
+      source: operator-declared gap; https://www.ftc.gov/legal-library/browse/rules/mail-internet-or-telephone-order-merchandise-rule
+  sections:
+  - id: brand-origin
+    heading:
+      text: THURIS
+      source: operator-declared brand name
+    body:
+      text: 'The name comes from Latin thūs, thūris: incense; frankincense. The house begins with the material at the centre
+        of its name, then opens outward to a tightly edited collection of botanical oils.'
+      source: https://latin-dictionary.net/definition/37174/thus-thuris ; operator-approved launch architecture
+  - id: founding-three
+    heading:
+      text: The Founding Three
+      source: operator-approved three-product launch
+    body:
+      text: Frankincense. Neroli. Rose Geranium. Three 10 ml botanical oils chosen for the first THURIS release.
+      source: OilGrow March 2026 price list supplied by operator + operator-approved product selection
+    product_cards:
+    - name: Frankincense
+      detail: Boswellia serrata · India · 10 ml
+      price: AED 395
+      source: OilGrow March 2026 price list supplied by operator + operator-approved financial model v9
+    - name: Neroli
+      detail: Citrus aurantium blossom · France · 10 ml
+      price: AED 445
+      source: OilGrow March 2026 price list supplied by operator + operator-approved financial model v9
+    - name: Rose Geranium
+      detail: Pelargonium graveolens · South Africa · 10 ml
+      price: AED 395
+      source: OilGrow March 2026 price list supplied by operator + operator-approved financial model v9
+  - id: founding-trio
+    heading:
+      text: The complete Founding Trio
+      source: operator-approved collection architecture
+    body:
+      text: One of each 10 ml edition. Frankincense, Neroli and Rose Geranium presented together as the first THURIS collection.
+      source: operator-approved collection architecture
+    price:
+      text: AED 1,111.50
+      source: 'operator-approved financial model: AED 395 + AED 445 + AED 395 less 10% Founder Collection discount'
+  - id: benefits
+    heading:
+      text: What defines the first release
+      source: brand/content strategy for this handoff
+    items:
+    - text: Named botanical species and source country.
+      source: OilGrow March 2026 price list supplied by operator
+    - text: A 10 ml format across all three launch products.
+      source: operator-approved product format / supplier price list
+    - text: 'Ninety launch bottles: thirty of each botanical oil.'
+      source: operator-approved financial model v9
+    - text: Available individually or as the complete Founding Trio.
+      source: operator-approved commercial model
+  - id: preorder-how
+    heading:
+      text: How pre-order works
+      source: operator-declared pre-order model
+    steps:
+    - step: '01'
+      title: Choose your edition
+      body: Reserve an individual 10 ml botanical oil or the complete Founding Trio.
+      source: operator-approved offer architecture
+    - step: '02'
+      title: Pay in full
+      body: Your order is paid at checkout to reserve your allocation from the Founding Edition.
+      source: 'operator-declared validation strategy: real paid pre-orders; selected model pay-in-full-now'
+    - step: '03'
+      title: Dispatch in the published window
+      body: Pre-orders will only open once a dispatch window can be stated clearly. If that window changes, THURIS will contact
+        affected customers with the next action required under the published pre-order policy.
+      source: https://www.ftc.gov/legal-library/browse/rules/mail-internet-or-telephone-order-merchandise-rule ; operator
+        launch-gate decision
+  - id: faq
+    heading:
+      text: Questions before you reserve
+      source: CRO structure for this handoff
+    qa:
+    - q: What is THURIS?
+      a: THURIS is a luxury botanical-oil house launching with Frankincense, Neroli and Rose Geranium in 10 ml editions.
+      source: operator-approved positioning and product architecture
+    - q: What does THURIS mean?
+      a: 'THURIS is drawn from the Latin thūs, thūris: incense; frankincense.'
+      source: https://latin-dictionary.net/definition/37174/thus-thuris
+    - q: How many bottles are in the Founding Edition?
+      a: 'The opening plan is ninety bottles: thirty Frankincense, thirty Neroli and thirty Rose Geranium. A Founding Trio
+        uses one bottle of each.'
+      source: operator-approved financial model v9
+    - q: Are these perfumes?
+      a: They are 10 ml botanical oils, not eau de parfum.
+      source: operator-approved product architecture / supplier product format
+    - q: When will pre-orders ship?
+      a: UNKNOWN
+      reason: No approved dispatch window exists. Do not render this FAQ item or enable pre-order checkout until resolved.
+      source: operator-declared gap
+    - q: Can I apply the oils directly to skin?
+      a: UNKNOWN
+      reason: Usage directions require final batch documentation and regulatory review. Do not publish topical-use instructions
+        yet.
+      source: https://www.fda.gov/cosmetics/cosmetic-products/aromatherapy
+    - q: Can I cancel my pre-order?
+      a: UNKNOWN
+      reason: Exact operator-approved cancellation/refund policy is not final. Do not render until resolved.
+      source: operator-declared gap
+    - q: Where does THURIS ship?
+      a: UNKNOWN
+      reason: Shipping zones/rates are not approved. Do not render until resolved.
+      source: operator-declared gap
+    - q: Are duties and taxes included?
+      a: UNKNOWN
+      reason: Tax/import treatment is not approved. Do not render until resolved.
+      source: operator-declared gap
+  - id: final-cta
+    heading:
+      text: The first trace begins here.
+      source: brand concept developed in this conversation
+    body:
+      text: Ninety launch bottles. Thirty of each botanical oil. Reserve an individual edition or the complete Founding Trio.
+      source: operator-approved financial model v9 and offer architecture
+    cta:
+      text: Reserve the Founding Edition
+      source: operator-declared pre-order objective
+  waitlist_sold_out_message:
+    text: The Founding Edition is fully allocated. Join the THURIS release list for the next opening.
+    source: CRO copy for operator-approved limited-release model
+  footer:
+    links:
+    - label: Pre-order Policy
+      href: /policies/preorder
+      source: build requirement
+    - label: Shipping
+      href: /policies/shipping
+      source: build requirement
+    - label: Returns & Refunds
+      href: /policies/refunds
+      source: build requirement
+    - label: Privacy
+      href: /policies/privacy
+      source: Shopify/legal baseline route
+    - label: Terms
+      href: /policies/terms
+      source: Shopify/legal baseline route
+    - label: Contact
+      href: /contact
+      source: build requirement
+    policy_text:
+      text: UNKNOWN
+      reason: Exact legal policy text has not been approved and must be completed before paid pre-orders open.
+      source: operator-declared gap
+  seo:
+    title:
+      text: THURIS | The Founding Edition
+      source: brand + release architecture
+    meta_description:
+      text: 'Pre-order the THURIS Founding Edition: 10 ml Frankincense, Neroli and South African Rose Geranium, available
+        individually or as the complete trio.'
+      source: operator-approved product/pricing architecture
+    og_image:
+      file: assets/media/thuris-og-1200x630.jpg
+      status: TO_GENERATE
+      source: media brief in assets/media-generation-brief.md
+product_preorder:
+  product:
+    title:
+      value: THURIS — The Founding Edition
+      source: operator-approved brand/release architecture
+    handle:
+      value: the-founding-edition
+      source: build specification
+    description:
+      value: 'The first THURIS release brings together three 10 ml botanical oils: Frankincense (Boswellia serrata) from India,
+        Neroli (Citrus aurantium blossom) from France, and Rose Geranium (Pelargonium graveolens) from South Africa. Reserve
+        an individual edition or the complete Founding Trio.'
+      source: OilGrow March 2026 price list supplied by operator + operator-approved offer architecture
+    variants:
+    - option: Frankincense 10 ml
+      sku: THU-FRA-10-001
+      price_aed: '395.00'
+      compare_at_price: none
+      inventory_cap_bottles: 30
+      raw_oil_origin: India
+      source: operator-approved financial model v9 + OilGrow March 2026 price list
+    - option: Neroli 10 ml
+      sku: THU-NER-10-001
+      price_aed: '445.00'
+      compare_at_price: none
+      inventory_cap_bottles: 30
+      raw_oil_origin: France
+      source: operator-approved financial model v9 + OilGrow March 2026 price list
+    - option: Rose Geranium 10 ml
+      sku: THU-RGE-10-001
+      price_aed: '395.00'
+      compare_at_price: none
+      inventory_cap_bottles: 30
+      raw_oil_origin: South Africa
+      source: operator-approved financial model v9 + OilGrow March 2026 price list
+    - option: Founding Trio — 3 × 10 ml
+      sku: THU-TRIO-001
+      price_aed: '1111.50'
+      compare_at_price: none
+      inventory_rule: Consumes one unit from each of the three underlying 30-bottle SKU pools. Disable the Trio if any underlying
+        SKU reaches zero.
+      source: operator-approved Founder Collection 10% discount and 90-bottle opening allocation
+    weight:
+      value: UNKNOWN
+      reason: Final bottle, closure, box and filled shipping weight are not supplier-confirmed.
+    dimensions:
+      value: UNKNOWN
+      reason: Final production bottle and presentation-box dimensions are not supplier-confirmed.
+    hs_code:
+      value: UNKNOWN
+      reason: Final customs classification must be confirmed against product composition/use and destination-country tariff
+        rules; do not infer a code from raw essential-oil headings.
+    country_of_origin_for_customs:
+      value: UNKNOWN
+      reason: Raw-oil origins are known, but the legal origin of the finished filled/packed product has not been determined.
+    raw_material_origins:
+    - product: Frankincense
+      value: India
+      source: OilGrow March 2026 price list supplied by operator
+    - product: Neroli
+      value: France
+      source: OilGrow March 2026 price list supplied by operator
+    - product: Rose Geranium
+      value: South Africa
+      source: OilGrow March 2026 price list supplied by operator
+  preorder_model:
+    value: pay-in-full-now
+    source: 'operator-declared strategy: use real paid pre-orders as validation; Shopify selling plans support pre-order purchase
+      options: https://shopify.dev/docs/api/storefront/latest/objects/SellingPlan'
+  ship_date:
+    value: UNKNOWN
+    reason: No defensible production/dispatch date or window has been approved. This is a hard launch blocker.
+  delay_customer_treatment:
+    value: If the promised dispatch window changes, email affected customers before the original commitment expires and follow
+      the approved pre-order/refund policy; do not silently move the date.
+    source: 'US baseline: https://www.ftc.gov/legal-library/browse/rules/mail-internet-or-telephone-order-merchandise-rule'
+  unit_cap:
+    value: 90
+    breakdown: 30 Frankincense + 30 Neroli + 30 Rose Geranium; Trio draws one from each pool.
+    source: operator-approved financial model v9
+  cap_hit_behaviour:
+    value: Disable sold-out SKU. Disable the Founding Trio if any of its three component SKU pools is exhausted. When all
+      launch inventory is allocated, replace purchase CTA with the release-list waitlist.
+    source: build specification derived from approved 30-per-SKU cap
+  cancellation_refund_policy:
+    value: UNKNOWN
+    reason: Exact policy text has not been operator-approved and requires UAE/US consumer-law review before paid pre-orders
+      open.
+  mixed_cart_rule:
+    value: Do not mix pre-order and in-stock items in the initial launch cart.
+    source: build/CRO specification to keep delivery expectations unambiguous; no in-stock THURIS catalogue exists yet
+  shipping_zones_rates:
+    value: UNKNOWN
+    reason: No 3PL, carrier, destination matrix or rates have been approved.
+  tax_handling:
+    value: UNKNOWN
+    reason: No UAE VAT/importer-of-record or US sales-tax configuration has been approved.
+  payment_methods:
+    value: UNKNOWN
+    reason: No Shopify payment gateway/account configuration has been supplied.
+  shopify_implementation:
+    selling_plan_required:
+      value: true
+      source: 'Selected pre-order model; Shopify Storefront API SellingPlan supports pre-orders: https://shopify.dev/docs/api/storefront/latest/objects/SellingPlan'
+    storefront_scope:
+      value: unauthenticated_read_selling_plans
+      source: https://shopify.dev/docs/api/storefront/latest/objects/SellingPlan
+    admin_creation_access:
+      value: UNKNOWN
+      reason: Admin API app and selling-plan/product/publication scopes have not been confirmed.
+  email_touchpoints:
+    confirmation:
+      subject: Your THURIS Founding Edition reservation is confirmed
+      body: Thank you for reserving from the THURIS Founding Edition. Your order is paid in full. Your confirmed dispatch
+        window and order details are shown in your order confirmation. We will email you again when your order is dispatched.
+      source: pay-in-full model + launch communication specification; render only after dispatch window exists
+    delay_notice:
+      subject: An update to your THURIS pre-order
+      body: We will not be able to dispatch your order within the window originally stated. This notice must include the approved
+        revised dispatch date or state that a revised date is not yet available, and must present the cancellation/refund
+        choice required by the final policy.
+      source: https://www.ftc.gov/business-guidance/resources/business-guide-ftcs-mail-internet-or-telephone-order-merchandise-rule
+    charge_notice:
+      value: NOT_APPLICABLE
+      reason: The selected pre-order model charges the full amount at checkout; there is no later balance charge.
+      source: operator-selected pay-in-full-now model
+    shipped:
+      subject: Your THURIS order has been dispatched
+      body: Your THURIS order has been dispatched. Use the carrier tracking information in this email to follow delivery.
+      source: standard fulfilment event copy; carrier/tracking integration remains UNKNOWN until fulfilment is selected
+media:
+  generation_allowed:
+    value: true
+    source: operator asked the build handoff to include generation briefs when media must be generated
+  asset_root: assets/
+  alt_text_manifest: assets/alt-text-manifest.yaml
+  generation_brief: assets/media-generation-brief.md
+  hero:
+    file: assets/media/thuris-hero-2400.jpg
+    status: TO_GENERATE
+    minimum: 2400px wide
+    source: generation brief
+  product_shots_required:
+    value: 7
+    status: TO_GENERATE
+    source: current request requires 6+ clean product shots; seven are specified in the manifest
+  lifestyle_shots_required:
+    value: 3
+    status: TO_GENERATE
+    source: media generation brief
+  renders_3d:
+    value: allowed; use only if material geometry is consistent with the approved bottle concept and clearly treated as a
+      render until final supplier packaging is confirmed.
+    source: operator-approved use of premium bottle renders; final packaging dimensions remain UNKNOWN
+access:
+  shopify_store_domain:
+    value: UNKNOWN
+    reason: No THURIS Shopify store domain has been supplied.
+  shopify_plan:
+    value: UNKNOWN
+    reason: No Shopify plan has been supplied.
+  headless_channel_installed:
+    value: UNKNOWN
+    reason: No Shopify admin access/state has been supplied.
+  admin_api_app:
+    exists:
+      value: UNKNOWN
+      reason: No Admin API app has been confirmed.
+    required_scopes:
+    - products
+    - selling_plans
+    - publications
+    secret_handling: Never place tokens or secret values in this YAML. Store them in Vercel/Shopify secret management only.
+    source: operator build request + Shopify selling-plan implementation requirement
+  vercel_team:
+    value: UNKNOWN
+    reason: No THURIS Vercel team has been identified.
+  vercel_project_name:
+    value: UNKNOWN
+    reason: No THURIS Vercel project exists in supplied context.
+  custom_domain:
+    value: UNKNOWN
+    reason: No domain has been purchased/confirmed.
+  dns_owner:
+    value: UNKNOWN
+    reason: No confirmed custom domain means DNS owner is not established.
+  analytics:
+    ga4_id:
+      value: UNKNOWN
+      reason: No GA4 property/measurement ID supplied.
+    meta_pixel_id:
+      value: UNKNOWN
+      reason: No Meta Pixel ID supplied.
+    tiktok_pixel_id:
+      value: UNKNOWN
+      reason: No TikTok Pixel ID supplied.
