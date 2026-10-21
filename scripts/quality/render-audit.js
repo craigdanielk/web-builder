@@ -286,7 +286,14 @@ const PROBE = () => {
   // ── Nav links (header / nav) ──
   const navScope = document.querySelector("header, nav") || document;
   for (const a of Array.from(navScope.querySelectorAll("a[href]"))) {
-    facts.navLinks.push({ text: (a.innerText || "").trim().slice(0, 40), href: a.getAttribute("href") });
+    const href = a.getAttribute("href");
+    // A one-page site navigates by fragment; record whether the target exists.
+    const frag = href && href.startsWith("#") && href.length > 1 ? href.slice(1) : null;
+    facts.navLinks.push({
+      text: (a.innerText || "").trim().slice(0, 40),
+      href,
+      targetExists: frag ? Boolean(document.getElementById(frag)) : null,
+    });
   }
 
   // ── Contrast on prominent text ──
@@ -446,7 +453,9 @@ function toDefects(res, knownRoutes) {
   const nav = f.navLinks || [];
   const realTargets = nav.filter((l) => l.href && l.href.startsWith("/") && !l.href.startsWith("//"));
   const knownSet = new Set(knownRoutes.map((r) => r.replace(/\/$/, "") || "/"));
-  const resolvable = realTargets.filter((l) => knownSet.has(l.href.replace(/\/$/, "") || "/") || l.href.startsWith("/#"));
+  const resolvable = realTargets.filter((l) => knownSet.has(l.href.replace(/\/$/, "") || "/") || l.href.startsWith("/#"))
+    // In-page fragments whose target id the probe found on the page.
+    .concat(nav.filter((l) => l.href && l.href.startsWith("#") && l.targetExists === true));
   const placeholders = nav.filter((l) => !l.href || l.href === "#" || l.href === "");
   if (nav.length && resolvable.length === 0)
     add("render_nav", "critical", "Header nav has no links to real in-site routes (pages unreachable)",
