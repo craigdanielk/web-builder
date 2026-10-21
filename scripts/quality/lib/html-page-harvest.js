@@ -593,6 +593,8 @@ function harvestBlocks(html, baseUrl) {
       role: getAttr(block.attrs, 'role') || '',
       classNames: getAttr(block.attrs, 'class') || '',
       id: getAttr(block.attrs, 'id') || '',
+      // Declared ground for a two-mode palette; null when the source says nothing.
+      tone: getAttr(block.attrs, 'data-tone') || null,
       label: headings[0] || classFragments(block.attrs),
       rect,
       content: {

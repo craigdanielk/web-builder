@@ -704,11 +704,13 @@ function buildPage(rawPage, componentRegistry, animationAnalysis) {
   // also yields the link target, which would otherwise be discarded, so it is
   // carried alongside rather than in place of the existing field.
   const ctasByIndex = new Map(rawPage.blocks.map((b) => [b.index, b.content.ctas || []]));
+  const toneByIndex = new Map(rawPage.blocks.map((b) => [b.index, b.tone || null]));
   const takenUids = new Set();
   for (const section of sections) {
     const tier = section.confidence_tier || getTier(section.confidence);
     section.generation_guidance = getConfidenceGuidance(tier, section);
     section.content.cta_links = ctasByIndex.get(section.index) || [];
+    section.tone = toneByIndex.get(section.index) || null;
 
     // Position of this section in the SOURCE page (0..n-1, source order).
     // `index` carries the same value today, but source_index is explicit and

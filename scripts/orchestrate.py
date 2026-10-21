@@ -1442,6 +1442,36 @@ def resolve_page_entry(mapping: dict | None, page: dict):
     return None
 
 
+def declared_disclaimers(tenant_context: dict | None) -> tuple[list[str] | None, str]:
+    """Footer disclaimers and which of three states produced them.
+
+    `unbound` — no tenant record was read; `undeclared` — it was read and does
+    not declare `required_disclaimers`; `declared` — it declares this list
+    (possibly empty). The first two used to share one message naming the wrong
+    cause.
+    """
+    if not tenant_context:
+        return None, "unbound"
+    values = tenant_context.get("phase0_field_values") or {}
+    raw = values.get("required_disclaimers")
+    if not isinstance(raw, list):
+        return None, "undeclared"
+    return [d for d in raw if isinstance(d, str) and d.strip()], "declared"
+
+
+def spec_drives_manifest(*, captures_mode: bool, spec_page_ids: list[str]) -> bool:
+    """Whether the harvested site-spec pages ARE the page list (mapped 1:1).
+
+    A capture bundle is the site, so its pages drive the manifest at any count —
+    one captured route used to fall through to the industry registry and gain
+    eight invented page types. Outside captures mode the old >1 rule stands, so
+    a `--from-url` single page keeps the single-page path.
+    """
+    if captures_mode:
+        return len(spec_page_ids) >= 1
+    return len(spec_page_ids) > 1
+
+
 def build_site_spec_by_page(site_spec: dict | None) -> dict[str, dict]:
     """Split a multi-page site-spec into one page-scoped site_spec per page id.
 
@@ -5088,11 +5118,52 @@ def _component_name_for_section_file(filepath: Path) -> str:
     return f"Section{num}{ident}"
 
 
+def tone_by_section_stem(sections: list[dict]) -> dict[str, str]:
+    """`{file stem: tone}` for planned sections that declare a tone.
+
+    Stems follow the generator's naming (`{i+1:02d}-{archetype}`), so a wrapper
+    only lands on a file whose name still matches its planned section.
+    """
+    out: dict[str, str] = {}
+    for i, sec in enumerate(sections or []):
+        tone = (sec or {}).get("tone")
+        arch = ((sec or {}).get("archetype") or "").lower().replace("-", "_")
+        if tone and arch:
+            out[f"{i + 1:02d}-{arch}"] = tone
+    return out
+
+
+def tone_css_lines(palette_light: dict | None) -> list[str]:
+    """`[data-tone="light"]` re-declaring every role, or nothing without a light set.
+
+    A light ground must carry its own text, muted, border and accent colours;
+    inheriting the base set is how Warm Ivory ends up on Bone.
+    """
+    if not palette_light:
+        return []
+    p = palette_light
+    return [
+        "",
+        '[data-tone="light"] {',
+        f"  --background: {p['bg_primary']};",
+        f"  --surface: {p['bg_secondary']};",
+        f"  --foreground: {p['text_primary']};",
+        f"  --muted: {p['text_muted']};",
+        f"  --accent: {p['accent']};",
+        f"  --on-accent: {p['on_accent']};",
+        f"  --border: {p['border']};",
+        "  background: var(--background);",
+        "  color: var(--foreground);",
+        "}",
+    ]
+
+
 def _build_page_imports(
     section_files: list[Path],
     import_prefix: str,
     animation_map: dict | None = None,
     page_dir: str | None = None,
+    tone_by_stem: dict[str, str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Build (imports, JSX elements) for every section file, in file order.
 
@@ -5161,6 +5232,9 @@ def _build_page_imports(
             )
         else:
             components.append(f"      <{component_name} />")
+        tone = (tone_by_stem or {}).get(filepath.stem)
+        if tone:
+            components[-1] = f'      <div data-tone="{tone}">\n{components[-1]}\n      </div>'
     return imports, components
 
 
@@ -5573,6 +5647,7 @@ def stage_shared_components(
     harvested_nav: list[dict] | None = None,
     harvested_footer: list[dict] | None = None,
     disclaimers: list[str] | None = None,
+    disclaimer_status: str | None = None,
 ) -> list[Path]:
     """Layer 6: Generate Navigation and Footer once as shared layout components.
 
@@ -5602,6 +5677,9 @@ def stage_shared_components(
     )
     if disclaimers:
         print(f"  ✓ Footer carries {len(disclaimers)} declared disclaimer(s) from phase 0")
+    elif disclaimer_status == "undeclared":
+        print("  ⊘ Footer carries NO disclaimers — tenant record read, but it does NOT "
+              "declare required_disclaimers. NOT_MEASURED: unknown, not 'none required'.")
     elif disclaimers is None:
         # `None` means nobody asked the tenant record — the usual cause is a
         # build invoked without --tenant, so load_tenant_context never ran. The
@@ -5963,7 +6041,8 @@ export default function Page{params_type} {{
                 f"{len(files)} file(s) on disk — assembling from files"
             )
         imports, components = _build_page_imports(
-            files, f"@/components/sections/{page_id}/", animation_map, page_id
+            files, f"@/components/sections/{page_id}/", animation_map, page_id,
+            tone_by_stem=tone_by_section_stem(sections),
         )
         params_type = ""
         components_nl = chr(10).join(components)
@@ -7810,6 +7889,7 @@ def stage_deploy(
             "  100% { transform: translateX(-50%); }",
             "}",
         ]
+    css_lines += tone_css_lines(_ds.get("palette_light"))
     write_file(app_dir / "globals.css", "\n".join(css_lines) + "\n")
 
     # ── Generate layout.tsx ──
@@ -11590,7 +11670,8 @@ def main():
                 manifest_path = (ROOT / manifest_path).resolve()
             site_manifest = site_manifest_lib.load_site_manifest(manifest_path)
             print(f"  ✓ Site manifest loaded: {args.site_manifest} ({len(site_manifest.get('pages', []))} pages)")
-        elif _spec_is_multipage:
+        elif spec_drives_manifest(captures_mode=_source_mode == "captures",
+                                  spec_page_ids=_spec_page_ids):
             # Spec-driven: map the harvested pages 1:1 (build_site_manifest's
             # harvested mode — no reconciliation, no not-found injection, N in
             # → N out) rather than re-inventing routes from page-type names.
@@ -12039,13 +12120,8 @@ def main():
         # inside the generator so the source is visible at the call site: the
         # footer states only what the tenant record declares, and states nothing
         # when the record declares nothing.
-        _declared_disclaimers = None
-        if tenant_context:
-            _pv = tenant_context.get("phase0_field_values") or {}
-            _rd = _pv.get("required_disclaimers")
-            if isinstance(_rd, list):
-                _declared_disclaimers = [d for d in _rd if isinstance(d, str) and d.strip()]
-        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce, adapter=_resolve_adapter(args.target_platform), harvested_nav=_harvested_nav, harvested_footer=_harvested_footer, disclaimers=_declared_disclaimers)
+        _declared_disclaimers, _disclaimer_status = declared_disclaimers(tenant_context)
+        stage_shared_components(site_manifest, preset, args.project, build_cache=build_cache, has_commerce_routes=_mp_has_commerce, adapter=_resolve_adapter(args.target_platform), harvested_nav=_harvested_nav, harvested_footer=_harvested_footer, disclaimers=_declared_disclaimers, disclaimer_status=_disclaimer_status)
         save_checkpoint(output_dir, "shared_components", args.project)
         site_manifest = stage_scaffold_multipage(site_manifest, args.project, industry, preset=preset)
         save_checkpoint(output_dir, "scaffold_mp", args.project)

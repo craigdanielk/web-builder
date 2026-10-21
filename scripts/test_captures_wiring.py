@@ -239,10 +239,69 @@ def test_missing_captures_dir_refuses():
              f"raised {type(exc).__name__}: {exc}")
 
 
+def test_a_single_captured_page_drives_the_manifest():
+    """One captured route is a one-page site, not an invitation to invent pages.
+
+    Measured 2026-10-21 (thuris): a one-page capture build fell through to the
+    industry registry and got 8 invented page types — about, blog, contact… —
+    each rendered as an empty shell. Page count is a property of the site.
+    """
+    print("\norchestrate.py: spec_drives_manifest")
+    orch = _orchestrate()
+    decide = getattr(orch, "spec_drives_manifest", None)
+    if decide is None:
+        test("spec_drives_manifest exists", False, "orchestrate.py has no spec_drives_manifest")
+        return
+    test("one captured page drives the manifest",
+         decide(captures_mode=True, spec_page_ids=["homepage"]) is True)
+    test("several pages drive it, captures or not",
+         decide(captures_mode=False, spec_page_ids=["homepage", "about"]) is True)
+    test("a non-captures single page keeps its old path",
+         decide(captures_mode=False, spec_page_ids=["homepage"]) is False)
+    test("captures with no harvested page do not",
+         decide(captures_mode=True, spec_page_ids=[]) is False)
+
+
+def test_section_tone_is_carried_from_the_source():
+    """`data-tone` on a source section reaches the spec section as `tone`.
+
+    A two-mode palette needs to know which sections are light; the source page
+    is the only place that is declared. An unmarked section is `None`, not a
+    guessed default.
+    """
+    print("\nbuild-site-spec.js: data-tone survives harvest")
+    html = (
+        "<!DOCTYPE html><html><head><title>T</title></head><body>"
+        "<section class=\"hero\" data-tone=\"dark\"><h1>Dark ground</h1><p>Opening line of copy.</p></section>"
+        "<section class=\"about\" data-tone=\"light\"><h2>Light ground</h2><p>Editorial copy here.</p></section>"
+        "<section class=\"faq\"><h2>Unmarked</h2><p>No declared tone on this one.</p></section>"
+        "</body></html>"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        bundle = tmp / "bundle"
+        bundle.mkdir()
+        (bundle / "captures_manifest.json").write_text(
+            json.dumps([{"url": "https://example.test/", "http_status": 200, "html": html}]),
+            encoding="utf-8")
+        out = tmp / "out"
+        result = run_site_spec([str(tmp / "none"), "example", "--out", str(out),
+                                "--captures", str(bundle)], cwd=ROOT)
+        spec_path = out / "site-spec.json"
+        if result.returncode != 0 or not spec_path.exists():
+            test("site-spec built for tone check", False, (result.stderr or "")[:300])
+            return
+        sections = json.loads(spec_path.read_text(encoding="utf-8"))["pages"][0]["sections"]
+        tones = [s.get("tone") for s in sections]
+        test("tones carried in source order", tones == ["dark", "light", None], f"got {tones}")
+
+
 def main():
     print("=" * 62)
     print("  Captures wiring — a bundle is a source, not a crawl accessory")
     print("=" * 62)
+    test_section_tone_is_carried_from_the_source()
+    test_a_single_captured_page_drives_the_manifest()
     test_captures_only_spec()
     test_routes_filter_applies()
     test_source_mode_resolution()
