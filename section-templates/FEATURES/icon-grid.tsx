@@ -37,13 +37,14 @@ import { motion } from "framer-motion";
  *   {section_subtitle}       → "Proudly South African, based in Cape Town"
  *   {features[].title}       → "Lowest trading fees in South Africa"
  *   {features[].description} → "We offer the most competitive trading fees…"
+ *   {features[].meta}        → a source-declared detail (data-field="meta"), optional
  */
 
 // The machine-read declaration. `slot_contract.declared_slots()` reads ONLY a
 // `// Tokens:` line or a `Slot placeholders` block — the prose "Slots:" list
 // above is neither, so without this line the contract falls back to a
 // permissive brace sweep and substitutes this file's own JS identifiers away.
-// Tokens: {section_title} {section_subtitle} {features[].title} {features[].description}
+// Tokens: {eyebrow} {section_title} {section_subtitle} {features[].title} {features[].description} {features[].meta} {supporting_text}
 
 // No art demand, declared rather than omitted so a reader can tell
 // "nothing wanted" from "nobody considered it":
@@ -53,17 +54,20 @@ import { motion } from "framer-motion";
 interface Feature {
   title: string;
   description: string;
+  meta?: string;
 }
 
 interface FeaturesIconGridProps {
+  eyebrow?: string;
   sectionTitle?: string;
   sectionSubtitle?: string;
   features?: Feature[];
+  supportingText?: string;
 }
 
 const harvestedFeatures: Feature[] = [
   /* repeat:features */
-  { title: "{features[].title}", description: "{features[].description}" },
+  { title: "{features[].title}", description: "{features[].description}", meta: "{features[].meta}" },
   /* /repeat */
 ];
 
@@ -72,9 +76,11 @@ const HAIRLINE = "var(--border, color-mix(in srgb, var(--foreground) 12%, var(--
 const ACCENT = "var(--accent, var(--foreground))";
 
 export default function FeaturesIconGrid({
+  eyebrow = "{eyebrow}",
   sectionTitle = "{section_title}",
   sectionSubtitle = "{section_subtitle}",
   features = harvestedFeatures,
+  supportingText = "{supporting_text}",
 }: FeaturesIconGridProps) {
   // A heading over empty space is worse than no section.
   if (!features.length) return null;
@@ -92,6 +98,14 @@ export default function FeaturesIconGrid({
       <div className="mx-auto w-full max-w-6xl px-6">
         {(sectionTitle || sectionSubtitle) && (
           <div className="max-w-2xl" style={{ marginBottom: "var(--block-gap, 48px)" }}>
+            {eyebrow && !eyebrow.startsWith("{") && (
+              <p
+                className="mb-4 text-xs uppercase tracking-[0.14em]"
+                style={{ color: MUTED, fontFamily: "var(--font-body, inherit)", fontWeight: 500 }}
+              >
+                {eyebrow}
+              </p>
+            )}
             {sectionTitle && (
               <h2
                 className="text-[2rem] md:text-[3rem] leading-[1.1] tracking-tight"
@@ -152,9 +166,25 @@ export default function FeaturesIconGrid({
                   {feature.description}
                 </p>
               )}
+              {feature.meta && !feature.meta.startsWith("{") && (
+                <p
+                  className="mt-4 text-xs uppercase tracking-[0.14em]"
+                  style={{ color: MUTED, fontFamily: "var(--font-body, inherit)", fontWeight: 500 }}
+                >
+                  {feature.meta}
+                </p>
+              )}
             </motion.li>
           ))}
         </ul>
+        {supportingText && !supportingText.startsWith("{") && (
+          <p
+            className="text-lg leading-relaxed"
+            style={{ marginTop: "var(--block-gap, 48px)", fontFamily: "var(--font-heading, inherit)" }}
+          >
+            {supportingText}
+          </p>
+        )}
       </div>
     </section>
   );

@@ -216,12 +216,21 @@ function extractBodyText(inner) {
   const re = /<(p|li|blockquote|dd|figcaption)\b[^>]*>([\s\S]*?)<\/\1>/gi;
   let m;
   while ((m = re.exec(inner)) !== null) {
+    // A container wrapping block content (<li><h3/><p/></li>) is a card, not a
+    // sentence: rescan from just inside its opening tag so its own paragraphs
+    // are read, instead of flattening heading + paragraph + span into one string.
+    if (m[1].toLowerCase() !== 'p' && BLOCK_CHILD_RE.test(m[2])) {
+      re.lastIndex = m.index + m[0].indexOf('>') + 1;
+      continue;
+    }
     const text = stripTags(m[2]);
     // Two chars filters out bullet glyphs and stray separators.
     if (text.length > 2) out.push(text);
   }
   return out;
 }
+
+const BLOCK_CHILD_RE = /<(h[1-6]|p|ul|ol|div|section|article)\b/i;
 
 function extractCtas(inner, baseUrl) {
   const out = [];
