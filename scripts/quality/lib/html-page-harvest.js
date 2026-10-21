@@ -37,6 +37,9 @@ const VOID_ELEMENTS = new Set([
 /** Elements that delimit a page section in document order. */
 const SECTION_TAGS = new Set(['header', 'nav', 'main', 'section', 'footer', 'article', 'aside']);
 
+/** The only `data-tone` values carried downstream (mirrors orchestrate.SECTION_TONES). */
+const SECTION_TONES = new Set(['light', 'dark']);
+
 /** Wrappers that hold sections rather than being one. Descended into. */
 const CONTAINER_TAGS = new Set(['main', 'article']);
 
@@ -594,7 +597,8 @@ function harvestBlocks(html, baseUrl) {
       classNames: getAttr(block.attrs, 'class') || '',
       id: getAttr(block.attrs, 'id') || '',
       // Declared ground for a two-mode palette; null when the source says nothing.
-      tone: getAttr(block.attrs, 'data-tone') || null,
+      // Allowlisted: the value is untrusted and is later written into .tsx.
+      tone: SECTION_TONES.has(getAttr(block.attrs, 'data-tone')) ? getAttr(block.attrs, 'data-tone') : null,
       label: headings[0] || classFragments(block.attrs),
       rect,
       content: {

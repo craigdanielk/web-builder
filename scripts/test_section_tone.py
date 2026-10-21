@@ -76,6 +76,17 @@ def test_a_stem_that_does_not_match_the_plan_is_not_toned():
     assert "data-tone" not in components[0]
 
 
+def test_only_allowlisted_tones_reach_generated_source():
+    """`data-tone` is harvested, i.e. untrusted. A value that could close the
+    attribute and inject JSX must never be interpolated into a .tsx file."""
+    hostile = '"><script>alert(1)</script><div x="'
+    assert tone_by_section_stem([{"archetype": "HERO", "tone": hostile}]) == {}
+    assert tone_by_section_stem([{"archetype": "HERO", "tone": "Light "}]) == {}
+    _, components = _build_page_imports(
+        [Path("01-hero.tsx")], "@/s/", None, "home", tone_by_stem={"01-hero": hostile})
+    assert "script" not in components[0] and "data-tone" not in components[0]
+
+
 def test_no_tone_map_is_byte_identical_to_before():
     files = [Path("01-hero.tsx"), Path("02-about.tsx")]
     assert _build_page_imports(files, "@/s/", None, "home") == \

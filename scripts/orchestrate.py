@@ -5118,6 +5118,11 @@ def _component_name_for_section_file(filepath: Path) -> str:
     return f"Section{num}{ident}"
 
 
+#: The only tones that may be interpolated into generated .tsx. `data-tone` is
+#: harvested from source HTML, so anything else is untrusted and dropped.
+SECTION_TONES = ("light", "dark")
+
+
 def tone_by_section_stem(sections: list[dict]) -> dict[str, str]:
     """`{file stem: tone}` for planned sections that declare a tone.
 
@@ -5128,7 +5133,7 @@ def tone_by_section_stem(sections: list[dict]) -> dict[str, str]:
     for i, sec in enumerate(sections or []):
         tone = (sec or {}).get("tone")
         arch = ((sec or {}).get("archetype") or "").lower().replace("-", "_")
-        if tone and arch:
+        if tone in SECTION_TONES and arch:
             out[f"{i + 1:02d}-{arch}"] = tone
     return out
 
@@ -5233,7 +5238,7 @@ def _build_page_imports(
         else:
             components.append(f"      <{component_name} />")
         tone = (tone_by_stem or {}).get(filepath.stem)
-        if tone:
+        if tone in SECTION_TONES:
             components[-1] = f'      <div data-tone="{tone}">\n{components[-1]}\n      </div>'
     return imports, components
 
