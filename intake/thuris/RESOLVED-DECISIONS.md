@@ -99,3 +99,11 @@ Front end built now; store wired when operator creates store + re-auths Shopify 
 - **Cart/checkout wording: agent-written interim wording authorised** ("add relevant wording for
   now"). Every such string is marked interim in the source and listed here until replaced.
 - **Live store writes authorised** (thuris.myshopify.com), confirming each irreversible step.
+
+## Session 2026-10-21 (d) — operator answers
+- Base prices = the AED figures (base currency USD; the API cannot change it).
+- Image pack v1 placed per its own placement map; cap-monogram + concealed-reducer held (vessel [HOLD]).
+- `required_disclaimers` (amendment, needs_confirm) are internal notes — **not rendered**.
+- Hero: image-led, copy left (pack H01); final band copy right (H03).
+- GitHub repo (private craigdanielk/thuris) + Vercel project `thuris` created and linked; live at
+  https://thuris.vercel.app. Next session: section-by-section upgrade.
