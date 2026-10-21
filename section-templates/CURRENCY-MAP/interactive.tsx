@@ -174,7 +174,7 @@ export default function SectionCurrencyMapInteractive({
         paddingBottom: "var(--section-py, 96px)",
       }}
     >
-      <div className="mx-auto w-full max-w-6xl px-6">
+      <div className="aurelix-container mx-auto w-full max-w-6xl px-6">
         {(headline || subheadline) && (
           <div
             className="mx-auto max-w-3xl text-center"

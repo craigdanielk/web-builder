@@ -7,14 +7,18 @@
 </head>
 <body>
 <!-- Operator-authored source page. Copy: intake/thuris/THURIS-launch-copy.md v1 (2026-10-21).
-     [HOLD] items are deliberately absent. -->
+     [HOLD] items are deliberately absent.
+     Homepage Visual Refinement V1 (2026-10-21): prices are declared ONCE, on the collection
+     items (data-field="price") — AED 495 / 445 / 445, commercially DISPUTED until approved;
+     the bundle carries no price (unconfirmed). Ritual lines implying application removed. -->
 <header>
   <nav>
-    <!-- [HOLD: logo — production vectors; operator 2026-10-21: no wordmark until then] -->
-    <a href="#collection">The Collection</a>
+    <!-- Wordmark: preset `Brand mark:` (supplied SVG). Reserve renders as the nav button
+         (preset `Nav action: Reserve`). -->
     <a href="#ritual">Ritual</a>
     <a href="#origin">Origin</a>
     <a href="#preorder">Pre-order</a>
+    <a href="#faq">FAQ</a>
     <a href="#collection">Reserve</a>
   </nav>
 </header>
@@ -25,10 +29,11 @@
   <h1>The Founding Collection</h1>
   <h2>A trace of origin.</h2>
   <p>Three rare botanical essences — Frankincense, Neroli and Rose Geranium — presented as the house's first release.</p>
-  <p>The Founding Release is limited to 90 bottles — 30 of each botanical essence.</p>
   <a href="#collection">Reserve the Founding Collection</a>
-  <a href="#house">Explore the collection</a>
+  <a href="#frankincense">Explore the collection</a>
   <img src="/media/01_hero_desktop_founding-collection_dark_16x9.webp" alt="">
+  <!-- second image = mobile art direction (HERO/product-hero {mobile_image_url}) -->
+  <img src="/media/02_hero_mobile_founding-collection_dark_4x5.webp" alt="">
 </section>
 
 <section id="house" class="about" data-tone="light">
@@ -39,7 +44,7 @@
   <p>Fewer materials. Each one considered.</p>
 </section>
 
-<section id="collection" class="collection" data-tone="dark">
+<section id="collection" class="collection" data-tone="dark" data-variant="featured-3">
   <p>THE FIRST RELEASE</p>
   <h2>Three essences. One collection.</h2>
   <p>Reserve individually, or as the complete collection.</p>
@@ -48,7 +53,7 @@
       <img src="/media/07_product_frankincense_hero_4x5.webp" alt="THURIS Frankincense 10 ml bottle on pale stone beside frankincense resin.">
       <h3>Frankincense</h3>
       <p>Boswellia serrata · India · 10 ml</p>
-      <span data-field="price">AED 395</span>
+      <span data-field="price">AED 495</span>
       <a href="#frankincense">Reserve Frankincense</a>
     </article>
     <article class="product-card">
@@ -62,49 +67,53 @@
       <img src="/media/09_product_rose-geranium_hero_4x5.webp" alt="THURIS Rose Geranium 10 ml bottle on stone among geranium leaves and flowers.">
       <h3>Rose Geranium</h3>
       <p>Pelargonium graveolens · South Africa · 10 ml</p>
-      <span data-field="price">AED 395</span>
+      <span data-field="price">AED 445</span>
       <a href="#rose-geranium">Reserve Rose Geranium</a>
     </article>
     <article class="product-card">
       <img src="/media/03_collection_clean-lineup_light_1x1.webp" alt="The three THURIS 10 ml bottles, Frankincense, Neroli and Rose Geranium, side by side.">
       <h3>The complete Founding Collection</h3>
       <p>One of each essence · 3 × 10 ml</p>
-      <span data-field="price">AED 1,111.50</span>
+      <!-- [HOLD: bundle price + discount — unconfirmed] -->
       <a href="#collection">Reserve the Founding Collection</a>
     </article>
   </div>
 </section>
 
-<section id="frankincense" class="about essence" data-tone="dark">
+<!-- The three stories alternate ground (light / dark / light) and picture side
+     (left / right / left); prices are not repeated here — the collection declares them. -->
+<section id="frankincense" class="about essence" data-tone="light">
   <p>FRANKINCENSE · INDIA · 10 ML</p>
   <h2>The material behind the name.</h2>
   <p>Boswellia serrata, from India. The resin from which the house takes its name.</p>
   <p>Resinous, dry, quietly luminous. The anchor of the collection.</p>
-  <a href="#collection">Reserve Frankincense — AED 395</a>
+  <a href="#collection">Reserve Frankincense</a>
+  <img src="/media/13_story_frankincense_india_dark_4x5.webp" alt="THURIS Frankincense bottle on a dark rock ledge beside pieces of frankincense resin, a Boswellia tree behind at dusk.">
 </section>
 
-<section id="neroli" class="about essence" data-tone="light">
+<section id="neroli" class="about essence" data-tone="dark" data-variant="editorial-split-reverse">
   <p>NEROLI · FRANCE · 10 ML</p>
   <h2>Blossom, held in balance.</h2>
   <p>Citrus aurantium blossom. Bright at first, then clearer and more composed.</p>
   <p>The light of the collection — a counterpoint to resin.</p>
-  <a href="#collection">Reserve Neroli — AED 445</a>
+  <a href="#collection">Reserve Neroli</a>
+  <img src="/media/14_story_neroli_blossom_light_4x5.webp" alt="THURIS Neroli bottle on a pale limestone block beside a sprig of white orange blossom.">
 </section>
 
-<section id="rose-geranium" class="about essence" data-tone="dark">
+<section id="rose-geranium" class="about essence" data-tone="light">
   <p>ROSE GERANIUM · SOUTH AFRICA · 10 ML</p>
   <h2>Green, rosy, unmistakably grounded.</h2>
   <p>Pelargonium graveolens from South Africa. A rose character, from a plant that is not a rose.</p>
   <p>The essence closest to the house's own origin.</p>
-  <a href="#collection">Reserve Rose Geranium — AED 395</a>
-  <img src="/media/06_provenance_rose-geranium_south-africa_16x9.webp" alt="THURIS Rose Geranium bottle among flowering geranium in a mountain landscape at dusk.">
+  <a href="#collection">Reserve Rose Geranium</a>
+  <img src="/media/15_story_rose-geranium_south-africa_4x5.webp" alt="THURIS Rose Geranium bottle among flowering geranium in a mountain landscape at dusk.">
 </section>
 
-<section id="ritual" class="about ritual" data-tone="dark">
+<!-- Ritual: lines stating or implying how an essence is worn or applied are removed
+     (launch-copy HOLD: approved directions for use). Heading promoted from the approved body. -->
+<section id="ritual" class="about ritual" data-tone="dark" data-variant="editorial-split-reverse">
   <p>RITUAL</p>
-  <h2>Scent is not only worn. It is placed.</h2>
-  <p>Across the Gulf, fragrance is part of preparation. It settles into fabric, fills a room before guests arrive, and stays in the memory of a house long after.</p>
-  <p>It is built in layers — space, cloth, the person — each with its own material and moment.</p>
+  <h2>Across the Gulf, fragrance is part of preparation.</h2>
   <p>THURIS enters that culture with respect and as a newcomer. We bring three materials to a practice that was refined long before us.</p>
   <img src="/media/05_ritual_scent-stone_travertine_3x2.webp" alt="A THURIS bottle on a travertine tray beside a pale stone.">
 </section>
@@ -121,7 +130,7 @@
   <p>Three origins, three materials. One house.</p>
 </section>
 
-<section id="release" class="about release" data-tone="light">
+<section id="release" class="about release" data-tone="dark">
   <p>SMALL BATCH</p>
   <h2>A first bottling, deliberately small.</h2>
   <p>The Founding Release is limited to 90 bottles — 30 of each botanical essence.</p>
@@ -142,7 +151,7 @@
   </ol>
 </section>
 
-<section id="faq" class="faq" data-tone="light">
+<section id="faq" class="faq" data-tone="light" data-variant="two-column">
   <h2>Before you reserve</h2>
   <div class="faq-item"><h3>What is THURIS?</h3><p>A botanical fragrance house. Its first release is the Founding Collection: Frankincense, Neroli and Rose Geranium, each a 10 ml botanical essence.</p></div>
   <div class="faq-item"><h3>What does the name mean?</h3><p>THURIS comes from the Latin thūs, thūris — incense, frankincense.</p></div>

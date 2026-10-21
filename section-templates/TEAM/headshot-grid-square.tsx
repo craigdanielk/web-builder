@@ -163,7 +163,7 @@ export default function TeamHeadshotGridSquare({
         paddingBottom: "var(--section-py, 96px)",
       }}
     >
-      <div className="mx-auto w-full max-w-6xl px-6">
+      <div className="aurelix-container mx-auto w-full max-w-6xl px-6">
         {(headingText || subheadingText) && (
           <div className="max-w-2xl" style={{ marginBottom: "var(--block-gap, 48px)" }}>
             {headingText && (

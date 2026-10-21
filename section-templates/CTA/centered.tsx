@@ -132,7 +132,7 @@ export default function SectionCenteredCTA({
         paddingBottom: "var(--section-py, 120px)",
       }}
     >
-      <div className="mx-auto w-full max-w-5xl px-6">
+      <div className="aurelix-container mx-auto w-full max-w-5xl px-6">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}

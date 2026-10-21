@@ -114,7 +114,7 @@ export default function TrustBadgesIconStrip({
         paddingBottom: "var(--section-py, 120px)",
       }}
     >
-      <div className="mx-auto w-full max-w-6xl px-6">
+      <div className="aurelix-container mx-auto w-full max-w-6xl px-6">
         {(sectionTitle || sectionSubtitle) && (
           <div className="max-w-3xl" style={{ marginBottom: "var(--block-gap, 24px)" }}>
             {sectionTitle && (

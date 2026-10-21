@@ -3352,6 +3352,11 @@ def build_template_fill(
         if name in ("secondary_cta_url", "secondary_cta_href"):
             return (section_ctas[1][1] if len(section_ctas) > 1 else ""), "url"
         kind = _slot_type(name)
+        # Mobile art direction is the section's SECOND image, by source order:
+        # the operator places the phone composition after the desktop one.
+        if name in ("mobile_image_url", "mobile_image_alt"):
+            second = section_images[1] if len(section_images) > 1 else {}
+            return (second.get("src" if kind == "image" else "alt") or ""), kind
         if kind == "image":
             return (section_images[0]["src"] if section_images else ""), kind
         if kind == "alt":
@@ -5189,10 +5194,86 @@ def anchor_by_section_stem(sections: list[dict]) -> dict[str, str]:
     return out
 
 
+#: Viewport widths (px) a declared phone floor scales between. The ceiling is
+#: reached by 1280 so the render probe's 1440 viewport measures exactly the
+#: declared desktop size — the value the conformance gate holds it to.
+FLUID_FROM_PX, FLUID_TO_PX = 375, 1280
+
+
+def fluid_px(floor: int, ceiling: int) -> str:
+    """`clamp()` from `floor` at 375px wide to `ceiling` at 1280px; a bare px
+    value when the two are equal (a declaration with no phone variation)."""
+    floor, ceiling = int(floor), int(ceiling)
+    if floor == ceiling:
+        return f"{ceiling}px"
+    span = FLUID_TO_PX - FLUID_FROM_PX
+    return (f"clamp({floor}px, calc({floor}px + {ceiling - floor} * "
+            f"((100vw - {FLUID_FROM_PX}px) / {span})), {ceiling}px)")
+
+
 def type_tier_vars(type_scale: dict | None) -> dict[str, str]:
-    """`--type-h1..h4` from the compiled `type_scale.heading_tiers_px`; {} without."""
+    """`--type-h1..h4` from the compiled `type_scale.heading_tiers_px`; {} without.
+
+    With a declared `heading_tiers_min_px` each tier is fluid from its phone
+    floor to its desktop ceiling, so a 64px display line is not also 64px on a
+    375px screen."""
     tiers = (type_scale or {}).get("heading_tiers_px") or []
-    return {f"--type-h{i + 1}": f"{int(px)}px" for i, px in enumerate(tiers[:4])}
+    floors = (type_scale or {}).get("heading_tiers_min_px") or tiers
+    return {f"--type-h{i + 1}": fluid_px(floors[i], px) for i, px in enumerate(tiers[:4])}
+
+
+def layout_vars(rhythm: dict | None, layout: dict | None) -> dict[str, str]:
+    """`--section-py`, `--container-max` and `--gutter`.
+
+    Only `--section-py` has a value without a declaration (the benchmark's
+    rhythm); the measure and gutter are emitted only when declared, so every
+    template's `var()` fallback keeps an undeclared tenant exactly as it was."""
+    rhythm, layout = rhythm or {}, layout or {}
+    py = rhythm.get("section_py_px", 96)
+    out = {"--section-py": fluid_px(rhythm.get("section_py_min_px", py), py)}
+    if layout.get("max_width_px"):
+        out["--container-max"] = f'{int(layout["max_width_px"])}px'
+    if layout.get("gutter_max_px"):
+        out["--gutter"] = fluid_px(layout.get("gutter_min_px", layout["gutter_max_px"]),
+                                   layout["gutter_max_px"])
+    return out
+
+
+REDUCED_MOTION_TSX = """'use client';
+
+import { MotionConfig } from 'framer-motion';
+
+export default function ReducedMotion({ children }: { children: React.ReactNode }) {
+  return <MotionConfig reducedMotion="user">{children}</MotionConfig>;
+}
+"""
+
+#: Two consecutive sections on the same ground: the second drops its top
+#: padding to a quarter, so the pair reads as one band rather than leaving
+#: twice a section's padding of empty ground between them. `!important`
+#: because templates set their padding inline.
+SAME_TONE_CSS = [
+    "",
+    '[data-tone="light"] + [data-tone="light"] > section,',
+    '[data-tone="dark"] + [data-tone="dark"] > section {',
+    "  padding-top: calc(var(--section-py, 96px) * 0.25) !important;",
+    "}",
+]
+
+
+def container_css_lines(layout: dict | None) -> list[str]:
+    """The declared content measure on every `.aurelix-container`, or nothing.
+
+    Unlayered, so it outranks the container's own Tailwind fallback classes
+    (`max-w-6xl px-6`, which sit in `@layer utilities`) — and emitted only for a
+    tenant that declared a layout, so an undeclared one renders as before."""
+    layout = layout or {}
+    rules = []
+    if layout.get("max_width_px"):
+        rules.append("  max-width: var(--container-max);")
+    if layout.get("gutter_max_px"):
+        rules.append("  padding-inline: var(--gutter);")
+    return ["", ".aurelix-container {", *rules, "}"] if rules else []
 
 
 def tone_css_lines(palette_light: dict | None) -> list[str]:
@@ -5413,9 +5494,39 @@ def _inject_footer_props(code: str) -> str:
 
 
 def parse_brand_mark(preset_content: str) -> str | None:
-    """`Brand mark: none` in a preset — the operator declared no logo may ship."""
-    m = re.search(r"^Brand mark:\s*([a-z-]+)", preset_content or "", re.M)
+    """`Brand mark:` in a preset — `none` (the operator declared no logo may
+    ship), or the path of the mark's file relative to web-builder/."""
+    m = re.search(r"^Brand mark:\s*(\S+)", preset_content or "", re.M)
     return m.group(1) if m else None
+
+
+def parse_nav_action(preset_content: str) -> str | None:
+    """`Nav action: <label>` — the one harvested nav link that renders as the
+    navigation's button. Declared, because nothing in a link says which one is
+    the primary action."""
+    m = re.search(r"^Nav action:\s*(.+?)\s*$", preset_content or "", re.M)
+    return m.group(1) if m else None
+
+
+_BRAND_MARK_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp"}
+
+
+def brand_mark_src(brand_mark: str | None) -> str | None:
+    """A declared brand-mark file as a data: URI, so the nav carries its own
+    mark with no asset to copy or resolve. None for `none` / undeclared.
+
+    A declared file that is missing or of an unservable type RAISES: the
+    operator named a mark, and a nav that silently drops it is the defect."""
+    if not brand_mark or brand_mark == "none":
+        return None
+    path = (ROOT / brand_mark).resolve()
+    mime = _BRAND_MARK_TYPES.get(path.suffix.lower())
+    if mime is None:
+        raise ValueError(f"Brand mark {brand_mark!r}: type must be one of {sorted(_BRAND_MARK_TYPES)}")
+    if ROOT.resolve() not in path.parents or not path.is_file():
+        raise ValueError(f"Brand mark {brand_mark!r} is not a file under {ROOT}")
+    import base64
+    return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
 
 
 def root_metadata_block(page_meta: dict | None, project_name: str) -> str:
@@ -5443,6 +5554,7 @@ def _build_nav_template(
     adapter: DeployAdapter | None = None,
     harvested_nav: list[dict] | None = None,
     brand_mark: str | None = None,
+    nav_action: str | None = None,
 ) -> str:
     """Return a complete Navigation.tsx React component with real defaults.
     When adapter is set, platform-specific default links are used.
@@ -5470,6 +5582,30 @@ def _build_nav_template(
     # escaping regardless of content. lib/nav_harvest.py already rejects
     # unsafe href schemes (javascript:, data:, ...) before this point, but
     # serialization here is defense in depth, not the only guard.
+    _action = next(((lbl, url) for lbl, url in _nav_links if nav_action and lbl == nav_action), None)
+    if nav_action and _action is None:
+        raise ValueError(f"Nav action {nav_action!r} names no navigation link")
+    _nav_links = [pair for pair in _nav_links if pair != _action]
+    _action_block = ""
+    _mobile_action_block = ""
+    if _action:
+        _action_block = f"""
+            <a
+              href={{{json.dumps(_action[1])}}}
+              className="inline-flex h-11 items-center px-6 text-xs uppercase tracking-[0.18em] transition-opacity duration-300 hover:opacity-85"
+              style={{{{ background: 'var(--accent)', color: 'var(--on-accent)', borderRadius: 'var(--radius-button, 6px)', fontFamily: 'var(--font-body, inherit)', fontWeight: 500 }}}}
+            >
+              {{{json.dumps(_action[0])}}}
+            </a>"""
+        _mobile_action_block = f"""
+            <a
+              href={{{json.dumps(_action[1])}}}
+              className="mt-2 flex h-12 items-center justify-center text-xs uppercase tracking-[0.18em]"
+              style={{{{ background: 'var(--accent)', color: 'var(--on-accent)', borderRadius: 'var(--radius-button, 6px)', fontFamily: 'var(--font-body, inherit)', fontWeight: 500 }}}}
+              onClick={{() => setMobileOpen(false)}}
+            >
+              {{{json.dumps(_action[0])}}}
+            </a>"""
     _nav_links_str = ",\n  ".join(
         f"{{ label: {json.dumps(lbl)}, url: {json.dumps(url)} }}"
         for lbl, url in _nav_links
@@ -5478,8 +5614,14 @@ def _build_nav_template(
     # `Brand mark: none` (preset) is an operator declaration that no logo may
     # ship yet. Then there is no brand slot at all — not the slug title-cased,
     # which is text no input contains.
+    _mark_src = brand_mark_src(brand_mark)
     if brand_mark == "none":
         _brand_block = '          <div className="flex-shrink-0" aria-hidden="true" />'
+    elif _mark_src:
+        # A declared mark file: the operator's artwork, never re-typeset.
+        _brand_block = f"""          <Link href="/" className="flex-shrink-0" aria-label={{shopName || {json.dumps(display_name)}}}>
+            <img src={json.dumps(_mark_src)} alt={{shopName || {json.dumps(display_name)}}} className="nav-mark h-5 w-auto md:h-6" />
+          </Link>"""
     else:
         _brand_block = f"""          <Link href="/" className="flex-shrink-0">
             {{logo?.url ? (
@@ -5533,7 +5675,7 @@ export default function Navigation({{ menu, logo, shopName }}: {{
         boxShadow: scrolled ? '0 8px 24px -20px rgba(0,0,0,0.45)' : 'none',
       }}}}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="aurelix-container max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 md:h-20">
           {{/* Logo */}}
 {_brand_block}
@@ -5549,7 +5691,7 @@ export default function Navigation({{ menu, logo, shopName }}: {{
               >
                 {{link.label}}
               </Link>
-            ))}}
+            ))}}{_action_block}
           </div>
 
           {{/* Mobile hamburger */}}
@@ -5595,7 +5737,7 @@ export default function Navigation({{ menu, logo, shopName }}: {{
               >
                 {{link.label}}
               </Link>
-            ))}}
+            ))}}{_mobile_action_block}
           </div>
         </div>
       )}}
@@ -5681,9 +5823,10 @@ def _build_footer_template(
             f"          <p key={{{i}}}>{{{json.dumps(t, ensure_ascii=False)}}}</p>"
             for i, t in enumerate(footer_text)
         )
+        # No columns above it: no gap and no rule to separate it from nothing.
         _legal_block = (
             '        <div\n'
-            '          className="mt-12 pt-8 border-t text-center text-sm space-y-1"\n'
+            '          className={`${displayColumns.length ? "mt-12 pt-8 border-t " : ""}text-center text-sm space-y-1`}\n'
             f'          {_legal_style}\n'
             '        >\n'
             f'{_lines}\n'
@@ -5727,11 +5870,14 @@ export default function Footer({{ menu, shopName }}: {{
       style={{{{
         background: "var(--surface, var(--background))",
         color: "var(--foreground)",
-        paddingTop: "var(--section-py, 96px)",
-        paddingBottom: "calc(var(--section-py, 96px) * 0.6)",
+        // A footer that is only its legal line takes a band's padding, not a
+        // section's — 128px of empty ground above two lines read as a defect.
+        paddingTop: displayColumns.length ? "var(--section-py, 96px)" : "calc(var(--section-py, 96px) * 0.4)",
+        paddingBottom: displayColumns.length ? "calc(var(--section-py, 96px) * 0.6)" : "calc(var(--section-py, 96px) * 0.4)",
       }}}}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="aurelix-container max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {{displayColumns.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
           {{displayColumns.map((col, i) => (
             <div key={{i}}>
@@ -5757,6 +5903,7 @@ export default function Footer({{ menu, shopName }}: {{
             </div>
           ))}}
         </div>
+        )}}
 {_disclaimer_block}{_legal_block}      </div>
     </footer>
   );
@@ -5799,7 +5946,8 @@ def stage_shared_components(
     footer_path = shared_dir / "Footer.tsx"
 
     nav_code = _build_nav_template(project_name, adapter=adapter, harvested_nav=harvested_nav,
-                                   brand_mark=parse_brand_mark(preset_file_text(preset)))
+                                   brand_mark=parse_brand_mark(preset_file_text(preset)),
+                                   nav_action=parse_nav_action(preset_file_text(preset)))
     footer_code = _build_footer_template(
         project_name, adapter=adapter, harvested_footer=harvested_footer,
         disclaimers=disclaimers, footer_text=footer_text,
@@ -8093,7 +8241,7 @@ def stage_deploy(
         "--font-body": font_stack("body", _body_font),
         "--heading-weight": str(_scale.get("heading_weight", 600)),
         "--body-weight": str(_scale.get("body_weight", 400)),
-        "--section-py": f'{_rhythm.get("section_py_px", 96)}px',
+        **layout_vars(_rhythm, _ds.get("layout")),
         "--block-gap": f'{_rhythm.get("block_gap_px", 48)}px',
         "--card-pad": f'{_rhythm.get("card_pad_px", 32)}px',
         "--radius-card": _radius.get("card", "8px"),
@@ -8149,6 +8297,8 @@ def stage_deploy(
             "}",
         ]
     css_lines += tone_css_lines(_ds.get("palette_light"))
+    css_lines += container_css_lines(_ds.get("layout"))
+    css_lines += SAME_TONE_CSS
     write_file(app_dir / "globals.css", "\n".join(css_lines) + "\n")
 
     # ── Generate layout.tsx ──
@@ -8239,6 +8389,15 @@ export default function RootLayout({{ children }}: {{ children: React.ReactNode 
             "<CartProvider>\n        {children}\n        <CartDrawer />\n      </CartProvider>",
             1,
         )
+    # Every section template animates through framer-motion; one MotionConfig
+    # makes all of them honour prefers-reduced-motion (transforms off,
+    # opacity kept) instead of each template re-implementing the check.
+    layout_code = layout_code.replace(
+        'import "./globals.css";',
+        'import "./globals.css";\nimport ReducedMotion from "@/components/layout/ReducedMotion";', 1)
+    layout_code = layout_code.replace("{children}", "<ReducedMotion>{children}</ReducedMotion>", 1)
+    (src_dir / "components" / "layout").mkdir(parents=True, exist_ok=True)
+    write_file(src_dir / "components" / "layout" / "ReducedMotion.tsx", REDUCED_MOTION_TSX)
     write_file(app_dir / "layout.tsx", layout_code)
 
     # ── Generate cn() utility (clsx + tailwind-merge) ──

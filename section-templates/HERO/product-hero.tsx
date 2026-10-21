@@ -19,7 +19,14 @@ import { motion } from "framer-motion";
  *   3. MOBILE STACKS. Below md the image is its own block above the copy; no
  *      text ever sits on an unscrimmed photograph.
  *   4. NO IMAGE, NO FRAME. An unfilled image slot renders a plain copy hero.
- *   5. HEADINGS READ THE TYPE TIERS (--type-h1 / --type-h2).
+ *   5. HEADINGS READ THE TYPE TIERS (--type-h1; the tagline reads --type-h3,
+ *      a sub-display line under the title rather than a second headline).
+ *   6. PHONES GET THEIR OWN PICTURE. A second source image is the mobile art
+ *      direction (`{mobile_image_url}`, e.g. a 4:5 crop composed for a tall
+ *      screen); without one the desktop image stacks above the copy.
+ *   7. THE FOLD HOLDS. On desktop the section is the image's 16:9 OR the
+ *      viewport under the sticky nav, whichever is shorter, so the CTAs sit
+ *      above the fold on a 768px-tall laptop.
  *
  * Slots:
  *   {eyebrow}            → section kicker (optional)
@@ -29,9 +36,10 @@ import { motion } from "framer-motion";
  *   {supporting_text}    → second paragraph (optional)
  *   {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url}
  *   {image_url} {image_alt}
+ *   {mobile_image_url} {mobile_image_alt} → the source's SECOND image (optional)
  */
 
-// Tokens: {eyebrow} {headline} {tagline} {subheadline} {supporting_text} {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url} {image_url} {image_alt}
+// Tokens: {eyebrow} {headline} {tagline} {subheadline} {supporting_text} {primary_cta_text} {primary_cta_url} {secondary_cta_text} {secondary_cta_url} {image_url} {image_alt} {mobile_image_url} {mobile_image_alt}
 
 // Art: slot=image_url intent=product aspect=16:9 role=load-bearing
 
@@ -47,6 +55,8 @@ interface HeroProductHeroProps {
   secondaryCtaUrl?: string;
   imageUrl?: string;
   imageAlt?: string;
+  mobileImageUrl?: string;
+  mobileImageAlt?: string;
 }
 
 const MUTED = "var(--muted, color-mix(in srgb, var(--foreground) 62%, var(--background)))";
@@ -77,6 +87,8 @@ export default function HeroProductHero({
   secondaryCtaUrl = "{secondary_cta_url}",
   imageUrl = "{image_url}",
   imageAlt = "{image_alt}",
+  mobileImageUrl = "{mobile_image_url}",
+  mobileImageAlt = "{mobile_image_alt}",
 }: HeroProductHeroProps) {
   const title = resolved(headline);
   if (!title) return null;
@@ -88,6 +100,8 @@ export default function HeroProductHero({
   const secondaryLabel = resolved(secondaryCtaText);
   const heroImage = resolved(imageUrl);
   const heroAlt = resolved(imageAlt);
+  const phoneImage = resolved(mobileImageUrl);
+  const phoneAlt = resolved(mobileImageAlt) || heroAlt;
 
   return (
     <section
@@ -99,8 +113,18 @@ export default function HeroProductHero({
         paddingBottom: "var(--section-py, 96px)",
       }}
     >
+      {phoneImage && (
+        <div className="relative aspect-[4/5] w-full md:hidden" style={{ marginTop: "calc(-1 * var(--section-py, 96px))" }}>
+          <Image src={phoneImage} alt={phoneAlt} fill priority sizes="100vw" className="object-cover" />
+          <div
+            aria-hidden="true"
+            className="absolute inset-x-0 bottom-0 h-1/3"
+            style={{ background: "linear-gradient(0deg, var(--background) 0%, transparent 100%)" }}
+          />
+        </div>
+      )}
       {heroImage && (
-        <div className="relative aspect-[16/9] w-full md:absolute md:inset-0 md:aspect-auto">
+        <div className={`relative aspect-[16/9] w-full md:absolute md:inset-0 md:block md:aspect-auto ${phoneImage ? "hidden" : ""}`}>
           <Image
             src={heroImage}
             alt={heroAlt}
@@ -115,17 +139,20 @@ export default function HeroProductHero({
       )}
 
       <div
-        className="relative mx-auto flex w-full max-w-6xl items-center px-6"
+        className="aurelix-container hero-copy relative mx-auto flex w-full max-w-6xl items-center px-6"
         style={{
-          // 16:9 overall = 56.25vw minus the section padding above and below.
-          minHeight: heroImage ? "calc(56.25vw - 2 * var(--section-py, 96px))" : undefined,
+          // 16:9 overall = 56.25vw, capped at the viewport under the sticky
+          // nav (5rem), each minus the section padding above and below.
+          minHeight: heroImage
+            ? "min(calc(56.25vw - 2 * var(--section-py, 96px)), calc(100svh - 5rem - 2 * var(--section-py, 96px)))"
+            : undefined,
         }}
       >
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          className="w-full max-w-md"
+          className="w-full max-w-xl"
         >
           {kickerText && (
             <p
@@ -141,7 +168,7 @@ export default function HeroProductHero({
               fontSize: "var(--type-h1, 4rem)",
               fontFamily: "var(--font-heading, inherit)",
               fontWeight: "var(--heading-weight, 400)" as unknown as number,
-              lineHeight: 1.1,
+              lineHeight: 1.04,
               letterSpacing: "-0.02em",
             }}
           >
@@ -151,11 +178,12 @@ export default function HeroProductHero({
             <h2
               className="text-balance"
               style={{
-                fontSize: "var(--type-h2, 2rem)",
+                fontSize: "var(--type-h3, 2rem)",
                 fontFamily: "var(--font-heading, inherit)",
                 fontWeight: "var(--heading-weight, 400)" as unknown as number,
                 lineHeight: 1.2,
-                marginTop: "calc(var(--block-gap, 24px) * 0.5)",
+                fontStyle: "italic",
+                marginTop: "calc(var(--block-gap, 24px) * 0.375)",
               }}
             >
               {secondLine}
@@ -163,8 +191,8 @@ export default function HeroProductHero({
           )}
           {lead && (
             <p
-              className="text-pretty text-lg leading-relaxed"
-              style={{ color: MUTED, fontFamily: "var(--font-body, inherit)", marginTop: "var(--block-gap, 24px)" }}
+              className="max-w-md text-pretty text-lg leading-relaxed"
+              style={{ color: MUTED, fontFamily: "var(--font-body, inherit)", marginTop: "calc(var(--block-gap, 24px) * 0.6)" }}
             >
               {lead}
             </p>
@@ -178,11 +206,11 @@ export default function HeroProductHero({
             </p>
           )}
           {(primaryLabel || secondaryLabel) && (
-            <div className="flex flex-wrap items-center gap-4" style={{ marginTop: "calc(var(--block-gap, 24px) * 1.5)" }}>
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-4" style={{ marginTop: "var(--block-gap, 24px)" }}>
               {primaryLabel && (
                 <a
                   href={resolved(primaryCtaUrl) || "#"}
-                  className="inline-flex items-center px-8 py-4 text-sm transition-opacity hover:opacity-90"
+                  className="inline-flex h-12 items-center justify-center whitespace-nowrap px-5 text-center text-xs uppercase tracking-[0.14em] transition-opacity duration-300 hover:opacity-85 sm:px-8 sm:tracking-[0.18em]"
                   style={{
                     background: ACCENT,
                     color: "var(--on-accent, var(--background))",
@@ -197,15 +225,15 @@ export default function HeroProductHero({
               {secondaryLabel && (
                 <a
                   href={resolved(secondaryCtaUrl) || "#"}
-                  className="inline-flex items-center border px-8 py-4 text-sm transition-colors hover:[border-color:var(--accent)]"
+                  className="group inline-flex h-12 items-center gap-3 border-b text-xs uppercase tracking-[0.18em] transition-colors duration-300 hover:[border-color:var(--accent)]"
                   style={{
                     borderColor: HAIRLINE,
-                    borderRadius: "var(--radius-button, 6px)",
                     fontFamily: "var(--font-body, inherit)",
                     fontWeight: 500,
                   }}
                 >
                   {secondaryLabel}
+                  <span aria-hidden="true" className="transition-transform duration-300 group-hover:translate-x-1">&rarr;</span>
                 </a>
               )}
             </div>

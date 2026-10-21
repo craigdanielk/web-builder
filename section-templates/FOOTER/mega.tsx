@@ -110,7 +110,7 @@ export default function FooterMega({
         paddingBottom: "calc(var(--section-py, 96px) / 2)",
       }}
     >
-      <div className="mx-auto w-full max-w-6xl px-6">
+      <div className="aurelix-container mx-auto w-full max-w-6xl px-6">
         {live.length > 0 && (
           <div
             className="grid grid-cols-2 md:grid-cols-4"

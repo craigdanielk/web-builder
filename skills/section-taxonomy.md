@@ -208,6 +208,7 @@ are intentional — they get filled the first time you generate that section typ
 **Purpose:** Brand story, mission, founding narrative
 **Variants:**
 - `editorial-split` — Image on one side, narrative text on other
+- `editorial-split-reverse` — editorial-split with the image on the right at desktop (alternating story sections)
 - `timeline` — Chronological milestones
 - `team-story` — Narrative with team photos woven in
 - `values-grid` — Mission/vision/values in card layout
@@ -250,6 +251,7 @@ are intentional — they get filled the first time you generate that section typ
 - `single-hero` — One product large with details
 - `grid` — Product card grid with image, name, price
 - `hover-cards` — Cards with hover-reveal additional info
+- `featured-3` — Three large product presentations, then any further items as full-width feature bands (e.g. a bundle)
 - `category-grid` — Grouped by category with headers
 - `demo-cards` — Each card demonstrates a different animation technique with a unique visual indicator. Cards share grid layout but differ in: gradient direction/colors, micro-animation (SVG stroke draw, morphing blob, orbiting dot, flip transition, text scramble, 3D rotate), and hover effect. Used when showcasing animation capabilities, plugin features, or diverse product differentiators.
 

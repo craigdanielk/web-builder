@@ -31,6 +31,14 @@
           "template_path": "db:section_archetypes.code_template",
           "db_has_template": true,
           "local_file": null
+        },
+        {
+          "name": "editorial-split-reverse",
+          "resolution": "local",
+          "has_template": true,
+          "template_path": "section-templates/ABOUT/editorial-split-reverse.tsx",
+          "db_has_template": false,
+          "local_file": "editorial-split-reverse.tsx"
         }
       ]
     },
@@ -183,6 +191,14 @@
           "template_path": "db:section_archetypes.code_template",
           "db_has_template": true,
           "local_file": null
+        },
+        {
+          "name": "two-column",
+          "resolution": "local",
+          "has_template": true,
+          "template_path": "section-templates/FAQ/two-column.tsx",
+          "db_has_template": false,
+          "local_file": "two-column.tsx"
         }
       ]
     },
@@ -582,11 +598,11 @@
         },
         {
           "name": "featured-3",
-          "resolution": "db",
+          "resolution": "local",
           "has_template": true,
-          "template_path": "db:section_archetypes.code_template",
+          "template_path": "section-templates/PRODUCT-SHOWCASE/featured-3.tsx",
           "db_has_template": true,
-          "local_file": null
+          "local_file": "featured-3.tsx"
         },
         {
           "name": "filtered-grid",

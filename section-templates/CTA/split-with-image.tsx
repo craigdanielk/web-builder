@@ -93,7 +93,7 @@ export default function CtaSplitWithImage({
       )}
 
       <div
-        className="relative mx-auto flex w-full max-w-6xl items-center justify-end px-6"
+        className="aurelix-container relative mx-auto flex w-full max-w-6xl items-center justify-end px-6"
         style={{
           // 16:9 overall = 56.25vw minus the section padding above and below.
           minHeight: bandImage ? "calc(56.25vw - 2 * var(--section-py, 96px))" : undefined,
@@ -104,7 +104,7 @@ export default function CtaSplitWithImage({
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-60px" }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          className="w-full max-w-sm"
+          className="w-full max-w-md"
         >
           {title && (
             <h2
@@ -123,17 +123,17 @@ export default function CtaSplitWithImage({
           {lead && (
             <p
               className="text-pretty text-lg leading-relaxed"
-              style={{ color: MUTED, fontFamily: "var(--font-body, inherit)", marginTop: "var(--block-gap, 24px)" }}
+              style={{ color: MUTED, fontFamily: "var(--font-body, inherit)", marginTop: "calc(var(--block-gap, 24px) * 0.5)" }}
             >
               {lead}
             </p>
           )}
           {(primaryLabel || secondaryLabel) && (
-            <div className="flex flex-wrap items-center gap-4" style={{ marginTop: "calc(var(--block-gap, 24px) * 1.5)" }}>
+            <div className="flex flex-wrap items-center gap-4" style={{ marginTop: "var(--block-gap, 24px)" }}>
               {primaryLabel && (
                 <a
                   href={resolved(primaryCtaUrl) || "#"}
-                  className="inline-flex items-center px-8 py-4 text-sm transition-opacity hover:opacity-90"
+                  className="inline-flex h-12 items-center justify-center whitespace-nowrap px-5 text-center text-xs uppercase tracking-[0.14em] transition-opacity duration-300 hover:opacity-85 sm:px-8 sm:tracking-[0.18em]"
                   style={{
                     background: ACCENT,
                     color: "var(--on-accent, var(--background))",

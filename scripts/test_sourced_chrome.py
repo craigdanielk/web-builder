@@ -104,5 +104,11 @@ def test_brand_mark_none_renders_no_brand_slot():
     assert "'Thuris'" in default
 
 
-def test_thuris_preset_declares_no_brand_mark():
-    assert parse_brand_mark(preset_file_text("thuris")) == "none"
+def test_thuris_preset_declares_its_wordmark_file():
+    # Operator decision 2026-10-21 (e): the supplied SVG, rendered as artwork.
+    mark = parse_brand_mark(preset_file_text("thuris"))
+    assert mark == "intake/thuris/assets/logos/thuris-primary.svg"
+    code = _build_nav_template("thuris", harvested_nav=[], brand_mark=mark)
+    assert "data:image/svg+xml;base64," in code
+    # Never the slug re-typeset as a stand-in wordmark.
+    assert "tracking-tight" not in code and "'Thuris'" not in code

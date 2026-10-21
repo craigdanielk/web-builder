@@ -34,7 +34,12 @@ def effective_benchmark(benchmark: dict, style: dict | None) -> dict:
     for o in overrides:
         section, _, key = o["field"].partition(".")
         value = o.get("value")
-        if section in ("palette_roles", "type_scale", "rhythm") and key:
+        if section == "type_scale" and key == "heading_tiers_px" and isinstance(value, list):
+            # Declared display sizes ARE the heading scale the page is held to;
+            # the measured scale_px stays only where nothing was declared.
+            eff.setdefault("type_system", {})["scale_px"] = list(value)
+            eff.setdefault("type_scale", {})[key] = value
+        elif section in ("palette_roles", "type_scale", "rhythm") and key:
             eff.setdefault(section, {})[key] = value
         elif section == "fonts" and key in ("heading", "body") and isinstance(value, str):
             fonts[key] = value

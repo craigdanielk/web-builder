@@ -107,7 +107,7 @@ export default function ProductShowcaseHoverCards({
         paddingBottom: "var(--section-py, 96px)",
       }}
     >
-      <div className="mx-auto w-full max-w-6xl px-6">
+      <div className="aurelix-container mx-auto w-full max-w-6xl px-6">
         {(kickerText || title || intro) && (
           <div className="mx-auto max-w-2xl text-center" style={{ marginBottom: "var(--block-gap, 48px)" }}>
             {kickerText && (

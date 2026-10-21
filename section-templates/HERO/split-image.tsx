@@ -111,7 +111,7 @@ export default function HeroSplitImage({
       }}
     >
       <div
-        className={`mx-auto grid w-full max-w-6xl items-center gap-14 px-6 ${
+        className={`aurelix-container mx-auto grid w-full max-w-6xl items-center gap-14 px-6 ${
           heroImage ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]" : ""
         }`}
       >

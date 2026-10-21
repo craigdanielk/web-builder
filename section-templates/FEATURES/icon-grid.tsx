@@ -72,6 +72,11 @@ const harvestedFeatures: Feature[] = [
 ];
 
 const MUTED = "var(--muted, color-mix(in srgb, var(--foreground) 62%, var(--background)))";
+//: Secondary text set directly on the section's --surface ground. A palette
+//: checks --muted against --background and its card surface, not against
+//: bg_secondary — THURIS's Stone on Parchment measured 3.98:1. Derived from
+//: the ink, weighted toward it, so it clears AA on any surface.
+const MUTED_ON_SURFACE = "color-mix(in srgb, var(--foreground) 80%, var(--surface, var(--background)))";
 const HAIRLINE = "var(--border, color-mix(in srgb, var(--foreground) 12%, var(--background)))";
 const ACCENT = "var(--accent, var(--foreground))";
 
@@ -95,13 +100,13 @@ export default function FeaturesIconGrid({
         paddingBottom: "var(--section-py, 96px)",
       }}
     >
-      <div className="mx-auto w-full max-w-6xl px-6">
+      <div className="aurelix-container mx-auto w-full max-w-6xl px-6">
         {(sectionTitle || sectionSubtitle) && (
           <div className="max-w-2xl" style={{ marginBottom: "var(--block-gap, 48px)" }}>
             {eyebrow && !eyebrow.startsWith("{") && (
               <p
                 className="mb-4 text-xs uppercase tracking-[0.14em]"
-                style={{ color: MUTED, fontFamily: "var(--font-body, inherit)", fontWeight: 500 }}
+                style={{ color: MUTED_ON_SURFACE, fontFamily: "var(--font-body, inherit)", fontWeight: 500 }}
               >
                 {eyebrow}
               </p>
@@ -121,7 +126,7 @@ export default function FeaturesIconGrid({
             {sectionSubtitle && (
               <p
                 className="mt-5 text-lg leading-relaxed"
-                style={{ color: MUTED, fontFamily: "var(--font-body, inherit)" }}
+                style={{ color: MUTED_ON_SURFACE, fontFamily: "var(--font-body, inherit)" }}
               >
                 {sectionSubtitle}
               </p>
@@ -151,8 +156,9 @@ export default function FeaturesIconGrid({
                 style={{ background: ACCENT, borderRadius: "var(--radius-button, 4px)" }}
               />
               <h3
-                className="text-xl leading-snug"
+                className="leading-snug"
                 style={{
+                  fontSize: "var(--type-h4, 1.25rem)",
                   fontFamily: "var(--font-heading, inherit)",
                   fontWeight: 500,
                 }}

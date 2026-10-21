@@ -60,13 +60,18 @@ REQUIRED_TYPE_SCALE = ("ratio", "base_px", "heading_weight", "body_weight")
 #: Anything else stays benchmark-owned; an unlisted key is refused, not ignored.
 #: `palette_light` is a second, complete role set for sections that opt into the
 #: light tone — it never partially inherits the base set.
+#: `heading_tiers_px` / `heading_tiers_min_px` declare the display sizes (desktop
+#: ceiling / phone floor, largest first) instead of the benchmark's measured
+#: tiers; `section_py_min_px` is the phone floor for section padding; `layout`
+#: is the content measure (operator brief "Homepage Visual Refinement V1").
 TENANT_OVERRIDABLE: dict[str, tuple[str, ...]] = {
     "palette_roles": REQUIRED_ROLES + ("surface_inverse",),
     "palette_light": REQUIRED_ROLES,
-    "type_scale": REQUIRED_TYPE_SCALE,
-    "rhythm": REQUIRED_RHYTHM,
+    "type_scale": REQUIRED_TYPE_SCALE + ("heading_tiers_px", "heading_tiers_min_px"),
+    "rhythm": REQUIRED_RHYTHM + ("section_py_min_px",),
     "border_radius": ("button", "card"),
     "fonts": ("heading", "body"),
+    "layout": ("max_width_px", "gutter_min_px", "gutter_max_px"),
 }
 
 #: WCAG AA for body text. Below this the tenant's own brand colour is
@@ -360,9 +365,11 @@ def compile_style(
                              "type_scale", override_log)
     # Heading sizes are part of the scale: templates read these as --type-h1..h4
     # rather than naming display sizes the benchmark never measured.
+    # A tenant-declared tier set wins; it is logged as an override above.
     tiers = heading_tiers(benchmark)
-    if tiers:
+    if tiers and "heading_tiers_px" not in (over.get("type_scale") or {}):
         scale = {**scale, "heading_tiers_px": tiers}
+    _check_tiers(scale)
     rhythm = _apply_overrides(benchmark["rhythm"], over.get("rhythm"), "rhythm", override_log)
     fonts = (benchmark.get("font_system") or {}).get("families") or ["Inter"]
     font_over = over.get("fonts") or {}
@@ -410,6 +417,7 @@ def compile_style(
         "card": f"{max((benchmark.get('card_system') or {}).get('radius_px') or [8])}px",
     }
     radius = _apply_overrides(radius, over.get("border_radius"), "border_radius", override_log)
+    layout = _apply_overrides({}, over.get("layout"), "layout", override_log)
 
     style = {
         "design_source": "benchmark",
@@ -455,7 +463,32 @@ def compile_style(
         style["tenant_overrides"] = override_log
     if palette_light is not None:
         style["palette_light"] = palette_light
+    if layout:
+        style["layout"] = layout
     return style
+
+
+def _check_tiers(scale: dict[str, Any]) -> None:
+    """Declared tiers are px integers, largest first; a phone floor pairs 1:1
+    with the ceiling and never exceeds it. A tier set that fails this would
+    emit a clamp() whose floor is above its ceiling — CSS resolves that to
+    the floor, silently inverting the operator's declaration."""
+    top = scale.get("heading_tiers_px") or []
+    floor = scale.get("heading_tiers_min_px")
+    for name, tiers in (("heading_tiers_px", top), ("heading_tiers_min_px", floor or [])):
+        if not all(isinstance(t, int) and t > 0 for t in tiers):
+            raise BenchmarkError(f"type_scale.{name} must be positive px integers: {tiers}")
+        if list(tiers) != sorted(tiers, reverse=True):
+            raise BenchmarkError(f"type_scale.{name} must be largest first: {tiers}")
+    if floor is not None:
+        if len(floor) != len(top):
+            raise BenchmarkError(
+                f"type_scale.heading_tiers_min_px declares {len(floor)} tiers; "
+                f"heading_tiers_px has {len(top)}")
+        for lo, hi in zip(floor, top):
+            if lo > hi:
+                raise BenchmarkError(
+                    f"type_scale.heading_tiers_min_px {lo}px exceeds its ceiling {hi}px")
 
 
 def _check_tenant_overrides(overrides: dict[str, Any] | None) -> None:

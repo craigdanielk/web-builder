@@ -4,7 +4,8 @@ Tenant: THURIS — botanical fragrance house (Aweku Laboratories (Pty) Ltd, Sout
 Lead market: UAE. Target: Shopify (headless, Vercel front end).
 
 Sequence authority: tenant
-Brand mark: none
+Brand mark: intake/thuris/assets/logos/thuris-primary.svg
+Nav action: Reserve
 
 > **Tenant preset.** Values come from the operator, not from a crawl — THURIS is a
 > greenfield brand (`source_platform: none`). Authority, in order:
@@ -44,7 +45,10 @@ Held, not sequenced: **the vessel section** (bottle / closure / concealed droppe
 
 ## Tenant Design Overrides
 
-Operator decision 2026-10-21: THURIS's palette, type sizes, spacing, radius and
+Operator brief "Homepage Visual Refinement V1" (2026-10-21) declares the display
+sizes (H1 56–68 → 64, H2 40–48 → 44, H3 26–32 → 28; phone floors 40/32/24/18),
+the 1200px measure with 24–72px gutters, and ~112–144px sections (128; 64 on
+phones). Operator decision 2026-10-21: THURIS's palette, type sizes, spacing, radius and
 fonts override the `luxury-botanical-oils` benchmark (measured from Amouage +
 Aesop: cream `#f7f4ef` ground, `#000000` text, 14px base, 100px sections). The
 measured type ratio (1.143) and heading weight (400) are kept. Read by
@@ -63,8 +67,12 @@ measured type ratio (1.143) and heading weight (400) are kept. Read by
     "text_primary": "#241F1B", "text_muted": "#736A61", "border": "#CFC5B8",
     "accent": "#241F1B", "on_accent": "#F4F0E8"
   },
-  "type_scale": {"base_px": 17},
-  "rhythm": {"section_py_px": 140, "block_gap_px": 64, "card_pad_px": 40},
+  "type_scale": {"base_px": 17,
+                 "heading_tiers_px": [64, 44, 28, 20],
+                 "heading_tiers_min_px": [40, 32, 24, 18]},
+  "rhythm": {"section_py_px": 128, "section_py_min_px": 64,
+             "block_gap_px": 56, "card_pad_px": 40},
+  "layout": {"max_width_px": 1200, "gutter_min_px": 24, "gutter_max_px": 72},
   "border_radius": {"button": "0px", "card": "0px"},
   "fonts": {"heading": "Bodoni Moda", "body": "Inter"}
 }
@@ -188,8 +196,9 @@ exclamation marks; never call the product luxurious, premium or exclusive — sh
   plus a single `--surface-inverse`; a Bone section inheriting Warm Ivory text renders
   invisible. Light sections need the `light_editorial` set re-declared, scoped.
 - **Gold is not a background.** No metallic gradients, no large gold fields.
-- **Logo is a temporary raster** (CI Guide crops, JPEG on bone, no transparency) until
-  production vectors are approved. Do not re-typeset THURIS in Bodoni Moda as a stand-in.
+- **Nav wordmark is the supplied SVG** (`thuris-primary.svg`, Champagne on the dark nav) —
+  operator decision 2026-10-21 (e), pending production vectors. Do not re-typeset THURIS
+  in Bodoni Moda as a stand-in.
 - **Prohibited claims** — purity, therapeutic, origin beyond the declared country, usage.
   Every `[HOLD]` in the copy stays unrendered until its fact is supplied.
 

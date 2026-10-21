@@ -32,8 +32,9 @@ import { motion } from "framer-motion";
  *      directions.
  *
  *   4. THE IMAGE IS OPTIONAL AND HONEST. If the harvest resolved no image the
- *      media column does not render an empty frame or a placeholder — the prose
- *      takes the full measure and the layout still reads deliberately.
+ *      media column does not render an empty frame or a placeholder. Instead
+ *      the heading takes the left column and the prose the right — a prose
+ *      block alone at the left of a wide measure leaves an empty half-page.
  *      `<Image src="">` THROWS in next/image, so an unresolved src must never
  *      reach the DOM.
  *
@@ -146,7 +147,7 @@ export default function AboutEditorialSplit({
       }}
     >
       <div
-        className={`mx-auto grid w-full max-w-6xl gap-14 px-6 ${
+        className={`aurelix-container mx-auto grid w-full max-w-6xl gap-10 px-6 lg:gap-16 ${
           storyImage ? "lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)] lg:items-center" : ""
         }`}
       >
@@ -178,8 +179,11 @@ export default function AboutEditorialSplit({
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.6, delay: 0.12, ease: "easeOut" }}
-          className={storyImage ? "" : "max-w-3xl"}
+          className={
+            storyImage ? "" : "grid gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-16"
+          }
         >
+          <div>
           {title && (
             <>
               {/* Accent used once, as punctuation — see the benchmark note. */}
@@ -208,10 +212,11 @@ export default function AboutEditorialSplit({
               </h2>
             </>
           )}
-
+          </div>
+          <div>
           {lead && (
             <p
-              className="mt-7 text-lg leading-relaxed md:text-xl"
+              className={`${storyImage ? "mt-7 " : ""}text-lg leading-relaxed md:text-xl`}
               style={{ color: "var(--foreground)", fontFamily: "var(--font-body, inherit)" }}
             >
               {lead}
@@ -260,6 +265,7 @@ export default function AboutEditorialSplit({
               </a>
             </div>
           )}
+          </div>
         </motion.div>
       </div>
     </section>

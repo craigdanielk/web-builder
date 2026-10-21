@@ -79,7 +79,7 @@ export default function HowItWorksNumberedSteps({
         paddingBottom: "var(--section-py, 96px)",
       }}
     >
-      <div className="mx-auto w-full max-w-6xl px-6">
+      <div className="aurelix-container mx-auto w-full max-w-6xl px-6">
         {(sectionTitle || sectionSubtitle) && (
           <div className="max-w-2xl" style={{ marginBottom: "var(--block-gap, 48px)" }}>
             {eyebrow && !eyebrow.startsWith("{") && (
@@ -113,7 +113,9 @@ export default function HowItWorksNumberedSteps({
           </div>
         )}
 
-        <ol className="relative grid grid-cols-1 md:grid-cols-3 gap-x-10 gap-y-12">
+        {/* Columns follow the step count (max 3): two steps in a three-column
+            grid leave an empty third of the measure. */}
+        <ol className={`relative grid grid-cols-1 gap-x-10 gap-y-12 ${steps.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
           {steps.map((step, index) => {
             const stepOrdinal = String(index + 1).padStart(2, "0");
             const titleCarriesOrdinal = step.title.trim().startsWith(stepOrdinal);
@@ -154,8 +156,12 @@ export default function HowItWorksNumberedSteps({
               )}
 
               <h3
-                className={`${titleCarriesOrdinal ? "" : "mt-6 "}text-xl leading-snug`}
-                style={{ fontFamily: "var(--font-heading, inherit)", fontWeight: 500 }}
+                className={`${titleCarriesOrdinal ? "" : "mt-6 "}leading-snug`}
+                style={{
+                  fontSize: "var(--type-h4, 1.25rem)",
+                  fontFamily: "var(--font-heading, inherit)",
+                  fontWeight: "var(--heading-weight, 400)" as unknown as number,
+                }}
               >
                 {step.title}
               </h3>

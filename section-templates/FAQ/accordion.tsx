@@ -81,7 +81,7 @@ export default function FaqAccordion({
         paddingBottom: "var(--section-py, 96px)",
       }}
     >
-      <div className="mx-auto grid w-full max-w-6xl gap-12 px-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+      <div className="aurelix-container mx-auto grid w-full max-w-6xl gap-12 px-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <div>
           {sectionTitle && (
             <h2
