@@ -140,3 +140,19 @@ benchmark's measured 32px ceiling); content max-width 1200, gutters 24–72, sec
 - **Not on the site, by design:** contact channel (none on file), dispatch window, shipping,
   duties, refund policy, directions for use, batch documentation. /service lists the first four
   as "published before reservations open". `RESERVATIONS_OPEN=false` gates every Reserve control.
+
+## Session 2026-10-22 (g) — Threshold plan, Amendment V1, Final corrections, petals (operator)
+- **No Higgsfield** (operator): direction from existing assets + Blender only.
+- Branch `art-direction-v3` on the tenant repo (preview, not production). Production stays febdd45.
+- Corrections applied: no numbered room markers or exhibition captions; display size = hero only;
+  inactive actions say "Explore the Founding Collection" / "Pre-order not yet open" (never Reserve).
+- Typography: NOT chosen. Bodoni (current) vs Newsreader Light vs Hanken Grotesk Light rendered;
+  Canela + Tiempos need the operator's trial-font downloads (test licences; files never deployed).
+- Gate A: Blender hero scene **rejected** vs the current poster; the current still is kept.
+- Gate B: Blender canonical bottle (T1) review pack rendered — awaiting operator approval.
+- Gate C: motion prototype = the poster itself (light pass + settle), once per visitor, pause/replay.
+- Release list: Shopify Admin customerCreate with emailMarketingConsent (server-only), inactive until
+  SHOPIFY_STORE_DOMAIN + SHOPIFY_ADMIN_TOKEN + THURIS_PRIVACY_URL exist (no privacy policy yet).
+- Availability: Shopify `available` used as-is; counts only when finished units are confirmed.
+- Petals: mechanism passes; Blender petal assets **fail** the quality gate → shown only with ?petals=1.
+- Contracts: tenant `docs/house-contracts.md`, `asset-register.md`, `perception-test.md`.
