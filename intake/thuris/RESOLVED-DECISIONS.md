@@ -107,3 +107,17 @@ Front end built now; store wired when operator creates store + re-auths Shopify 
 - Hero: image-led, copy left (pack H01); final band copy right (H03).
 - GitHub repo (private craigdanielk/thuris) + Vercel project `thuris` created and linked; live at
   https://thuris.vercel.app. Next session: section-by-section upgrade.
+
+## Session 2026-10-21 (e) — Homepage Visual Refinement V1 (operator brief) + answers
+Brief V1 supersedes earlier choices where they conflict: nav wordmark restored (was "none until
+vectors"); display type H1 56–68 / H2 40–48 / H3 26–32 / body 16–18 / eyebrow 11–12 (was the
+benchmark's measured 32px ceiling); content max-width 1200, gutters 24–72, sections 112–144.
+- **Prices: display the differentiated model AED 495 / 445 / 445** (Frankincense / Neroli / Rose
+  Geranium). Commercially DISPUTED vs the earlier 395/445/395 until explicitly approved.
+  **Bundle: no price shown** (price and discount unconfirmed). Prices live in ONE place in the source
+  (data-field="price" on the collection cards); no duplicated constants. Shopify prices NOT mutated.
+- **Wordmark: supplied SVG `assets/logos/thuris-primary.svg`** (operator: "use it anyway").
+- **Caps: Higgsfield edit** — every pack image re-rendered with a plain solid brushed-metal cap top
+  (the engraved TT monogram read as holes/slots). gpt_image_2_5, high, reference = pack master.
+- **Provenance: species, countries of origin and the on-bottle statement are all documented** —
+  they stay. Ritual copy is trimmed to remove application/wearing implications (launch-copy HOLD).
