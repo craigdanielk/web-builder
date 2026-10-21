@@ -1,0 +1,91 @@
+{
+  "brand": "THURIS",
+  "generated_at": "2026-10-21",
+  "version": "web-image-pack-v1",
+  "canonical_product_architecture": "Heavy 10 ml violet-black rectangular glass; thick optical base; short neck; solid brushed-champagne-metal screw cap; concealed internal orifice reducer; no pipette/rubber bulb/spray.",
+  "rules": [
+    "Use masters as source; use web/*.webp for implementation where supported.",
+    "Do not infer approved direct-skin use or burnability from imagery.",
+    "Earlier moodboards/collages are excluded because they contain superseded product architecture or are not production assets.",
+    "Reference image is design authority, not a homepage asset unless needed for QA."
+  ],
+  "placements": [
+    {
+      "id": "H01",
+      "file": "01_hero_desktop_founding-collection_dark_16x9",
+      "location": "Homepage hero — desktop",
+      "priority": "primary",
+      "object_position": "right center",
+      "copy_space": "left"
+    },
+    {
+      "id": "H02",
+      "file": "02_hero_mobile_founding-collection_dark_4x5",
+      "location": "Homepage hero — mobile",
+      "priority": "primary",
+      "object_position": "lower/center",
+      "copy_space": "upper third"
+    },
+    {
+      "id": "C01",
+      "file": "03_collection_clean-lineup_light_1x1",
+      "location": "Founding Collection overview / product grid",
+      "priority": "primary"
+    },
+    {
+      "id": "C02",
+      "file": "04_collection_bottles-boxes_light_4x5",
+      "location": "Founding Collection / gifting / packaging",
+      "priority": "secondary"
+    },
+    {
+      "id": "R01",
+      "file": "05_ritual_scent-stone_travertine_3x2",
+      "location": "The Ritual of Scent / future scent-stone story",
+      "priority": "secondary"
+    },
+    {
+      "id": "O01",
+      "file": "06_provenance_rose-geranium_south-africa_16x9",
+      "location": "Provenance / Rose Geranium origin",
+      "priority": "secondary"
+    },
+    {
+      "id": "F01",
+      "file": "07_product_frankincense_hero_4x5",
+      "location": "Frankincense product card/detail",
+      "priority": "primary"
+    },
+    {
+      "id": "N01",
+      "file": "08_product_neroli_hero_4x5",
+      "location": "Neroli product card/detail",
+      "priority": "primary"
+    },
+    {
+      "id": "G01",
+      "file": "09_product_rose-geranium_hero_4x5",
+      "location": "Rose Geranium product card/detail",
+      "priority": "primary"
+    },
+    {
+      "id": "D01",
+      "file": "10_product-detail_cap-monogram_4x5",
+      "location": "Craft / object / cap detail",
+      "priority": "secondary"
+    },
+    {
+      "id": "D02",
+      "file": "11_product-detail_concealed-reducer_4x5",
+      "location": "Bottle design / controlled-droplet closure explanation",
+      "priority": "secondary"
+    },
+    {
+      "id": "H03",
+      "file": "12_cta_founding-collection_dark_16x9",
+      "location": "Final reservation CTA / closing campaign image",
+      "priority": "primary",
+      "copy_space": "right"
+    }
+  ]
+}
