@@ -40,6 +40,13 @@ const SECTION_TAGS = new Set(['header', 'nav', 'main', 'section', 'footer', 'art
 /** The only `data-tone` values carried downstream (mirrors orchestrate.SECTION_TONES). */
 const SECTION_TONES = new Set(['light', 'dark']);
 
+/** A section id usable as an in-page anchor, or null. Mirrors orchestrate.SAFE_ANCHOR:
+ *  the value is untrusted and is later written into generated .tsx. */
+const SAFE_ANCHOR = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+function safeAnchor(id) {
+  return typeof id === 'string' && SAFE_ANCHOR.test(id) ? id : null;
+}
+
 /** Wrappers that hold sections rather than being one. Descended into. */
 const CONTAINER_TAGS = new Set(['main', 'article']);
 
@@ -596,6 +603,7 @@ function harvestBlocks(html, baseUrl) {
       role: getAttr(block.attrs, 'role') || '',
       classNames: getAttr(block.attrs, 'class') || '',
       id: getAttr(block.attrs, 'id') || '',
+      anchor: safeAnchor(getAttr(block.attrs, 'id')),
       // Declared ground for a two-mode palette; null when the source says nothing.
       // Allowlisted: the value is untrusted and is later written into .tsx.
       tone: SECTION_TONES.has(getAttr(block.attrs, 'data-tone')) ? getAttr(block.attrs, 'data-tone') : null,
@@ -620,13 +628,16 @@ function harvestBlocks(html, baseUrl) {
 }
 
 /** Primary navigation links, taken from the first `nav` (or `header`) block. */
-function harvestNav(html, baseUrl) {
+// `anchors`: ids of the page's own sections. A `#fragment` link is kept only when
+// it names one of them — that is a one-page site's real navigation; skip-links and
+// dangling fragments are still dropped.
+function harvestNav(html, baseUrl, anchors = new Set()) {
   const cleaned = cleanHtml(html);
   const navBlocks = collectBlocks(cleaned, new Set(['nav']));
   const source = navBlocks[0] || collectBlocks(cleaned, new Set(['header']))[0];
   if (!source) return { links: [] };
   const links = extractCtas(source.inner, baseUrl)
-    .filter((l) => l.href && !l.href.startsWith('#'))
+    .filter((l) => l.href && (!l.href.startsWith('#') || anchors.has(l.href.slice(1))))
     .map((l) => ({ label: l.text, href: l.href }));
   return { links };
 }
@@ -800,8 +811,11 @@ function harvestPage(capture) {
     source_url: url,
     title: extractTitle(capture.html),
     description: extractMetaDescription(capture.html),
-    nav: harvestNav(capture.html, url),
-    blocks: harvestBlocks(capture.html, url),
+    ...(() => {
+      const blocks = harvestBlocks(capture.html, url);
+      const anchors = new Set(blocks.map((b) => b.anchor).filter(Boolean));
+      return { nav: harvestNav(capture.html, url, anchors), blocks };
+    })(),
     harvest: {
       method: 'audit-capture',
       http_status: capture.http_status ?? null,
@@ -817,6 +831,7 @@ module.exports = {
   harvestPage,
   harvestBlocks,
   harvestNav,
+  safeAnchor,
   pageIdFromUrl,
   pageTypeFromUrl,
   pathnameOf,

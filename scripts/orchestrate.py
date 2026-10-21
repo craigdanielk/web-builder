@@ -5139,6 +5139,23 @@ def tone_by_section_stem(sections: list[dict]) -> dict[str, str]:
     return out
 
 
+#: A section id usable as an in-page anchor. Mirrors SAFE_ANCHOR in
+#: quality/lib/html-page-harvest.js; re-checked here because the value is
+#: harvested (untrusted) and is interpolated into generated TSX.
+SAFE_ANCHOR = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
+
+
+def anchor_by_section_stem(sections: list[dict]) -> dict[str, str]:
+    """`{file stem: anchor}` for planned sections whose source carried an id."""
+    out: dict[str, str] = {}
+    for i, sec in enumerate(sections or []):
+        anchor = (sec or {}).get("anchor")
+        arch = ((sec or {}).get("archetype") or "").lower().replace("-", "_")
+        if isinstance(anchor, str) and SAFE_ANCHOR.match(anchor) and arch:
+            out[f"{i + 1:02d}-{arch}"] = anchor
+    return out
+
+
 def tone_css_lines(palette_light: dict | None) -> list[str]:
     """`[data-tone="light"]` re-declaring every role, or nothing without a light set.
 
@@ -5170,6 +5187,7 @@ def _build_page_imports(
     animation_map: dict | None = None,
     page_dir: str | None = None,
     tone_by_stem: dict[str, str] | None = None,
+    anchor_by_stem: dict[str, str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Build (imports, JSX elements) for every section file, in file order.
 
@@ -5239,8 +5257,14 @@ def _build_page_imports(
         else:
             components.append(f"      <{component_name} />")
         tone = (tone_by_stem or {}).get(filepath.stem)
+        anchor = (anchor_by_stem or {}).get(filepath.stem)
+        attrs = []
+        if isinstance(anchor, str) and SAFE_ANCHOR.match(anchor):
+            attrs.append(f'id="{anchor}"')
         if tone in SECTION_TONES:
-            components[-1] = f'      <div data-tone="{tone}">\n{components[-1]}\n      </div>'
+            attrs.append(f'data-tone="{tone}"')
+        if attrs:
+            components[-1] = f'      <div {" ".join(attrs)}>\n{components[-1]}\n      </div>'
     return imports, components
 
 
@@ -6109,6 +6133,7 @@ export default function Page{params_type} {{
         imports, components = _build_page_imports(
             files, f"@/components/sections/{page_id}/", animation_map, page_id,
             tone_by_stem=tone_by_section_stem(sections),
+            anchor_by_stem=anchor_by_section_stem(sections),
         )
         params_type = ""
         components_nl = chr(10).join(components)
