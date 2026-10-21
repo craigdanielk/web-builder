@@ -17,6 +17,10 @@ import { motion } from "framer-motion";
  *   It is set large and light against a hairline connector, which is the
  *   sequence made visible without inventing anything.
  *
+ * NEVER TWICE. When the source title already carries its ordinal ("01 —
+ * Choose."), the derived ordinal is not drawn: the copy renders verbatim and
+ * the number appears once.
+ *
  * Arity is the harvest's, via the repeat block. Three steps render three,
  * five render five, none renders nothing at all.
  *
@@ -27,7 +31,7 @@ import { motion } from "framer-motion";
  *   {steps[].description} → "Sign up with your email and verify your identity…"
  */
 
-// Tokens: {section_title} {section_subtitle} {steps[].title} {steps[].description}
+// Tokens: {eyebrow} {section_title} {section_subtitle} {steps[].title} {steps[].description}
 
 // No art demand, declared rather than omitted so a reader can tell
 // "nothing wanted" from "nobody considered it":
@@ -40,6 +44,7 @@ interface Step {
 }
 
 interface HowItWorksNumberedStepsProps {
+  eyebrow?: string;
   sectionTitle?: string;
   sectionSubtitle?: string;
   steps?: Step[];
@@ -56,6 +61,7 @@ const HAIRLINE = "var(--border, color-mix(in srgb, var(--foreground) 12%, var(--
 const ACCENT = "var(--accent, var(--foreground))";
 
 export default function HowItWorksNumberedSteps({
+  eyebrow = "{eyebrow}",
   sectionTitle = "{section_title}",
   sectionSubtitle = "{section_subtitle}",
   steps = harvestedSteps,
@@ -76,6 +82,14 @@ export default function HowItWorksNumberedSteps({
       <div className="mx-auto w-full max-w-6xl px-6">
         {(sectionTitle || sectionSubtitle) && (
           <div className="max-w-2xl" style={{ marginBottom: "var(--block-gap, 48px)" }}>
+            {eyebrow && !eyebrow.startsWith("{") && (
+              <p
+                className="mb-4 text-xs uppercase tracking-[0.14em]"
+                style={{ color: MUTED, fontFamily: "var(--font-body, inherit)", fontWeight: 500 }}
+              >
+                {eyebrow}
+              </p>
+            )}
             {sectionTitle && (
               <h2
                 className="text-[2rem] md:text-[3rem] leading-[1.1] tracking-tight"
@@ -99,7 +113,10 @@ export default function HowItWorksNumberedSteps({
         )}
 
         <ol className="relative grid grid-cols-1 md:grid-cols-3 gap-x-10 gap-y-12">
-          {steps.map((step, index) => (
+          {steps.map((step, index) => {
+            const stepOrdinal = String(index + 1).padStart(2, "0");
+            const titleCarriesOrdinal = step.title.trim().startsWith(stepOrdinal);
+            return (
             <motion.li
               key={index}
               initial={{ opacity: 0, y: 16 }}
@@ -109,7 +126,7 @@ export default function HowItWorksNumberedSteps({
               className="relative flex flex-col"
             >
               {/* The connector runs between steps, never past the last one. */}
-              {index < steps.length - 1 && (
+              {!titleCarriesOrdinal && index < steps.length - 1 && (
                 <span
                   aria-hidden="true"
                   className="absolute left-0 top-[1.35rem] hidden h-px w-full md:block"
@@ -120,6 +137,7 @@ export default function HowItWorksNumberedSteps({
                 />
               )}
 
+              {!titleCarriesOrdinal && (
               <div className="relative flex items-baseline gap-4">
                 <span
                   className="text-[2rem] leading-none tabular-nums"
@@ -129,12 +147,13 @@ export default function HowItWorksNumberedSteps({
                     fontWeight: "var(--heading-weight, 400)" as unknown as number,
                   }}
                 >
-                  {String(index + 1).padStart(2, "0")}
+                  {stepOrdinal}
                 </span>
               </div>
+              )}
 
               <h3
-                className="mt-6 text-xl leading-snug"
+                className={`${titleCarriesOrdinal ? "" : "mt-6 "}text-xl leading-snug`}
                 style={{ fontFamily: "var(--font-heading, inherit)", fontWeight: 500 }}
               >
                 {step.title}
@@ -148,7 +167,8 @@ export default function HowItWorksNumberedSteps({
                 </p>
               )}
             </motion.li>
-          ))}
+            );
+          })}
         </ol>
       </div>
     </section>
