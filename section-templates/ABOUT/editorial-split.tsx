@@ -58,7 +58,7 @@ import { motion } from "framer-motion";
 // The legacy dialect is matched by a regex that runs to the NEXT `*/`, so
 // naming it verbatim above a block comment silently annexes the code between
 // them into the declaration. Hence the paraphrase.
-// Tokens: {section_title} {section_body} {paragraphs[].body} {image_url} {image_alt} {cta_text} {cta_url}
+// Tokens: {eyebrow} {section_title} {section_body} {paragraphs[].body} {image_url} {image_alt} {cta_text} {cta_url}
 
 // The DEMAND declaration, read by `asset_resolver.art_declarations()`. An
 // editorial split is prose beside a picture; note 4 keeps it honest when there
@@ -68,6 +68,7 @@ import { motion } from "framer-motion";
 // Art: slot=image_url intent=scene aspect=4:5 role=load-bearing
 
 interface AboutEditorialSplitProps {
+  eyebrow?: string;
   sectionTitle?: string;
   sectionBody?: string;
   bodyParagraphs?: string[];
@@ -107,6 +108,7 @@ function resolved(value: string | undefined): string {
 }
 
 export default function AboutEditorialSplit({
+  eyebrow = "{eyebrow}",
   sectionTitle = "{section_title}",
   sectionBody = "{section_body}",
   bodyParagraphs = harvestedParagraphs,
@@ -115,6 +117,9 @@ export default function AboutEditorialSplit({
   ctaText = "{cta_text}",
   ctaUrl = "{cta_url}",
 }: AboutEditorialSplitProps) {
+  // The harvest's kicker: the short line the source section opens with BEFORE
+  // its heading. It renders above the title, never as the lead paragraph.
+  const kickerText = resolved(eyebrow);
   const title = resolved(sectionTitle);
   const lead = resolved(sectionBody);
   const rest = bodyParagraphs.map(resolved).filter(Boolean);
@@ -183,6 +188,14 @@ export default function AboutEditorialSplit({
                 className="mb-6 block h-[3px] w-10"
                 style={{ background: ACCENT, borderRadius: "var(--radius-button, 4px)" }}
               />
+              {kickerText && (
+                <p
+                  className="mb-4 text-xs uppercase tracking-[0.14em]"
+                  style={{ color: MUTED, fontFamily: "var(--font-body, inherit)", fontWeight: 500 }}
+                >
+                  {kickerText}
+                </p>
+              )}
               <h2
                 className="text-[2rem] leading-[1.1] tracking-tight md:text-[3rem]"
                 style={{
